@@ -1,0 +1,120 @@
+package main
+
+import (
+	"context"
+	"log"
+	"time"
+
+	"github.com/ctf_exec/backend/internal/config"
+	"github.com/ctf_exec/backend/internal/db"
+	"github.com/ctf_exec/backend/internal/handler"
+	"github.com/ctf_exec/backend/internal/middleware"
+	"github.com/ctf_exec/backend/internal/repository"
+	"github.com/ctf_exec/backend/internal/service"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	// 加载配置
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+	log.Println("✓ 配置加载成功")
+
+	// 初始化数据库
+	sqlDB, err := db.InitDB()
+	if err != nil {
+		log.Fatalf("数据库初始化失败: %v", err)
+	}
+	defer sqlDB.Close()
+	log.Println("✓ 数据库连接成功")
+
+	// 初始化 Redis
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     cfg.Redis.Host + ":" + string(cfg.Redis.Port),
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+
+	// 测试 Redis 连接
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Printf("⚠️ Redis 连接失败: %v (继续运行，某些功能可能受限)", err)
+	} else {
+		log.Println("✓ Redis 连接成功")
+	}
+
+	// 初始化仓库
+	userRepo := repository.NewUserRepository(sqlDB)
+	probRepo := repository.NewProblemRepository(sqlDB)
+	subRepo := repository.NewSubmissionRepository(sqlDB)
+	teamRepo := repository.NewTeamRepository(sqlDB)
+
+	// 初始化服务
+	authService := service.NewAuthService(userRepo)
+	userService := service.NewUserService(userRepo)
+	problemService := service.NewProblemService(probRepo)
+	submissionService := service.NewSubmissionService(
+		subRepo,
+		probRepo,
+		redisClient,
+		cfg.RateLimit.SubmissionLimit,
+		cfg.RateLimit.WindowSeconds,
+	)
+	teamService := service.NewTeamService(teamRepo)
+
+	// 初始化处理器
+	authHandler := handler.NewAuthHandler(authService, userService)
+	// TODO: 其他 handler 需要类似的改造
+
+	// 创建 Gin 引擎
+	r := gin.Default()
+
+	// 配置 CORS
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	// 健康检查
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
+
+	// API 路由组
+	api := r.Group("/api")
+	{
+		// 认证路由
+		auth := api.Group("/auth")
+		{
+			auth.POST("/register", gin.WrapF(authHandler.Register))
+			auth.POST("/login", gin.WrapF(authHandler.Login))
+			auth.GET("/me", middleware.GinAuthMiddleware(), gin.WrapF(authHandler.GetCurrentUser))
+		}
+
+		// 用户路由
+		users := api.Group("/users")
+		{
+			users.GET("/leaderboard", gin.WrapF(authHandler.GetCurrentUser)) // TODO: 替换为实际的用户 handler
+			// TODO: 其他用户路由
+		}
+	}
+
+	// 静态文件服务
+	r.Static("/static", "../static")
+
+	// 启动服务器
+	serverAddr := cfg.Server.Host + ":" + cfg.Server.Port
+	log.Printf("✓ 服务器启动在 %s", serverAddr)
+	if err := r.Run(serverAddr); err != nil {
+		log.Fatalf("服务器启动失败: %v", err)
+	}
+}

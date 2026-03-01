@@ -1,0 +1,67 @@
+# Go binaries
+/bin/
+/dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+
+# Go build cache
+.cache/
+*.o
+*.a
+*.out
+
+# Dependency directories
+vendor/
+go.sum
+node_modules/
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+build/
+dist/
+*.tar.gz
+
+# k3s and container related
+kubeconfig
+kubeconfig.yaml
+*.kubeconfig
+.k3s/
+
+# Runtime and logs
+logs/
+*.log
+tmp/
+temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Development
+*.pem
+*.key
+*.crt
+
+# Node/React
+dist/
+.next/
+out/
+
+# Test coverage
+coverage/
+*.cover
