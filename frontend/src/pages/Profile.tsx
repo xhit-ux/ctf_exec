@@ -16,7 +16,8 @@ export default function Profile() {
   const [formData, setFormData] = useState({
     display_name: '',
     email: '',
-    bio: ''
+    bio: '',
+    email_public: false
   })
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
@@ -24,7 +25,7 @@ export default function Profile() {
   // 判断是否是当前用户自己的主页
   const isOwnProfile = !urlUsername || (currentUser && currentUser.username === urlUsername)
 
-  // 获取目标用户信息
+      // 获取目标用户信息
   useEffect(() => {
     const fetchUser = async () => {
       setLoading(true)
@@ -33,7 +34,13 @@ export default function Profile() {
         setLoading(false)
       } else {
         try {
-          const response = await fetch(`http://localhost:8080/api/users/public?username=${urlUsername}`)
+          const headers: HeadersInit = {}
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          const response = await fetch(`http://localhost:8080/api/users/public?username=${urlUsername}`, {
+            headers
+          })
           if (response.ok) {
             const data = await response.json()
             setTargetUser(data)
@@ -48,15 +55,28 @@ export default function Profile() {
       }
     }
     fetchUser()
-  }, [urlUsername, currentUser, isOwnProfile])
+  }, [urlUsername, currentUser, isOwnProfile, token])
 
   // 初始化表单数据
   useEffect(() => {
     if (currentUser && isOwnProfile) {
+      // 解析用户偏好设置
+      let emailPublic = false;
+      if (currentUser.preferences) {
+        try {
+          const prefs = JSON.parse(currentUser.preferences);
+          // 处理整数1或字符串"true"或布尔值true的情况
+          emailPublic = !!prefs.email_public;
+        } catch (e) {
+          // 忽略解析错误
+        }
+      }
+      
       setFormData({
         display_name: currentUser.display_name || '',
         email: currentUser.email || '',
-        bio: currentUser.bio || ''
+        bio: currentUser.bio || '',
+        email_public: emailPublic
       })
     }
   }, [currentUser, isOwnProfile])
@@ -235,6 +255,31 @@ export default function Profile() {
                       placeholder="介绍一下你自己..."
                     />
                   </div>
+                  <div className="pt-4 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">隐私设置</label>
+                        <p className="text-sm text-gray-500">对外展示</p>
+                      </div>
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, email_public: !formData.email_public })}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${formData.email_public ? 'bg-blue-600' : 'bg-gray-200'}`}
+                        >
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${formData.email_public ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                        <span className="ml-3 text-sm font-medium text-gray-700">
+                          {formData.email_public ? '公开' : '隐藏'}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm text-gray-500">
+                      {formData.email_public 
+                        ? '其他登录用户可以看到你的邮箱地址' 
+                        : '你的邮箱地址仅对你自己可见，其他用户无法查看'}
+                    </p>
+                  </div>
                 </form>
               ) : (
                 <div className="space-y-8">
@@ -254,7 +299,12 @@ export default function Profile() {
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center">
                       <div className="flex justify-between items-center mb-1">
                         <p className="text-sm text-gray-500">电子邮箱</p>
-                        {targetUser.email ? (
+                        {isOwnProfile && targetUser.email ? (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${targetUser.is_verified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                            }`}>
+                            {targetUser.is_verified ? '已验证' : '未验证'}
+                          </span>
+                        ) : targetUser.email ? (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${targetUser.is_verified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                             }`}>
                             {targetUser.is_verified ? '已验证' : '未验证'}
@@ -266,7 +316,7 @@ export default function Profile() {
                         )}
                       </div>
                       <p className="font-semibold text-gray-900 text-sm truncate" title={targetUser.email || '私密信息'}>
-                        {targetUser.email || '********@***.***'}
+                        {targetUser.email || 'ta不想让你看ta的邮箱！'}
                       </p>
                     </div>
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">

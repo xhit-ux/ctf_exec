@@ -19,6 +19,7 @@ type User struct {
 	LastLoginAt  *time.Time `json:"last_login_at"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
+	Preferences  string     `json:"preferences,omitempty"` // JSON 字符串存储用户偏好
 }
 
 // RegisterRequest 注册请求
@@ -45,6 +46,7 @@ type UpdateProfileRequest struct {
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
 	Bio         string `json:"bio"`
+	EmailPublic bool   `json:"email_public"`      // 是否公开邮箱
 }
 
 // ErrorResponse 错误响应

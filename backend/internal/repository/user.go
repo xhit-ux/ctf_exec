@@ -75,7 +75,8 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 	query := `
 		SELECT id, username, email, password_hash, role, display_name, 
 		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
-		       last_login_at, created_at, updated_at
+		       last_login_at, created_at, updated_at,
+		       COALESCE(preferences, '{}')
 		FROM users WHERE username = ? AND is_active = 1
 	`
 
@@ -84,6 +85,7 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 		&user.Role, &user.DisplayName, &user.AvatarURL, &user.Bio,
 		&user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
 		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.Preferences,
 	)
 
 	if err == sql.ErrNoRows {
@@ -102,7 +104,8 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	query := `
 		SELECT id, username, email, password_hash, role, display_name, 
 		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
-		       last_login_at, created_at, updated_at
+		       last_login_at, created_at, updated_at,
+		       COALESCE(preferences, '{}')
 		FROM users WHERE id = ? AND is_active = 1
 	`
 
@@ -111,6 +114,7 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 		&user.Role, &user.DisplayName, &user.AvatarURL, &user.Bio,
 		&user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
 		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.Preferences,
 	)
 
 	if err == sql.ErrNoRows {
@@ -230,12 +234,29 @@ func (r *UserRepository) UpdateAvatarURL(userID, avatarURL string) error {
 
 // UpdateProfile 更新用户信息
 func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileRequest) error {
+	// 使用 JSON_SET 来设置 email_public 字段
+	// 使用 CAST(? AS JSON) 确保布尔值被正确存储为 JSON 布尔值
+	// Go的bool类型在MySQL中可能被转换为整数1/0，所以需要转换为字符串'true'/'false'
+	var emailPublicStr string
+	if req.EmailPublic {
+		emailPublicStr = "true"
+	} else {
+		emailPublicStr = "false"
+	}
+	
 	query := `
 		UPDATE users 
-		SET display_name = ?, email = ?, bio = ?, updated_at = NOW() 
+		SET display_name = ?, email = ?, bio = ?, 
+			preferences = JSON_SET(
+				COALESCE(preferences, '{}'),
+				'$.email_public', CAST(? AS JSON)
+			),
+			updated_at = NOW() 
 		WHERE id = ? AND is_active = 1
 	`
-	result, err := r.db.Exec(query, req.DisplayName, req.Email, req.Bio, userID)
+	params := []interface{}{req.DisplayName, req.Email, req.Bio, emailPublicStr, userID}
+	
+	result, err := r.db.Exec(query, params...)
 	if err != nil {
 		return fmt.Errorf("更新用户信息失败: %w", err)
 	}

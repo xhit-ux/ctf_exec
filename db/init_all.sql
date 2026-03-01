@@ -73,7 +73,7 @@ CREATE TABLE users (
     registration_ip VARCHAR(45),
     
     -- System
-    preferences JSON,
+    preferences JSON DEFAULT (JSON_OBJECT()),
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     

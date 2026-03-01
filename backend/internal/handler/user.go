@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -125,7 +126,17 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 		return
 	}
 
-	// 脱敏处理，公开资料不显示邮箱
+	// 解析用户偏好设置
+	type UserPreferences struct {
+		EmailPublic bool `json:"email_public"`
+	}
+	var preferences UserPreferences
+	if user.Preferences != "" {
+		// 忽略解析错误，默认为 false
+		json.Unmarshal([]byte(user.Preferences), &preferences)
+	}
+
+	// 公开个人资料结构
 	type PublicUser struct {
 		Username    string `json:"username"`
 		DisplayName string `json:"display_name"`
@@ -135,6 +146,8 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 		SolvedCount int    `json:"solved_count"`
 		Role        string `json:"role"`
 		CreatedAt   string `json:"created_at"`
+		Email       string `json:"email,omitempty"` // 根据隐私设置决定是否包含
+		IsVerified  bool   `json:"is_verified,omitempty"` // 邮箱验证状态，当邮箱公开时包含
 	}
 
 	publicUser := PublicUser{
@@ -147,6 +160,32 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 		Role:        user.Role,
 		CreatedAt:   user.CreatedAt.Format("2006-01-02"),
 	}
+
+	// 检查用户是否已登录
+	claimsInterface, exists := c.Get("claims")
+	if exists {
+		claims, ok := claimsInterface.(*utils.Claims)
+		if ok {
+			// 用户已登录
+			if claims.UserID == user.ID {
+				// 查看自己的个人资料：始终显示邮箱（如果存在）
+				if user.Email != "" {
+					publicUser.Email = user.Email
+					publicUser.IsVerified = user.IsVerified
+				}
+			} else {
+				// 查看其他用户的个人资料：根据隐私设置决定
+				if preferences.EmailPublic && user.Email != "" {
+					publicUser.Email = user.Email
+					publicUser.IsVerified = user.IsVerified
+				}
+			}
+		} else {
+			// claims 类型错误，视为未登录
+			// 不包含邮箱
+		}
+	}
+	// 如果未登录，不包含邮箱
 
 	c.JSON(http.StatusOK, publicUser)
 }

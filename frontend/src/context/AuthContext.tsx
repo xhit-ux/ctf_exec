@@ -14,6 +14,7 @@ export interface User {
   is_verified: boolean
   created_at: string
   updated_at: string
+  preferences?: string  // JSON 字符串存储用户偏好
 }
 
 export interface AuthContextType {

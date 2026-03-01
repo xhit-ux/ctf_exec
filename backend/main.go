@@ -67,8 +67,8 @@ func main() {
 		users := api.Group("/users")
 		{
 			users.GET("/leaderboard", userHandler.GetLeaderboardGin)
-			users.GET("/profile", middleware.GinAuthMiddleware(), userHandler.UpdateProfileGin)
-			users.GET("/public", userHandler.GetPublicProfileGin)
+			users.PUT("/profile", middleware.GinAuthMiddleware(), userHandler.UpdateProfileGin)
+			users.GET("/public", middleware.GinOptionalAuthMiddleware(), userHandler.GetPublicProfileGin)
 		}
 
 		// 题目路由
