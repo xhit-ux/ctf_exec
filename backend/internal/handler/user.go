@@ -1,13 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
+	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
@@ -18,14 +18,9 @@ func NewUserHandler(userRepo *repository.UserRepository) *UserHandler {
 	return &UserHandler{userRepo: userRepo}
 }
 
-// GetLeaderboard 获取排行榜
-func (h *UserHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 GET 方法")
-		return
-	}
-
-	limitStr := r.URL.Query().Get("limit")
+// GetLeaderboardGin Gin 版本的获取排行榜
+func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
+	limitStr := c.Query("limit")
 	limit := 10 // 默认 10
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
@@ -35,16 +30,9 @@ func (h *UserHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.userRepo.GetLeaderboard(limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "获取排行榜失败")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取排行榜失败"})
 		return
 	}
-
-	// 敏感信息脱敏（虽然 User struct tag 控制了 json，但 Email 还是 public 的，前端可能需要 mask）
-	// 这里简单处理，不返回 email 如果不需要
-	// Note: models.User definition `json:"email"` means it sends email.
-	// For leaderboard, we probably shouldn't expose email.
-	// Create a SafeUser struct or just nil the email?
-	// Using a temporary anonymous struct slice or modification is safer.
 
 	type SafeUser struct {
 		Username    string `json:"username"`
@@ -67,34 +55,34 @@ func (h *UserHandler) GetLeaderboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(safeUsers)
+	c.JSON(http.StatusOK, safeUsers)
 }
 
-// UpdateProfile 更新当前用户信息
-func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPut {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 PUT 方法")
+// UpdateProfileGin Gin 版本的更新当前用户信息
+func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
+	// 从 Gin 上下文中获取用户信息
+	claimsInterface, exists := c.Get("claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
 		return
 	}
 
-	// 从 context 中获取用户信息
-	claims, ok := r.Context().Value("claims").(*utils.Claims)
+	claims, ok := claimsInterface.(*utils.Claims)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "未授权的请求")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
 	// 解析请求体
 	var req models.UpdateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体格式错误")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
 		return
 	}
 
 	// 简单验证
 	if req.DisplayName == "" {
-		writeError(w, http.StatusBadRequest, "显示名称不能为空")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能为空"})
 		return
 	}
 
@@ -103,11 +91,11 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if user != nil && user.Email != req.Email {
 		exists, err := h.userRepo.UserExistsByEmail(req.Email)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "检查邮箱失败")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查邮箱失败"})
 			return
 		}
 		if exists {
-			writeError(w, http.StatusBadRequest, "该邮箱已被其他账号使用")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该邮箱已被其他账号使用"})
 			return
 		}
 	}
@@ -115,34 +103,25 @@ func (h *UserHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	// 更新用户信息
 	err := h.userRepo.UpdateProfile(claims.UserID, &req)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 返回成功响应
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "更新成功",
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
-// GetPublicProfile 获取公开个人资料
-func (h *UserHandler) GetPublicProfile(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 GET 方法")
-		return
-	}
-
-	username := r.URL.Query().Get("username")
+// GetPublicProfileGin Gin 版本的获取公开个人资料
+func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
+	username := c.Query("username")
 	if username == "" {
-		writeError(w, http.StatusBadRequest, "缺少用户名参数")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
 		return
 	}
 
 	user, err := h.userRepo.GetUserByUsername(username)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "用户不存在")
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 
@@ -169,6 +148,5 @@ func (h *UserHandler) GetPublicProfile(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   user.CreatedAt.Format("2006-01-02"),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(publicUser)
+	c.JSON(http.StatusOK, publicUser)
 }

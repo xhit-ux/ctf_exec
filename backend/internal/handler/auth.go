@@ -1,14 +1,13 @@
 package handler
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
 	"strings"
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
+	"github.com/gin-gonic/gin"
 )
 
 // AuthHandler 认证处理器
@@ -22,23 +21,11 @@ func NewAuthHandler(authService service.AuthService, userService service.UserSer
 	return &AuthHandler{authService: authService, userService: userService}
 }
 
-// Register 处理用户注册
-func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 POST 方法")
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "读取请求体失败")
-		return
-	}
-	defer r.Body.Close()
-
+// RegisterGin Gin 版本的用户注册处理
+func (h *AuthHandler) RegisterGin(c *gin.Context) {
 	var req models.RegisterRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体格式错误")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
 		return
 	}
 
@@ -56,32 +43,18 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusBadRequest
 		}
 		
-		writeError(w, statusCode, errorMsg)
+		c.JSON(statusCode, gin.H{"error": errorMsg})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	c.JSON(http.StatusCreated, response)
 }
 
-// Login 处理用户登陆
-func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 POST 方法")
-		return
-	}
-
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "读取请求体失败")
-		return
-	}
-	defer r.Body.Close()
-
+// LoginGin Gin 版本的用户登录处理
+func (h *AuthHandler) LoginGin(c *gin.Context) {
 	var req models.LoginRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "请求体格式错误")
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
 		return
 	}
 
@@ -95,47 +68,35 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusBadRequest
 		}
 		
-		writeError(w, statusCode, errorMsg)
+		c.JSON(statusCode, gin.H{"error": errorMsg})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	c.JSON(http.StatusOK, response)
 }
 
-// GetCurrentUser 获取当前用户信息
-func (h *AuthHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "仅支持 GET 方法")
+// GetCurrentUserGin Gin 版本的获取当前用户信息处理
+func (h *AuthHandler) GetCurrentUserGin(c *gin.Context) {
+	// 从 Gin 上下文中获取用户信息
+	claimsInterface, exists := c.Get("claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
 		return
 	}
 
-	// 从 context 中获取用户信息
-	claims, ok := r.Context().Value("claims").(*utils.Claims)
+	claims, ok := claimsInterface.(*utils.Claims)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "未授权的请求")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
 	// 使用用户服务获取用户信息
 	user, err := h.userService.GetCurrentUser(claims.UserID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "用户不存在")
+		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(user)
+	c.JSON(http.StatusOK, user)
 }
 
-// 写入错误响应
-func writeError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(models.ErrorResponse{
-		Code:    statusCode,
-		Message: message,
-	})
-}

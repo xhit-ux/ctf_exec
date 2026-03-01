@@ -9,6 +9,7 @@ import (
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -34,61 +35,97 @@ func main() {
 
 	// 初始化处理器（使用服务层）
 	authHandler := handler.NewAuthHandler(authService, userService)
-	// TODO: 其他 Handler 需要类似的改造，暂时保持原样
 	userHandler := handler.NewUserHandler(userRepo)
 	probHandler := handler.NewProblemHandler(probRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo)
 
-	// CORS 中间件包装所有处理程序
-	corsHandler := middleware.CORSMiddleware(http.DefaultServeMux)
+	// 创建 Gin 引擎
+	r := gin.Default()
+
+	// 添加 CORS 中间件（使用 Gin 中间件）
+	r.Use(middleware.GinCORSMiddleware())
 
 	// 健康检查
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// 认证路由（使用服务层）
-	http.HandleFunc("/api/auth/register", authHandler.Register)
-	http.HandleFunc("/api/auth/login", authHandler.Login)
-	http.HandleFunc("/api/auth/me", middleware.AuthMiddleware(http.HandlerFunc(authHandler.GetCurrentUser)).ServeHTTP)
+	// API 路由组
+	api := r.Group("/api")
+	{
+		// 认证路由
+		auth := api.Group("/auth")
+		{
+			auth.POST("/register", authHandler.RegisterGin)
+			auth.POST("/login", authHandler.LoginGin)
+			auth.GET("/me", middleware.GinAuthMiddleware(), authHandler.GetCurrentUserGin)
+		}
 
-	// 用户路由（暂时保持原样）
-	http.HandleFunc("/api/users/leaderboard", userHandler.GetLeaderboard)
-	http.HandleFunc("/api/users/profile", middleware.AuthMiddleware(http.HandlerFunc(userHandler.UpdateProfile)).ServeHTTP)
-	http.HandleFunc("/api/users/public", userHandler.GetPublicProfile)
+		// 用户路由
+		users := api.Group("/users")
+		{
+			users.GET("/leaderboard", userHandler.GetLeaderboardGin)
+			users.GET("/profile", middleware.GinAuthMiddleware(), userHandler.UpdateProfileGin)
+			users.GET("/public", userHandler.GetPublicProfileGin)
+		}
 
-	// 题目路由（暂时保持原样）
-	http.HandleFunc("/api/problems", middleware.AuthMiddleware(http.HandlerFunc(probHandler.GetProblems)).ServeHTTP)
-	http.HandleFunc("/api/problems/detail", middleware.AuthMiddleware(http.HandlerFunc(probHandler.GetProblemDetail)).ServeHTTP)
+		// 题目路由
+		problems := api.Group("/problems")
+		{
+			problems.Use(middleware.GinAuthMiddleware())
+			problems.GET("", probHandler.GetProblemsGin)
+			problems.GET("/detail", probHandler.GetProblemDetailGin)
+		}
 
-	// 提交路由（暂时保持原样）
-	http.HandleFunc("/api/submissions", middleware.AuthMiddleware(http.HandlerFunc(subHandler.SubmitFlag)).ServeHTTP)
-	http.HandleFunc("/api/submissions/me", middleware.AuthMiddleware(http.HandlerFunc(subHandler.GetMySubmissions)).ServeHTTP)
+		// 提交路由
+		submissions := api.Group("/submissions")
+		{
+			submissions.Use(middleware.GinAuthMiddleware())
+			submissions.POST("", subHandler.SubmitFlagGin)
+			submissions.GET("/me", subHandler.GetMySubmissionsGin)
+		}
 
-	// 文件上传路由（暂时保持原样）
-	http.HandleFunc("/api/upload/avatar", middleware.AuthMiddleware(http.HandlerFunc(uploadHandler.UploadAvatar)).ServeHTTP)
-	http.HandleFunc("/api/upload/contest-cover", middleware.AuthMiddleware(http.HandlerFunc(uploadHandler.UploadContestCover)).ServeHTTP)
+		// 文件上传路由
+		upload := api.Group("/upload")
+		{
+			upload.Use(middleware.GinAuthMiddleware())
+			upload.POST("/avatar", uploadHandler.UploadAvatarGin)
+			upload.POST("/contest-cover", uploadHandler.UploadContestCoverGin)
+		}
 
-	// 团队路由（暂时保持原样）
-	http.HandleFunc("/api/teams", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.CreateTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/join", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.JoinTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/my", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.GetMyTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/leave", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.LeaveTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/dissolve", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.DissolveTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/leaderboard", teamHandler.GetTeamLeaderboard)
-	http.HandleFunc("/api/teams/public", middleware.OptionalAuthMiddleware(http.HandlerFunc(teamHandler.GetTeamPublic)).ServeHTTP)
-	http.HandleFunc("/api/teams/update", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.UpdateTeam)).ServeHTTP)
-	http.HandleFunc("/api/teams/kick", middleware.AuthMiddleware(http.HandlerFunc(teamHandler.KickMember)).ServeHTTP)
+		// 团队路由
+		teams := api.Group("/teams")
+		{
+			// 需要认证的路由
+			teams.Use(middleware.GinAuthMiddleware())
+			teams.POST("", teamHandler.CreateTeamGin)
+			teams.POST("/join", teamHandler.JoinTeamGin)
+			teams.GET("/my", teamHandler.GetMyTeamGin)
+			teams.POST("/leave", teamHandler.LeaveTeamGin)
+			teams.POST("/dissolve", teamHandler.DissolveTeamGin)
+			teams.POST("/update", teamHandler.UpdateTeamGin)
+			teams.POST("/kick", teamHandler.KickMemberGin)
+
+			// 不需要认证的路由（需要特殊处理）
+			// 对于可选认证的路由，我们需要单独处理
+			// 先移除认证中间件，然后添加可选认证中间件
+		}
+
+		// 团队公开路由（不需要认证或可选认证）
+		teamsPublic := api.Group("/teams")
+		{
+			teamsPublic.GET("/leaderboard", teamHandler.GetTeamLeaderboardGin)
+			teamsPublic.GET("/public", middleware.GinOptionalAuthMiddleware(), teamHandler.GetTeamPublicGin)
+		}
+	}
 
 	// 静态文件服务
-	fs := http.FileServer(http.Dir("../static"))
-	http.Handle("/static/", http.StripPrefix("/static/", fs))
+	r.Static("/static", "../static")
 
 	log.Println("✓ 服务器启动在 :8080")
-	if err := http.ListenAndServe(":8080", corsHandler); err != nil {
+	if err := r.Run(":8080"); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
 }
