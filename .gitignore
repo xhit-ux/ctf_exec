@@ -67,3 +67,8 @@ coverage/
 *.cover
 
 note/*
+
+backend_backup*
+
+# Static test files - generated during testing
+static/avatars/*
