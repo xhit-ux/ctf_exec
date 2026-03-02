@@ -3,6 +3,26 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AvatarUpload from '../components/AvatarUpload'
 
+
+function getLevelInfo(score: number = 0) {
+  if (score < 1000) {
+    return { title: '新手', color: 'text-gray-500' }
+  }
+  if (score < 3000) {
+    return { title: '入门', color: 'text-green-500' }
+  }
+  if (score < 4500) {
+    return { title: '进阶', color: 'text-cyan-500' }
+  }
+  if (score < 5500) {
+    return { title: '熟练', color: 'text-blue-500' }
+  }
+  if (score < 6000) {
+    return { title: '专家', color: 'text-purple-500' }
+  }
+  return { title: '大师', color: 'text-red-500' }
+}
+
 export default function Profile() {
   const { username: urlUsername } = useParams<{ username?: string }>()
   const { user: currentUser, token, refreshUser } = useAuth()
@@ -131,9 +151,13 @@ export default function Profile() {
     )
   }
 
-  const avatarUrl = targetUser.avatar_url?.startsWith('static/')
+  const avatarUrl = targetUser.avatar_url?.startsWith('static/')||targetUser.avatar_url?.startsWith('..\\static\\')
     ? `http://localhost:8080/${targetUser.avatar_url}`
     : targetUser.avatar_url
+
+  
+  const score = targetUser.score ?? 0
+  const level = getLevelInfo(score)
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -283,9 +307,14 @@ export default function Profile() {
                 </form>
               ) : (
                 <div className="space-y-8">
-                  <div>
-                    <h1 className="text-3xl font-extrabold text-gray-900 mb-2">{targetUser.display_name || targetUser.username}</h1>
-                    <p className="text-gray-500 font-medium">@{targetUser.username}</p>
+                  <div className={`text-xs ${level.color}`}>
+                      <h1 className="text-3xl font-extrabold mb-2">{targetUser.display_name || targetUser.username}</h1>
+                      <h2 className="text-1xl font-extrabold mb-2">
+                        <div>
+                          等级 · {level.title}
+                        </div>
+                      </h2>
+                    {/* <p className="text-gray-500 font-medium">@{targetUser.username}</p> */}
                   </div>
 
                   <div>

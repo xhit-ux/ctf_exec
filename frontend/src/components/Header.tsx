@@ -30,7 +30,7 @@ export default function Header() {
                 <Link to="/profile" className="flex items-center gap-2 hover:opacity-80 transition">
                   {user.avatar_url ? (
                     <img
-                      src={user.avatar_url.startsWith('static/') ? `http://localhost:8080/${user.avatar_url}` : user.avatar_url}
+                      src={user.avatar_url.startsWith('static/') ||user.avatar_url.startsWith('..\\static\\')? `http://localhost:8080/${user.avatar_url}` : user.avatar_url}
                       alt={user.username}
                       className="w-8 h-8 rounded-full object-cover border-2 border-gray-200"
                     />
