@@ -103,8 +103,8 @@ func main() {
 			teams.POST("", teamHandler.CreateTeamGin)
 			teams.POST("/join", teamHandler.JoinTeamGin)
 			teams.GET("/my", teamHandler.GetMyTeamGin)
-			teams.POST("/leave", teamHandler.LeaveTeamGin)
-			teams.POST("/dissolve", teamHandler.DissolveTeamGin)
+			teams.DELETE("/leave", teamHandler.LeaveTeamGin)
+			teams.DELETE("/dissolve", teamHandler.DissolveTeamGin)
 			teams.POST("/update", teamHandler.UpdateTeamGin)
 			teams.POST("/kick", teamHandler.KickMemberGin)
 
