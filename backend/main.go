@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/ctf_exec/backend/internal/cache"
+	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/db"
 	"github.com/ctf_exec/backend/internal/handler"
 	"github.com/ctf_exec/backend/internal/middleware"
@@ -13,6 +15,12 @@ import (
 )
 
 func main() {
+	// 加载配置
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		log.Fatalf("加载配置失败: %v", err)
+	}
+
 	// 初始化数据库
 	sqlDB, err := db.InitDB()
 	if err != nil {
@@ -20,6 +28,14 @@ func main() {
 	}
 	defer sqlDB.Close()
 	log.Println("✓ 数据库连接成功")
+
+	// 初始化Redis
+	redisClient, err := cache.InitRedis()
+	if err != nil {
+		log.Fatalf("Redis初始化失败: %v", err)
+	}
+	defer redisClient.Close()
+	log.Println("✓ Redis连接成功")
 
 	// 初始化仓库
 	userRepo := repository.NewUserRepository(sqlDB)
@@ -31,15 +47,35 @@ func main() {
 	authService := service.NewAuthService(userRepo)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
-	_ = service.NewTeamService(teamRepo)    // 暂时未使用
 
-	// 初始化处理器（使用服务层）
+	// 初始化排行榜服务
+	leaderboardService := service.NewLeaderboardService(
+		redisClient.Client,
+		userRepo,
+		teamRepo,
+		cfg,
+	)
+
+	// 初始化提交服务（注入排行榜服务和Redis客户端）
+	submissionService := service.NewSubmissionService(
+		subRepo,
+		probRepo,
+		leaderboardService,
+		redisClient.Client,
+		cfg.RateLimit.SubmissionLimit,
+		cfg.RateLimit.WindowSeconds,
+	)
+
+	// 初始化团队服务
+	teamService := service.NewTeamService(teamRepo)
+
+	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService)
-	userHandler := handler.NewUserHandler(userRepo)
+	userHandler := handler.NewUserHandler(userRepo, leaderboardService)
 	probHandler := handler.NewProblemHandler(probRepo)
-	subHandler := handler.NewSubmissionHandler(subRepo, probRepo)
+	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
-	teamHandler := handler.NewTeamHandler(teamRepo)
+	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
 
 	// 创建 Gin 引擎
 	r := gin.Default()
@@ -47,9 +83,17 @@ func main() {
 	// 添加 CORS 中间件（使用 Gin 中间件）
 	r.Use(middleware.GinCORSMiddleware())
 
-	// 健康检查
+	// 健康检查（包含Redis健康检查）
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+		redisHealthy := true
+		if err := redisClient.HealthCheck(c.Request.Context()); err != nil {
+			redisHealthy = false
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+			"redis":  redisHealthy,
+		})
 	})
 
 	// API 路由组
@@ -105,12 +149,8 @@ func main() {
 			teams.GET("/my", teamHandler.GetMyTeamGin)
 			teams.DELETE("/leave", teamHandler.LeaveTeamGin)
 			teams.DELETE("/dissolve", teamHandler.DissolveTeamGin)
-			teams.POST("/update", teamHandler.UpdateTeamGin)
+			teams.PUT("/update", teamHandler.UpdateTeamGin)
 			teams.POST("/kick", teamHandler.KickMemberGin)
-
-			// 不需要认证的路由（需要特殊处理）
-			// 对于可选认证的路由，我们需要单独处理
-			// 先移除认证中间件，然后添加可选认证中间件
 		}
 
 		// 团队公开路由（不需要认证或可选认证）
@@ -123,6 +163,15 @@ func main() {
 
 	// 静态文件服务
 	r.Static("/static", "../static")
+
+	// 启动时同步排行榜数据
+	go func() {
+		if err := leaderboardService.SyncAllScoresFromDB(); err != nil {
+			log.Printf("初始化同步排行榜数据失败: %v", err)
+		} else {
+			log.Println("✓ 排行榜数据同步完成")
+		}
+	}()
 
 	log.Println("✓ 服务器启动在 :8080")
 	if err := r.Run(":8080"); err != nil {

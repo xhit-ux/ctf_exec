@@ -272,3 +272,37 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 
 	return nil
 }
+
+// GetAllUsers 获取所有用户（用于排行榜同步）
+func (r *UserRepository) GetAllUsers() ([]*models.User, error) {
+	var users []*models.User
+	query := `
+		SELECT id, username, email, role, display_name, 
+		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
+		       created_at, updated_at
+		FROM users 
+		WHERE is_active = 1
+		ORDER BY score DESC, solved_count DESC
+	`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("查询所有用户失败: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		user := &models.User{}
+		err := rows.Scan(
+			&user.ID, &user.Username, &user.Email, &user.Role, &user.DisplayName,
+			&user.AvatarURL, &user.Bio, &user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
+			&user.CreatedAt, &user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("扫描用户行失败: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}

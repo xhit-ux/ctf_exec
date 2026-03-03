@@ -116,10 +116,15 @@ func (r *TeamRepository) GetTeamByID(teamID string) (*models.Team, error) {
 // GetTeamMembers 获取队伍成员
 func (r *TeamRepository) GetTeamMembers(teamID string) ([]*models.TeamMemberUser, error) {
 	rows, err := r.db.Query(`
-		SELECT u.id, u.username, u.display_name, u.avatar_url, u.score, u.solved_count, tm.role_in_team
+		SELECT 
+			u.id, u.username, u.email, u.password_hash, u.role, u.display_name,
+			COALESCE(u.avatar_url, ''), COALESCE(u.bio, ''), u.score, u.solved_count,
+			u.is_active, u.is_verified, u.last_login_at, u.created_at, u.updated_at,
+			COALESCE(u.preferences, '{}'), tm.role_in_team
 		FROM users u
 		JOIN team_members tm ON u.id = tm.user_id
 		WHERE tm.team_id = ?
+		ORDER BY tm.joined_at ASC
 	`, teamID)
 	if err != nil {
 		return nil, err
@@ -128,12 +133,17 @@ func (r *TeamRepository) GetTeamMembers(teamID string) ([]*models.TeamMemberUser
 
 	members := make([]*models.TeamMemberUser, 0)
 	for rows.Next() {
-		u := &models.TeamMemberUser{}
-		err := rows.Scan(&u.ID, &u.Username, &u.DisplayName, &u.AvatarURL, &u.Score, &u.SolvedCount, &u.RoleInTeam)
+		member := &models.TeamMemberUser{}
+		err := rows.Scan(
+			&member.ID, &member.Username, &member.Email, &member.PasswordHash, &member.Role, &member.DisplayName,
+			&member.AvatarURL, &member.Bio, &member.Score, &member.SolvedCount,
+			&member.IsActive, &member.IsVerified, &member.LastLoginAt, &member.CreatedAt, &member.UpdatedAt,
+			&member.Preferences, &member.RoleInTeam,
+		)
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, u)
+		members = append(members, member)
 	}
 	return members, nil
 }
@@ -367,4 +377,39 @@ func (r *TeamRepository) GetTeamByUserID(userID string) (*models.Team, error) {
 	}
 
 	return team, nil
+}
+
+// GetAllTeams 获取所有团队（用于排行榜同步）
+func (r *TeamRepository) GetAllTeams() ([]*models.Team, error) {
+	var teams []*models.Team
+	query := `
+		SELECT t.id, t.name, t.invite_code, t.leader_id, 
+		       COALESCE(SUM(u.score), 0) as total_score, 
+		       COALESCE(SUM(u.solved_count), 0) as total_solved, 
+		       t.created_at, t.updated_at
+		FROM teams t
+		LEFT JOIN users u ON t.id = u.team_id
+		GROUP BY t.id
+		ORDER BY total_score DESC, total_solved DESC
+	`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("查询所有团队失败: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		team := &models.Team{}
+		err := rows.Scan(
+			&team.ID, &team.Name, &team.InviteCode, &team.LeaderID,
+			&team.Score, &team.SolvedCount, &team.CreatedAt, &team.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("扫描团队行失败: %w", err)
+		}
+		teams = append(teams, team)
+	}
+
+	return teams, nil
 }

@@ -21,6 +21,7 @@ type SubmissionService interface {
 type SubmissionServiceImpl struct {
 	submissionRepo *repository.SubmissionRepository
 	problemRepo    *repository.ProblemRepository
+	leaderboardSvc LeaderboardService
 	redisClient    *redis.Client
 	rateLimit      int
 	windowSeconds  int
@@ -30,6 +31,7 @@ type SubmissionServiceImpl struct {
 func NewSubmissionService(
 	submissionRepo *repository.SubmissionRepository,
 	problemRepo *repository.ProblemRepository,
+	leaderboardSvc LeaderboardService,
 	redisClient *redis.Client,
 	rateLimit int,
 	windowSeconds int,
@@ -37,6 +39,7 @@ func NewSubmissionService(
 	return &SubmissionServiceImpl{
 		submissionRepo: submissionRepo,
 		problemRepo:    problemRepo,
+		leaderboardSvc: leaderboardSvc,
 		redisClient:    redisClient,
 		rateLimit:      rateLimit,
 		windowSeconds:  windowSeconds,
@@ -192,25 +195,12 @@ func (s *SubmissionServiceImpl) recordSubmission(userID string) error {
 
 // updateLeaderboard 更新排行榜
 func (s *SubmissionServiceImpl) updateLeaderboard(userID string) error {
-	ctx := context.Background()
-	key := "leaderboard:user"
-
-	// 从数据库获取用户分数
-	// 注意：这里我们假设分数已经在数据库更新了
-	// 为了简单，我们可以直接从数据库读取用户信息
-	// 或者传递分数参数，这里先简单实现
-
-	// 临时方案：先设置一个默认分数（实际应从数据库读取）
-	// 我们暂时使用占位符，实际实现应该获取真实分数
-	score := 100.0
-
-	// 更新 ZSET
-	err := s.redisClient.ZAdd(ctx, key, redis.Z{
-		Score:  score,
-		Member: userID,
-	}).Err()
+	// 从数据库同步用户最新分数到Redis排行榜
+	// 这会自动从数据库读取用户的真实分数（Score字段）
+	// 并更新到Global User Leaderboard中
+	err := s.leaderboardSvc.SyncUserScoreFromDB(userID)
 	if err != nil {
-		return fmt.Errorf("更新排行榜失败: %w", err)
+		return fmt.Errorf("同步用户分数到排行榜失败: %w", err)
 	}
 
 	return nil

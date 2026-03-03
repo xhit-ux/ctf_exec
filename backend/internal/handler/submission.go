@@ -5,17 +5,27 @@ import (
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
+	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
 type SubmissionHandler struct {
-	subRepo  *repository.SubmissionRepository
-	probRepo *repository.ProblemRepository
+	subRepo           *repository.SubmissionRepository
+	probRepo          *repository.ProblemRepository
+	submissionService service.SubmissionService
 }
 
-func NewSubmissionHandler(subRepo *repository.SubmissionRepository, probRepo *repository.ProblemRepository) *SubmissionHandler {
-	return &SubmissionHandler{subRepo: subRepo, probRepo: probRepo}
+func NewSubmissionHandler(
+	subRepo *repository.SubmissionRepository,
+	probRepo *repository.ProblemRepository,
+	submissionService service.SubmissionService,
+) *SubmissionHandler {
+	return &SubmissionHandler{
+		subRepo:           subRepo,
+		probRepo:          probRepo,
+		submissionService: submissionService,
+	}
 }
 
 // SubmitFlagGin Gin 版本的提交 Flag
@@ -44,20 +54,28 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 		return
 	}
 
-	// 服务器端验证 Flag
-	correctFlag, err := h.probRepo.GetFlagByProblemID(req.ProblemID)
-	if err != nil {
+	if req.ProblemID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的题目 ID"})
 		return
 	}
 
-	// 简单的字符串比较
-	isCorrect := (req.Flag == correctFlag)
-	req.IsCorrect = isCorrect
-
-	submission, err := h.subRepo.CreateSubmission(claims.UserID, &req)
+	// 使用 Service 层提交（包含限流和排行榜更新）
+	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交失败"})
+		// 根据错误类型返回适当的 HTTP 状态码
+		statusCode := http.StatusInternalServerError
+		errorMsg := err.Error()
+		
+		// 特定错误处理
+		if errorMsg == "你已经解决过这个题目了" {
+			statusCode = http.StatusConflict
+		} else if errorMsg == "提交过于频繁，请稍后再试" || errorMsg == "题目不存在" {
+			statusCode = http.StatusBadRequest
+		} else if errorMsg == "获取题目 Flag 失败" {
+			statusCode = http.StatusNotFound
+		}
+		
+		c.JSON(statusCode, gin.H{"error": errorMsg})
 		return
 	}
 

@@ -7,16 +7,21 @@ import (
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
+	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
 type UserHandler struct {
-	userRepo *repository.UserRepository
+	userRepo           *repository.UserRepository
+	leaderboardService service.LeaderboardService
 }
 
-func NewUserHandler(userRepo *repository.UserRepository) *UserHandler {
-	return &UserHandler{userRepo: userRepo}
+func NewUserHandler(userRepo *repository.UserRepository, leaderboardService service.LeaderboardService) *UserHandler {
+	return &UserHandler{
+		userRepo:           userRepo,
+		leaderboardService: leaderboardService,
+	}
 }
 
 // GetLeaderboardGin Gin 版本的获取排行榜

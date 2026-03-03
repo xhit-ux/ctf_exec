@@ -19,6 +19,7 @@ interface Team {
     leader_id: string
     score: number
     solved_count: number
+    created_at: string
     members: TeamMember[]
 }
 
@@ -294,10 +295,11 @@ export default function TeamProfile() {
                                 <div>
                                     <p className="text-[10px] text-gray-400 font-black uppercase">创建于</p>
                                     <p className="text-sm font-bold text-gray-900">
-                                        {new Date(team.members[0]?.id === team.leader_id ? team.members[0].id : team.leader_id).toLocaleDateString() === 'Invalid Date'
-                                            ? '未知'
-                                            : new Date().toLocaleDateString() // 这里后端没返回队伍创建时间，暂时用占位符
-                                        }
+                                        {new Date(team.created_at).toLocaleDateString('zh-CN', {
+                                            year: 'numeric',
+                                            month: '2-digit',
+                                            day: '2-digit'
+                                        })}
                                     </p>
                                 </div>
                             </div>
