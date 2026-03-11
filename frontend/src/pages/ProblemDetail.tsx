@@ -69,8 +69,25 @@ export default function ProblemDetail() {
         setSubmissions((s) => [record, ...s])
         setMsg(isCorrect ? '提交成功，Flag 正确！' : '提交已记录，Flag 错误')
       } else {
-        const errData = await response.json().catch(() => ({}))
-        setMsg(`提交失败: ${errData.message || '未知错误'}`)
+        try {
+          const errData = await response.json()
+          let userFriendlyMsg = errData.error || errData.message || response.statusText
+
+          // 根据状态码提供更友好的提示
+          if (response.status === 409) {
+            userFriendlyMsg = '您已经解决过这个题目，无需重复提交'
+          } else if (response.status === 400) {
+            userFriendlyMsg = errData.error || '请求参数错误'
+          } else if (response.status === 404) {
+            userFriendlyMsg = errData.error || '题目不存在'
+          } else if (response.status === 429) {
+            userFriendlyMsg = errData.error || '提交过于频繁，请稍后再试'
+          }
+
+          setMsg(`提交失败: ${userFriendlyMsg}`)
+        } catch {
+          setMsg(`提交失败: ${response.statusText || '未知错误'}`)
+        }
       }
     } catch (err) {
       console.error('网络错误', err)

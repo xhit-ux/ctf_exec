@@ -50,9 +50,9 @@ export default function Sidebar() {
       </div>
       <nav className="space-y-2">
         <Item to="/">题目列表</Item>
-        <Item to="/submissions">我的提交</Item>
+        <Item to="/submissions">提交记录</Item>
         <Item to="/profile">个人信息</Item>
-        <Item to="/team">我的队伍</Item>
+        <Item to="/team">队伍信息</Item>
         {user?.role === 'admin' && <Item to="/admin">管理</Item>}
       </nav>
       <div className="mt-4 pt-4 border-t text-xs text-gray-500">TODO//每日一题？每日鸡汤？</div>
