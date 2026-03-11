@@ -46,7 +46,7 @@ type UpdateProfileRequest struct {
 	DisplayName string `json:"display_name"`
 	Email       string `json:"email"`
 	Bio         string `json:"bio"`
-	EmailPublic bool   `json:"email_public"`      // 是否公开邮箱
+	EmailPublic bool   `json:"email_public"` // 是否公开邮箱
 }
 
 // ErrorResponse 错误响应

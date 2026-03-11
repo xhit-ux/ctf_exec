@@ -7,6 +7,7 @@ import (
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
+	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -63,14 +64,14 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		return nil, fmt.Errorf("题目不存在: %w", err)
 	}
 
-	// 获取题目的正确 flag
-	correctFlag, err := s.problemRepo.GetFlagByProblemID(problemID)
+	// 获取题目的正确 flag hash
+	correctFlagHash, err := s.problemRepo.GetFlagHashByProblemID(problemID)
 	if err != nil {
-		return nil, fmt.Errorf("获取题目 Flag 失败: %w", err)
+		return nil, fmt.Errorf("获取题目 Flag Hash 失败: %w", err)
 	}
 
-	// 验证 flag
-	isCorrect := (flag == correctFlag)
+	// 验证 flag (SHA256 哈希比较)
+	isCorrect := utils.VerifyFlagHash(flag, correctFlagHash)
 
 	// 检查是否已经正确提交过该题目
 	if isCorrect {

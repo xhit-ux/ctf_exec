@@ -8,7 +8,10 @@ function Item({ to, children }: { to: string; children: React.ReactNode }) {
     <NavLink
       to={to}
       className={({ isActive }) =>
-        'block px-3 py-2 rounded hover:bg-gray-50 ' + (isActive ? 'bg-gray-100 font-medium' : '')
+        'block px-3 py-2.5 rounded-lg font-medium transition-all duration-200 ' +
+        (isActive
+          ? 'bg-blue-100 text-blue-700 shadow-sm'
+          : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')
       }
     >
       {children}
@@ -41,21 +44,23 @@ export default function Sidebar() {
   const level = getLevelInfo(score)
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm">
-      <div className="mb-4">
-        <div className="text-sm font-medium">练习者</div>
-        <div className={`text-xs ${level.color}`}>
-          等级 · {score} · {level.title}
+    <div>
+      <div className="mb-6 pb-4 border-b">
+        <div className="text-sm font-semibold text-gray-900">练习者</div>
+        <div className={`text-xs ${level.color} font-medium mt-1`}>
+          {level.title} · {score} 分
         </div>
       </div>
-      <nav className="space-y-2">
-        <Item to="/">题目列表</Item>
-        <Item to="/submissions">提交记录</Item>
-        <Item to="/profile">个人信息</Item>
-        <Item to="/team">队伍信息</Item>
-        {user?.role === 'admin' && <Item to="/admin">管理</Item>}
+      <nav className="space-y-1">
+        <Item to="/">📋 题目列表</Item>
+        <Item to="/submissions">✅ 提交记录</Item>
+        <Item to="/profile">👤 个人信息</Item>
+        <Item to="/team">👥 队伍信息</Item>
+        {user?.role === 'admin' && <Item to="/admin">⚙️ 管理</Item>}
       </nav>
-      <div className="mt-4 pt-4 border-t text-xs text-gray-500">TODO//每日一题？每日鸡汤？</div>
+      <div className="mt-6 pt-4 border-t text-xs text-gray-400">
+        <p>✨ 每日一题正在计划中</p>
+      </div>
     </div>
   )
 }

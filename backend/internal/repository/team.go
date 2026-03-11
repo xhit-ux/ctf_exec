@@ -40,12 +40,12 @@ func (r *TeamRepository) CreateTeam(userID string, name string) (*models.Team, e
 	defer tx.Rollback()
 
 	// 1. 检查用户是否已在队伍中
-	var currentTeamID sql.NullString
-	err = tx.QueryRow("SELECT team_id FROM users WHERE id = ?", userID).Scan(&currentTeamID)
+	var memberCount int
+	err = tx.QueryRow("SELECT COUNT(*) FROM team_members WHERE user_id = ?", userID).Scan(&memberCount)
 	if err != nil {
 		return nil, err
 	}
-	if currentTeamID.Valid {
+	if memberCount > 0 {
 		return nil, fmt.Errorf("你已经在队伍中了")
 	}
 
@@ -71,12 +71,6 @@ func (r *TeamRepository) CreateTeam(userID string, name string) (*models.Team, e
 		return nil, fmt.Errorf("添加成员失败: %w", err)
 	}
 
-	// 4. 更新用户表
-	_, err = tx.Exec("UPDATE users SET team_id = ? WHERE id = ?", teamID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("更新用户信息失败: %w", err)
-	}
-
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -100,7 +94,8 @@ func (r *TeamRepository) GetTeamByID(teamID string) (*models.Team, error) {
 		       COALESCE(SUM(u.solved_count), 0) as total_solved, 
 		       t.created_at, t.updated_at
 		FROM teams t
-		LEFT JOIN users u ON t.id = u.team_id
+		LEFT JOIN team_members tm ON t.id = tm.team_id
+		LEFT JOIN users u ON tm.user_id = u.id
 		WHERE t.id = ?
 		GROUP BY t.id
 	`, teamID).Scan(
@@ -177,12 +172,12 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 	}
 
 	// 3. 检查用户是否已在队伍中
-	var currentTeamID sql.NullString
-	err = tx.QueryRow("SELECT team_id FROM users WHERE id = ?", userID).Scan(&currentTeamID)
+	var userInTeamCount int
+	err = tx.QueryRow("SELECT COUNT(*) FROM team_members WHERE user_id = ?", userID).Scan(&userInTeamCount)
 	if err != nil {
 		return err
 	}
-	if currentTeamID.Valid {
+	if userInTeamCount > 0 {
 		return fmt.Errorf("你已经在队伍中了，请先退出当前队伍")
 	}
 
@@ -192,12 +187,6 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 		INSERT INTO team_members (team_id, user_id, role_in_team, joined_at)
 		VALUES (?, ?, ?, ?)
 	`, teamID, userID, "member", now)
-	if err != nil {
-		return err
-	}
-
-	// 5. 更新用户表
-	_, err = tx.Exec("UPDATE users SET team_id = ? WHERE id = ?", teamID, userID)
 	if err != nil {
 		return err
 	}
@@ -215,7 +204,8 @@ func (r *TeamRepository) GetTeamRanking(limit int) ([]*models.TeamLeaderboardEnt
 			IFNULL(AVG(u.score), 0) as avg_score, 
 			COUNT(u.id) as member_count
 		FROM teams t
-		JOIN users u ON t.id = u.team_id
+		JOIN team_members tm ON t.id = tm.team_id
+		JOIN users u ON tm.user_id = u.id
 		GROUP BY t.id
 		ORDER BY avg_score DESC, total_score DESC
 		LIMIT ?
@@ -274,12 +264,6 @@ func (r *TeamRepository) KickMember(teamID string, userID string) error {
 		return err
 	}
 
-	// 3. 更新用户表
-	_, err = tx.Exec("UPDATE users SET team_id = NULL WHERE id = ?", userID)
-	if err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 
@@ -309,12 +293,6 @@ func (r *TeamRepository) LeaveTeam(userID string) error {
 		return err
 	}
 
-	// 3. 更新用户表
-	_, err = tx.Exec("UPDATE users SET team_id = NULL WHERE id = ?", userID)
-	if err != nil {
-		return err
-	}
-
 	return tx.Commit()
 }
 
@@ -334,19 +312,13 @@ func (r *TeamRepository) DissolveTeam(userID string) error {
 		return fmt.Errorf("仅队长可以解散队伍")
 	}
 
-	// 2. 更新所有成员的用户表
-	_, err = tx.Exec("UPDATE users SET team_id = NULL WHERE team_id = ?", teamID)
-	if err != nil {
-		return err
-	}
-
-	// 3. 删除所有成员记录
+	// 2. 删除所有成员记录
 	_, err = tx.Exec("DELETE FROM team_members WHERE team_id = ?", teamID)
 	if err != nil {
 		return err
 	}
 
-	// 4. 删除队伍记录
+	// 3. 删除队伍记录
 	_, err = tx.Exec("DELETE FROM teams WHERE id = ?", teamID)
 	if err != nil {
 		return err
@@ -358,7 +330,7 @@ func (r *TeamRepository) DissolveTeam(userID string) error {
 // GetTeamByUserID 获取用户所属的队伍
 func (r *TeamRepository) GetTeamByUserID(userID string) (*models.Team, error) {
 	var teamID sql.NullString
-	err := r.db.QueryRow("SELECT team_id FROM users WHERE id = ?", userID).Scan(&teamID)
+	err := r.db.QueryRow("SELECT team_id FROM team_members WHERE user_id = ?", userID).Scan(&teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +360,8 @@ func (r *TeamRepository) GetAllTeams() ([]*models.Team, error) {
 		       COALESCE(SUM(u.solved_count), 0) as total_solved, 
 		       t.created_at, t.updated_at
 		FROM teams t
-		LEFT JOIN users u ON t.id = u.team_id
+		LEFT JOIN team_members tm ON t.id = tm.team_id
+		LEFT JOIN users u ON tm.user_id = u.id
 		GROUP BY t.id
 		ORDER BY total_score DESC, total_solved DESC
 	`

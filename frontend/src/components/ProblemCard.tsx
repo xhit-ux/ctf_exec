@@ -2,42 +2,92 @@ import React from 'react'
 import { Problem } from '../types'
 
 export default function ProblemCard({ p }: { p: Problem }) {
+  // 防守性编程：确保 tags 总是数组
+  const tags = Array.isArray(p.tags) ? p.tags : []
+
+  const difficultyColor = {
+    '简单': 'bg-green-100 text-green-800',
+    '中等': 'bg-yellow-100 text-yellow-800',
+    '困难': 'bg-red-100 text-red-800',
+  }[p.difficulty] || 'bg-gray-100 text-gray-800'
+
   return (
-    <div className={`block p-4 bg-white border rounded shadow-sm hover:shadow-md h-full relative overflow-hidden ${p.is_solved ? 'border-green-200' : ''}`}>
+    <div
+      className={`flex flex-col h-full p-5 bg-white border-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group overflow-hidden relative ${
+        p.is_solved
+          ? 'border-green-300 bg-gradient-to-br from-white to-green-50'
+          : 'border-gray-200 hover:border-blue-300'
+      }`}
+    >
+      {/* Solved overlay gradient */}
       {p.is_solved && (
-        <div className="absolute inset-0 bg-green-500/10 pointer-events-none z-0"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-green-500/0 via-green-500/5 to-green-500/0 pointer-events-none" />
       )}
-      <div className="flex items-start justify-between gap-4 relative z-10">
+
+      {/* Header: Title and Solved Badge */}
+      <div className="flex items-start justify-between gap-3 mb-3 relative z-10">
         <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <div className="font-medium text-gray-900 text-lg">{p.title}</div>
-            {p.is_solved && (
-              <span className="flex items-center justify-center w-5 h-5 bg-green-500 rounded-full text-white">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                </svg>
+          <h3 className="font-bold text-lg text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
+            {p.title}
+          </h3>
+        </div>
+        {p.is_solved && (
+          <div className="flex-shrink-0">
+            <div className="inline-flex items-center justify-center w-6 h-6 bg-green-500 rounded-full shadow-md">
+              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Category & Difficulty */}
+      <div className="flex items-center gap-2 mb-4 relative z-10">
+        <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">
+          {p.category}
+        </span>
+        <span
+          className={`text-xs font-semibold px-2 py-1 rounded-full ${difficultyColor}`}
+        >
+          {p.difficulty}
+        </span>
+      </div>
+
+      {/* Tags */}
+      {tags.length > 0 && (
+        <div className="mb-4 relative z-10">
+          <div className="flex flex-wrap gap-1.5">
+            {tags.slice(0, 3).map((t) => (
+              <span
+                key={t}
+                className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-blue-50 to-purple-50 text-gray-700 border border-gray-200 font-medium"
+              >
+                #{t}
+              </span>
+            ))}
+            {tags.length > 3 && (
+              <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
+                +{tags.length - 3}
               </span>
             )}
           </div>
-          <div className="text-sm text-gray-500 mt-1">{p.category.toUpperCase()} · {p.difficulty}</div>
-          <div className="mt-3">
-            <div className="flex flex-col gap-2">
-              {(() => {
-                const mid = Math.ceil(p.tags.length / 2)
-                const rows = [p.tags.slice(0, mid), p.tags.slice(mid)]
-                return rows.map((row, idx) => (
-                  <div key={idx} className="flex gap-2">
-                    {row.map((t) => (
-                      <span key={t} className="text-xs px-2 py-1 rounded text-gray-600 bg-gray-100 whitespace-nowrap flex-shrink-0">{t}</span>
-                    ))}
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
         </div>
-        <div className="flex flex-col items-end">
-          <div className={`text-sm text-white px-3 py-1 rounded ${p.is_solved ? 'bg-green-600' : 'bg-blue-600'}`}>{p.points}</div>
+      )}
+
+      {/* Footer: Points */}
+      <div className="mt-auto pt-3 relative z-10 flex items-center justify-between border-t border-gray-100">
+        <div className={`text-xs font-semibold text-gray-500 uppercase tracking-wider ${p.is_solved ? 'text-green-600' : ''}`}>
+          {p.is_solved ? '✓ 已解决' : '未解决'}
+        </div>
+        <div className={`text-base font-bold px-4 py-2 rounded-lg ${
+          p.is_solved ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+        }`}>
+          {p.points}
         </div>
       </div>
     </div>

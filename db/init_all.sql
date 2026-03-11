@@ -121,7 +121,6 @@ CREATE TABLE problems (
     type VARCHAR(32) NOT NULL DEFAULT 'static', -- static / dynamic / containerized
     points INT NOT NULL DEFAULT 0,
     difficulty VARCHAR(16) NOT NULL,
-    tags JSON,
     description TEXT,
     flag VARCHAR(255) NOT NULL, -- Used as the answer
     flag_rule VARCHAR(255), -- metadata: 'fixed', 'regex', etc.
@@ -265,13 +264,25 @@ INSERT INTO teams (id, name, invite_code, score, solved_count)
 VALUES (UUID(), 'Team Phoenix', 'PHOENIX8', 0, 0), (UUID(), 'Red Team', 'REDTEAM1', 0, 0);
 
 -- Demo Problems
-INSERT INTO problems (id, short_id, title, category, points, difficulty, tags, description, flag) 
+INSERT INTO problems (id, short_id, title, category, points, difficulty, description, flag) 
 VALUES
-(1, 1, 'Hello Web', 'web', 100, '简单', '["http", "xss"]', '一个简单的 Web 题，目标是找到隐藏在页面中的 flag。', 'FLAG{demo}'),
-(2, 2, 'babyheap', 'pwn', 300, '困难', '["heap", "exploit"]', 'pwn 题，练习 heap 漏洞利用。', 'FLAG{pwn_demo}'),
-(3, 3, 'easycrypto', 'crypto', 150, '中等', '["rsa", "crypto"]', '基础的密码学题目，包含简短的 RSA 破解思路。', 'FLAG{crypto_demo}'),
-(4, 4, 'reverse-me', 'reverse', 200, '中等', '["binary", "reverse"]', '反汇编与逆向题，需要分析二进制行为。', 'FLAG{rev_demo}'),
-(5, 5, 'misc-challenge', 'misc', 120, '简单', '["logic"]', '杂项题目，考察逻辑与观察能力。', 'FLAG{misc_demo}');
+(1, 1, 'Hello Web', 'web', 100, '简单', '一个简单的 Web 题，目标是找到隐藏在页面中的 flag。', 'FLAG{demo}'),
+(2, 2, 'babyheap', 'pwn', 300, '困难', 'pwn 题，练习 heap 漏洞利用。', 'FLAG{pwn_demo}'),
+(3, 3, 'easycrypto', 'crypto', 150, '中等', '基础的密码学题目，包含简短的 RSA 破解思路。', 'FLAG{crypto_demo}'),
+(4, 4, 'reverse-me', 'reverse', 200, '中等', '反汇编与逆向题，需要分析二进制行为。', 'FLAG{rev_demo}'),
+(5, 5, 'misc-challenge', 'misc', 120, '简单', '杂项题目，考察逻辑与观察能力。', 'FLAG{misc_demo}');
+
+-- Insert tags for problems into challenge_tags table
+INSERT INTO challenge_tags (challenge_id, tag) VALUES
+(1, 'http'),
+(1, 'xss'),
+(2, 'heap'),
+(2, 'exploit'),
+(3, 'rsa'),
+(3, 'crypto'),
+(4, 'binary'),
+(4, 'reverse'),
+(5, 'logic');
 
 -- Demo Submissions (Alice solved Hello Web)
 INSERT INTO submissions (id, user_id, problem_id, flag, is_correct, score_awarded)
@@ -281,3 +292,47 @@ WHERE u.username = 'alice' AND p.id = 1;
 
 -- Update Alice's score
 UPDATE users SET score = 100, solved_count = 1 WHERE username = 'alice';
+
+-- ----------------------------------------------------------
+-- 7. Contest Demo Data
+-- ----------------------------------------------------------
+
+-- Demo Contests
+INSERT INTO contests (id, title, description, cover_image, start_time, end_time, scoring_type, created_at)
+VALUES
+  -- 正在进行中的比赛
+  ('aaaaaaaa-1111-1111-1111-111111111111', 'CTF 春季公开赛', '年度春季 CTF 公开赛，包含 Web、Pwn、Crypto、Reverse 等多个方向的题目。', '/static/covers/spring_ctf.jpg', NOW() - INTERVAL 1 DAY, NOW() + INTERVAL 2 DAY, 'jeopardy', NOW() - INTERVAL 5 DAY),
+  -- 即将开始的比赛
+  ('bbbbbbbb-2222-2222-2222-222222222222', '信息安全夏令营', '面向初学者的夏令营，包含教学题目和实战演练。', '/static/covers/summer_camp.jpg', NOW() + INTERVAL 3 DAY, NOW() + INTERVAL 10 DAY, 'jeopardy', NOW() - INTERVAL 2 DAY),
+  -- 已结束的比赛
+  ('cccccccc-3333-3333-3333-333333333333', '冬季挑战赛', '去年冬季举办的挑战赛，题目难度较高。', '/static/covers/winter_challenge.jpg', NOW() - INTERVAL 30 DAY, NOW() - INTERVAL 20 DAY, 'jeopardy', NOW() - INTERVAL 40 DAY);
+
+-- Associate problems with contests (contest_challenges)
+INSERT INTO contest_challenges (contest_id, challenge_id, score_override)
+VALUES
+  -- 春季公开赛包含所有题目
+  ('aaaaaaaa-1111-1111-1111-111111111111', 1, 100),
+  ('aaaaaaaa-1111-1111-1111-111111111111', 2, 300),
+  ('aaaaaaaa-1111-1111-1111-111111111111', 3, 150),
+  ('aaaaaaaa-1111-1111-1111-111111111111', 4, 200),
+  ('aaaaaaaa-1111-1111-1111-111111111111', 5, 120),
+  -- 夏令营只包含简单题目
+  ('bbbbbbbb-2222-2222-2222-222222222222', 1, 80),
+  ('bbbbbbbb-2222-2222-2222-222222222222', 3, 120),
+  ('bbbbbbbb-2222-2222-2222-222222222222', 5, 100),
+  -- 冬季挑战赛包含高难度题目
+  ('cccccccc-3333-3333-3333-333333333333', 2, 350),
+  ('cccccccc-3333-3333-3333-333333333333', 4, 250);
+
+-- Contest participants
+INSERT INTO contest_participants (contest_id, user_id, team_id, registered_at)
+VALUES
+  -- Alice 参加春季公开赛（个人参赛）
+  ('aaaaaaaa-1111-1111-1111-111111111111', '11111111-1111-1111-1111-111111111111', NULL, NOW() - INTERVAL 1 DAY),
+  -- Bob 参加春季公开赛（个人参赛）
+  ('aaaaaaaa-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', NULL, NOW() - INTERVAL 1 DAY),
+  -- Alice 参加夏令营（以团队形式）
+  ('bbbbbbbb-2222-2222-2222-222222222222', '11111111-1111-1111-1111-111111111111', (SELECT id FROM teams WHERE name = 'Team Phoenix' LIMIT 1), NOW() - INTERVAL 1 DAY),
+  -- Bob 参加冬季挑战赛（个人参赛）
+  ('cccccccc-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', NULL, NOW() - INTERVAL 25 DAY);
+

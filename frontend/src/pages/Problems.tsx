@@ -46,7 +46,10 @@ export default function Problems() {
 
   const allTags = useMemo(() => {
     const s = new Set<string>()
-    problems.forEach((p) => p.tags && p.tags.forEach((t) => s.add(t)))
+    problems.forEach((p) => {
+      const tags = Array.isArray(p.tags) ? p.tags : []
+      tags.forEach((t) => s.add(t))
+    })
     return Array.from(s)
   }, [problems])
 
@@ -54,8 +57,9 @@ export default function Problems() {
     return problems.filter((p) => {
       if (category !== 'all' && p.category !== category) return false
       if (difficulty !== 'all' && p.difficulty !== difficulty) return false
-      if (selectedTag && !p.tags?.includes(selectedTag)) return false
-      if (query && !(`${p.title} ${p.tags?.join(' ')}`.toLowerCase().includes(query.toLowerCase()))) return false
+      const tags = Array.isArray(p.tags) ? p.tags : []
+      if (selectedTag && !tags.includes(selectedTag)) return false
+      if (query && !(`${p.title} ${tags.join(' ')}`.toLowerCase().includes(query.toLowerCase()))) return false
       return true
     })
   }, [category, difficulty, query, selectedTag, problems])
@@ -65,31 +69,41 @@ export default function Problems() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-medium">题目列表</h2>
-        <div className="text-sm text-gray-500">共 {filtered.length} 道题（全部 {problems.length}）</div>
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-gray-900">题目列表</h2>
+        <p className="text-gray-500 text-sm mt-1">共 {filtered.length} 道题（全部 {problems.length}）</p>
       </div>
 
-      <div className="lg:flex lg:items-start lg:gap-6">
-        <aside className="mb-4 lg:mb-0 lg:w-72 flex-shrink-0">
-          <div className="bg-white p-4 rounded border shadow-sm sticky top-20">
-            <div className="mb-4">
-              <h3 className="text-sm font-medium mb-2">类别</h3>
+      {/* Floating Filter Panel */}
+      <div className="hidden lg:block fixed right-10 top-24 w-72 z-40">
+        <div className="bg-white p-5 rounded-lg shadow-lg border border-gray-200 max-h-[calc(100vh-120px)] overflow-y-auto">
+          <div className="space-y-5">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">类别</h3>
               <div className="flex flex-wrap gap-2">
                 {categories.map((c) => (
                   <button
                     key={c}
                     onClick={() => setCategory(c)}
-                    className={`px-3 py-1 rounded text-sm whitespace-nowrap flex-shrink-0 ${category === c ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+                    className={`px-3 py-2 rounded text-xs font-medium transition-all whitespace-nowrap flex-shrink-0 ${
+                      category === c
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
                     {c === 'all' ? '全部' : c.toUpperCase()}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="mb-4">
-              <h3 className="text-sm font-medium mb-2">难度</h3>
-              <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as any)} className="w-full border rounded px-2 py-1 text-sm">
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">难度</h3>
+              <select
+                value={difficulty}
+                onChange={(e) => setDifficulty(e.target.value as any)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
                 <option value="all">全部难度</option>
                 <option value="简单">简单</option>
                 <option value="中等">中等</option>
@@ -97,45 +111,95 @@ export default function Problems() {
               </select>
             </div>
 
-            <div className="mb-4">
-              <h3 className="text-sm font-medium mb-2">搜索</h3>
-              <input placeholder="搜索题目/标签" value={query} onChange={(e) => setQuery(e.target.value)} className="w-full border rounded px-3 py-1" />
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">搜索</h3>
+              <input
+                placeholder="搜索题目/标签"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
 
-            <div>
-              <h3 className="text-sm font-medium mb-2">标签</h3>
-              <div className="flex flex-col gap-2">
-                {(() => {
-                  const mid = Math.ceil(allTags.length / 2)
-                  const rows = [allTags.slice(0, mid), allTags.slice(mid)]
-                  return rows.map((row, idx) => (
-                    <div key={idx} className="flex gap-2 flex-wrap">
-                      {row.map((t) => (
-                        <button
-                          key={t}
-                          onClick={() => setSelectedTag(selectedTag === t ? null : t)}
-                          className={`text-xs px-2 py-1 rounded whitespace-nowrap flex-shrink-0 ${selectedTag === t ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
-                          {t}
-                        </button>
-                      ))}
-                    </div>
-                  ))
-                })()}
+            {allTags.length > 0 && (
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">标签</h3>
+                <div className="flex flex-wrap gap-2">
+                  {allTags.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setSelectedTag(selectedTag === t ? null : t)}
+                      className={`text-xs px-2.5 py-1.5 rounded transition-all whitespace-nowrap flex-shrink-0 ${
+                        selectedTag === t
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid - offset for fixed right panel */}
+      <main className="lg:pr-40">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {filtered.map((p: Problem) => (
+            <Link key={p.id} to={`/problem/${p.id}`} className="h-full">
+              <ProblemCard p={p} />
+            </Link>
+          ))}
+        </div>
+        
+        {filtered.length === 0 && (
+          <div className="text-center py-12">
+            <p className="text-gray-500 text-lg">没有找到匹配的题目</p>
+          </div>
+        )}
+      </main>
+
+      {/* Mobile Filter Toggle */}
+      <div className="lg:hidden mb-4 p-4 bg-white rounded-lg shadow-sm">
+        <div className="text-sm font-medium mb-3">快速筛选</div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-gray-600 block mb-2">类别</label>
+            <div className="flex flex-wrap gap-2">
+              {categories.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCategory(c)}
+                  className={`px-2 py-1 rounded text-xs ${category === c ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
+                >
+                  {c === 'all' ? '全' : c}
+                </button>
+              ))}
             </div>
           </div>
-        </aside>
-
-        <main className="flex-1">
-          <div className="hidden lg:block mb-4 text-sm text-gray-500">共 {filtered.length} 道题（全部 {problems.length}）</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filtered.map((p: Problem) => (
-              <Link key={p.id} to={`/problem/${p.id}`}>
-                <ProblemCard p={p} />
-              </Link>
-            ))}
+          <div>
+            <label className="text-xs text-gray-600 block mb-2">难度</label>
+            <select
+              value={difficulty}
+              onChange={(e) => setDifficulty(e.target.value as any)}
+              className="w-full border rounded px-2 py-1 text-xs"
+            >
+              <option value="all">全部</option>
+              <option value="简单">简单</option>
+              <option value="中等">中等</option>
+              <option value="困难">困难</option>
+            </select>
           </div>
-        </main>
+          <input
+            placeholder="搜索"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="w-full border rounded px-2 py-1 text-xs"
+          />
+        </div>
       </div>
     </div>
   )

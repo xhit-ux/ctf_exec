@@ -9,13 +9,16 @@ export default function Layout() {
     <div className="min-h-screen bg-gray-100 text-gray-900 flex flex-col">
       <Header />
       <div className="max-w-7xl mx-auto py-6 px-4 flex-1 w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
-          <aside className="hidden lg:block">
-            <div className="sticky top-6">
+        <div className="relative">
+          {/* Floating Sidebar */}
+          <aside className="hidden lg:block fixed left-10 top-24 w-60 z-40">
+            <div className="bg-white rounded-lg p-4 shadow-lg border border-gray-200">
               <Sidebar />
             </div>
           </aside>
-          <main>
+          
+          {/* Main Content - offset for fixed sidebar */}
+          <main className="lg:ml-40 lg:pr-10">
             <div className="bg-white rounded-lg p-6 shadow-sm min-h-[60vh]">
               <Outlet />
             </div>
