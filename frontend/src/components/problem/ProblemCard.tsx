@@ -1,5 +1,5 @@
 import React from 'react'
-import { Problem } from '../types'
+import { Problem } from '../../types'
 
 export default function ProblemCard({ p }: { p: Problem }) {
   // 防守性编程：确保 tags 总是数组
@@ -13,7 +13,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
 
   return (
     <div
-      className={`flex flex-col h-full p-5 bg-white border-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:-translate-y-1 cursor-pointer group overflow-hidden relative ${
+      className={`flex flex-col h-full p-6 bg-white border-2 rounded-xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer group overflow-hidden relative ${
         p.is_solved
           ? 'border-green-300 bg-gradient-to-br from-white to-green-50'
           : 'border-gray-200 hover:border-blue-300'
@@ -65,7 +65,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
             {tags.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-blue-50 to-purple-50 text-gray-700 border border-gray-200 font-medium"
+                className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-pink-50 to-rose-50 text-gray-700 border border-pink-100 font-medium"
               >
                 #{t}
               </span>

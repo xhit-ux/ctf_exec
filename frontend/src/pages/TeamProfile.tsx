@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import ContestHistory from '../components/profile/ContestHistory'
 
 interface TeamMember {
     id: string
@@ -135,10 +136,10 @@ export default function TeamProfile() {
     const isLeader = user?.id === team.leader_id
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8">
-            <div className="bg-white border rounded-2xl overflow-hidden shadow-sm">
-                <div className="h-48 bg-gradient-to-br from-indigo-600 via-blue-700 to-cyan-500 p-8 relative">
-                    <div className="flex justify-between items-start text-white">
+        <div className="max-w-6xl mx-auto space-y-8 p-4 lg:p-8">
+            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                <div className="h-48 bg-gradient-to-br from-pink-300/70 via-rose-200/70 to-pink-100/70 p-8 relative">
+                    <div className="flex justify-between items-start text-rose-950">
                         <div className="space-y-2">
                             {isEditing ? (
                                 <form onSubmit={handleUpdateName} className="flex items-center gap-2">
@@ -146,7 +147,7 @@ export default function TeamProfile() {
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="text-3xl font-black bg-white/10 border border-white/20 rounded px-2 py-1 outline-none focus:bg-white/20 transition text-white placeholder-white/50"
+                                        className="text-3xl font-black bg-white/40 border border-white/50 rounded px-2 py-1 outline-none focus:bg-white/60 transition text-rose-950 placeholder-rose-950/50"
                                         autoFocus
                                     />
                                     <button
@@ -159,7 +160,7 @@ export default function TeamProfile() {
                                     <button
                                         type="button"
                                         onClick={() => setIsEditing(false)}
-                                        className="text-white/80 hover:text-white text-sm font-bold px-2"
+                                        className="text-rose-900/80 hover:text-rose-950 text-sm font-bold px-2"
                                     >
                                         取消
                                     </button>
@@ -170,7 +171,7 @@ export default function TeamProfile() {
                                     {isLeader && (
                                         <button
                                             onClick={() => setIsEditing(true)}
-                                            className="px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-xs font-bold transition flex items-center gap-1"
+                                            className="px-2 py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold transition flex items-center gap-1"
                                         >
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -180,10 +181,10 @@ export default function TeamProfile() {
                                     )}
                                 </div>
                             )}
-                            <div className="flex items-center gap-4 text-white/80">
+                            <div className="flex items-center gap-4 text-rose-900/80">
                                 {team.invite_code && (
-                                    <div className="bg-white/10 border border-white/20 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-sm">
-                                        邀请码: <span className="text-yellow-300 font-mono tracking-widest">{team.invite_code}</span>
+                                    <div className="bg-white/40 border border-white/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-sm">
+                                        邀请码: <span className="text-rose-600 font-mono tracking-widest">{team.invite_code}</span>
                                     </div>
                                 )}
                                 <div className="text-sm font-bold">
@@ -193,9 +194,9 @@ export default function TeamProfile() {
                         </div>
 
                         <div className="text-right">
-                            <div className="bg-black/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 inline-block">
-                                <p className="text-4xl font-black leading-none mb-1">{team.score}</p>
-                                <p className="text-[10px] font-black uppercase tracking-widest opacity-60">团队总积分</p>
+                            <div className="bg-white/40 backdrop-blur-md rounded-2xl p-4 border border-rose-200/50 inline-block">
+                                <p className="text-4xl font-black leading-none mb-1 text-rose-950">{team.score}</p>
+                                <p className="text-[10px] font-black uppercase tracking-widest opacity-60 text-rose-900">团队总积分</p>
                             </div>
                         </div>
                     </div>
@@ -307,6 +308,9 @@ export default function TeamProfile() {
                     </div>
                 </div>
             </div>
+
+            {/* 赛事与战绩 (Mock Data) */}
+            <ContestHistory />
 
             <div className="flex justify-between items-center text-gray-400 text-sm italic px-4">
                 <p>只有队长可以修改队伍名称或移除队员。邀请码仅对本队成员可见。</p>

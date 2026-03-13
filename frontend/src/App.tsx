@@ -1,9 +1,9 @@
 import React from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
-import ProtectedRoute from './components/ProtectedRoute'
-import AuthenticatedRoute from './components/AuthenticatedRoute'
-import Layout from './components/Layout'
+import ProtectedRoute from './components/auth/ProtectedRoute'
+import AuthenticatedRoute from './components/auth/AuthenticatedRoute'
+import MainLayout from './layouts/MainLayout'
 
 // 页面组件
 import Login from './pages/Login'
@@ -22,7 +22,7 @@ export default function App() {
     <AuthProvider>
       <Router>
         <Routes>
-          <Route path="/" element={<Layout />}>
+          <Route path="/" element={<MainLayout />}>
             <Route index element={<Problems />} />
             <Route
               path="login"

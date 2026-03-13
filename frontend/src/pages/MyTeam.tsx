@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import ContestHistory from '../components/profile/ContestHistory'
 
 interface TeamMember {
     id: string
@@ -236,16 +237,16 @@ export default function MyTeam() {
     if (loading) return <div className="p-8 text-center text-gray-500">正在获取队伍信息...</div>
 
     return (
-        <div className="space-y-8">
+        <div className="max-w-6xl mx-auto space-y-8 p-4 lg:p-8">
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 border-b pb-2">我的队伍</h1>
-                <p className="text-gray-500 text-sm mt-1">
-                    在这里管理你的 CTF 团队，最多支持 5 名成员。
+                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">我的队伍</h1>
+                <p className="text-gray-500 font-medium mt-2">
+                    在这里管理你的 CTF 团队，邀请成员共同征战。
                 </p>
             </div>
 
             {message.text && (
-                <div className={`p-4 rounded-lg flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+                <div className={`p-4 rounded-xl flex items-center gap-3 shadow-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
                     }`}>
                     <span>{message.text}</span>
                 </div>
@@ -303,15 +304,15 @@ export default function MyTeam() {
                 </div>
             ) : (
                 <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
-                    <div className="p-8 bg-gradient-to-r from-blue-600 to-indigo-700 text-white relative">
+                    <div className="p-8 bg-gradient-to-r from-pink-300/70 to-rose-200/70 text-rose-950 relative">
                         <div className="flex justify-between items-start">
                             <div>
                                 <h2 className="text-3xl font-black mb-1">{team.name}</h2>
                                 <div className="flex items-center gap-4 mt-2">
-                                    <div className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold uppercase backdrop-blur-sm">
-                                        邀请码: <span className="text-yellow-300 font-mono tracking-widest ml-1">{team.invite_code}</span>
+                                    <div className="bg-white/40 border border-white/50 px-3 py-1 rounded-full text-xs font-bold uppercase backdrop-blur-sm">
+                                        邀请码: <span className="text-rose-600 font-mono tracking-widest ml-1">{team.invite_code}</span>
                                     </div>
-                                    <div className="text-sm font-medium opacity-80">
+                                    <div className="text-sm font-medium opacity-80 text-rose-900">
                                         成员: {team.members?.length || 0} / 5
                                     </div>
                                 </div>
@@ -418,6 +419,10 @@ export default function MyTeam() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+
+                        <div className="mt-8">
+                             <ContestHistory />
                         </div>
 
                         <div className="mt-12 flex justify-between items-center border-t pt-8">

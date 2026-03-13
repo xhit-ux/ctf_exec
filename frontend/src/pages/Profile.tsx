@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import AvatarUpload from '../components/AvatarUpload'
+import AvatarUpload from '../components/upload/AvatarUpload'
+import SubmissionHeatmap from '../components/profile/SubmissionHeatmap'
 
 
 function getLevelInfo(score: number = 0) {
@@ -160,10 +161,10 @@ export default function Profile() {
   const level = getLevelInfo(score)
 
   return (
-    <div className="max-w-4xl mx-auto p-4">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="max-w-6xl mx-auto p-4 lg:p-8">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
         {/* 背景装饰 */}
-        <div className="h-32 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+        <div className="h-32 bg-gradient-to-r from-pink-300/70 to-rose-200/70"></div>
 
         <div className="px-8 pb-8">
           <div className="relative flex justify-between items-end -mt-12 mb-6">
@@ -361,16 +362,16 @@ export default function Profile() {
             </div>
 
             <div className="space-y-6">
-              <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white shadow-lg">
-                <h3 className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-6">成就统计</h3>
+              <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-2xl p-6 text-gray-900 shadow-lg border border-pink-100">
+                <h3 className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-6">成就统计</h3>
                 <div className="space-y-6">
                   <div>
-                    <p className="text-3xl font-black text-white mb-1">{targetUser.score}</p>
-                    <p className="text-gray-400 text-xs font-medium">总积分</p>
+                    <p className="text-3xl font-black text-rose-950 mb-1">{targetUser.score}</p>
+                    <p className="text-rose-800/60 text-xs font-medium">总积分</p>
                   </div>
-                  <div className="pt-4 border-t border-gray-700">
-                    <p className="text-2xl font-bold text-white mb-1">{targetUser.solved_count}</p>
-                    <p className="text-gray-400 text-xs font-medium">解题数</p>
+                  <div className="pt-4 border-t border-pink-200/50">
+                    <p className="text-2xl font-bold text-rose-950 mb-1">{targetUser.solved_count}</p>
+                    <p className="text-rose-800/60 text-xs font-medium">解题数</p>
                   </div>
                 </div>
               </div>
@@ -391,6 +392,11 @@ export default function Profile() {
             </div>
           </div>
         </div>
+      </div>
+      
+      {/* 提交热力图区域 */}
+      <div className="mt-8">
+         <SubmissionHeatmap />
       </div>
     </div>
   )
