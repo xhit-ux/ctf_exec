@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Problem, Submission } from '../types'
+import { apiUrl } from '../utils/api'
 
 export default function ProblemDetail() {
   const { id } = useParams()
@@ -20,7 +21,7 @@ export default function ProblemDetail() {
     setFlag('')
 
     if (token) {
-      fetch(`http://localhost:8080/api/problems/detail?id=${pid}`, {
+      fetch(apiUrl(`/api/problems/detail?id=${pid}`), {
         headers: { Authorization: `Bearer ${token}` }
       })
         .then(res => {
@@ -41,7 +42,7 @@ export default function ProblemDetail() {
     }
 
     try {
-      const response = await fetch('http://localhost:8080/api/submissions', {
+      const response = await fetch(apiUrl('/api/submissions'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

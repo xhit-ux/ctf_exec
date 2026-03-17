@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react'
+import { apiUrl } from '../utils/api'
 
 export interface User {
   id: string
@@ -87,7 +88,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!token) return
 
     try {
-      const response = await fetch('http://localhost:8080/api/auth/me', {
+      const response = await fetch(apiUrl('/api/auth/me'), {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

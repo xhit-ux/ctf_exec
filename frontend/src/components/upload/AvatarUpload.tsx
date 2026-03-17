@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import ImageCropper from './ImageCropper'
+import { apiUrl, staticUrl } from '../../utils/api'
 
 interface AvatarUploadProps {
   currentAvatarUrl?: string
@@ -74,7 +75,7 @@ export default function AvatarUpload({ currentAvatarUrl, onUploadSuccess }: Avat
       formData.append('avatar', selectedFile)
 
       const token = localStorage.getItem('token')
-      const response = await fetch('http://localhost:8080/api/upload/avatar', {
+      const response = await fetch(apiUrl('/api/upload/avatar'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -114,9 +115,7 @@ export default function AvatarUpload({ currentAvatarUrl, onUploadSuccess }: Avat
   }
 
   // 格式化预览 URL，如果是 static 开头则拼上后端地址
-  const displayPreviewUrl = previewUrl.startsWith('static/')
-    ? `http://localhost:8080/${previewUrl}`
-    : previewUrl
+  const displayPreviewUrl = staticUrl(previewUrl)
 
   return (
     <div className="avatar-upload">

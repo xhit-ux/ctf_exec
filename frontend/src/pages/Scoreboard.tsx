@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { apiUrl } from '../utils/api'
 
 interface LeaderboardUser {
     rank: number
@@ -30,8 +31,8 @@ export default function Scoreboard() {
         setError('')
         try {
             const endpoint = activeTab === 'user'
-                ? 'http://localhost:8080/api/users/leaderboard'
-                : 'http://localhost:8080/api/teams/leaderboard'
+                ? apiUrl('/api/users/leaderboard')
+                : apiUrl('/api/teams/leaderboard')
 
             const res = await fetch(endpoint)
             if (!res.ok) {
@@ -84,7 +85,8 @@ export default function Scoreboard() {
             {error && <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>}
 
             <div className="bg-white border rounded-xl overflow-hidden shadow-sm min-h-[400px] flex flex-col">
-                <table className="w-full text-left border-collapse">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[600px]">
                     <thead>
                         <tr className="bg-gray-50 text-gray-400 text-xs font-black uppercase tracking-widest border-b">
                             <th className="px-6 py-4 w-20">排名</th>
@@ -148,6 +150,7 @@ export default function Scoreboard() {
                         )}
                     </tbody>
                 </table>
+              </div>
 
                 {loading && (
                     <div className="flex-1 flex items-center justify-center p-12">

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react'
 import ImageCropper from './ImageCropper'
+import { apiUrl, staticUrl } from '../../utils/api'
 
 interface ContestCoverUploadProps {
     currentCoverUrl?: string
@@ -70,7 +71,7 @@ export default function ContestCoverUpload({ currentCoverUrl, onUploadSuccess }:
             formData.append('cover', selectedFile)
 
             const token = localStorage.getItem('token')
-            const response = await fetch('http://localhost:8080/api/upload/contest-cover', {
+            const response = await fetch(apiUrl('/api/upload/contest-cover'), {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -109,9 +110,7 @@ export default function ContestCoverUpload({ currentCoverUrl, onUploadSuccess }:
         fileInputRef.current?.click()
     }
 
-    const displayPreviewUrl = previewUrl.startsWith('static/')
-        ? `http://localhost:8080/${previewUrl}`
-        : previewUrl
+    const displayPreviewUrl = staticUrl(previewUrl)
 
     return (
         <div className="contest-cover-upload">

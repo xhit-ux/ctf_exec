@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react'
 
 import { useAuth } from '../context/AuthContext'
 import { Submission } from '../types'
+import { apiUrl } from '../utils/api'
 
 export default function MySubmissions() {
   const [subs, setSubs] = useState<Submission[]>([])
@@ -17,7 +18,7 @@ export default function MySubmissions() {
 
     const fetchSubmissions = async () => {
       try {
-        const res = await fetch('http://localhost:8080/api/submissions/me', {
+        const res = await fetch(apiUrl('/api/submissions/me'), {
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -66,7 +67,8 @@ export default function MySubmissions() {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full text-left">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[600px]">
             <thead className="bg-gray-50/50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4 border-b border-gray-100">题目</th>
@@ -104,6 +106,7 @@ export default function MySubmissions() {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

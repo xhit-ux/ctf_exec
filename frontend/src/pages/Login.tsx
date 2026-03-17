@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { apiUrl } from '../utils/api'
 
 export default function Login() {
     const [username, setUsername] = useState('')
@@ -16,7 +17,7 @@ export default function Login() {
         setLoading(true)
 
         try {
-            const response = await fetch('http://localhost:8080/api/auth/login', {
+            const response = await fetch(apiUrl('/api/auth/login'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

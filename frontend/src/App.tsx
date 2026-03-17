@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import AuthenticatedRoute from './components/auth/AuthenticatedRoute'
 import MainLayout from './layouts/MainLayout'
+import RequiresDesktop from './components/layout/RequiresDesktop'
 
 // 页面组件
 import Login from './pages/Login'
@@ -23,7 +24,7 @@ export default function App() {
       <Router>
         <Routes>
           <Route path="/" element={<MainLayout />}>
-            <Route index element={<Problems />} />
+            <Route index element={<RequiresDesktop><Problems /></RequiresDesktop>} />
             <Route
               path="login"
               element={
@@ -54,7 +55,9 @@ export default function App() {
               path="problem/:id"
               element={
                 <ProtectedRoute>
-                  <ProblemDetail />
+                  <RequiresDesktop>
+                    <ProblemDetail />
+                  </RequiresDesktop>
                 </ProtectedRoute>
               }
             />
@@ -84,7 +87,9 @@ export default function App() {
               path="admin"
               element={
                 <ProtectedRoute requiredRole="admin">
-                  <Admin />
+                  <RequiresDesktop>
+                    <Admin />
+                  </RequiresDesktop>
                 </ProtectedRoute>
               }
             />

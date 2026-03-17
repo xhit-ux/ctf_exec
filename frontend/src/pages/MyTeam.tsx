@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
+import { apiUrl, staticUrl } from '../utils/api'
 
 interface TeamMember {
     id: string
@@ -35,7 +36,7 @@ export default function MyTeam() {
 
     const fetchTeam = async () => {
         try {
-            const response = await fetch('http://localhost:8080/api/teams/my', {
+            const response = await fetch(apiUrl('/api/teams/my'), {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -66,7 +67,7 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams', {
+            const response = await fetch(apiUrl('/api/teams'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -96,7 +97,7 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/join', {
+            const response = await fetch(apiUrl('/api/teams/join'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -129,7 +130,7 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/update', {
+            const response = await fetch(apiUrl('/api/teams/update'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -159,7 +160,7 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/kick', {
+            const response = await fetch(apiUrl('/api/teams/kick'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -187,7 +188,7 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/leave', {
+            const response = await fetch(apiUrl('/api/teams/leave'), {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -213,7 +214,7 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/dissolve', {
+            const response = await fetch(apiUrl('/api/teams/dissolve'), {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
@@ -379,7 +380,7 @@ export default function MyTeam() {
                                     <div className="relative">
                                         <div className="w-12 h-12 rounded-full overflow-hidden bg-white border border-gray-200">
                                             {member.avatar_url ? (
-                                                <img src={member.avatar_url.startsWith('static/') ? `http://localhost:8080/${member.avatar_url}` : member.avatar_url} alt={member.username} className="w-full h-full object-cover" />
+                                                <img src={staticUrl(member.avatar_url)} alt={member.username} className="w-full h-full object-cover" />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center font-bold text-blue-500 bg-blue-50">
                                                     {member.username[0].toUpperCase()}

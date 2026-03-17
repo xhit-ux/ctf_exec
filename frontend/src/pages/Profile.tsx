@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import AvatarUpload from '../components/upload/AvatarUpload'
 import SubmissionHeatmap from '../components/profile/SubmissionHeatmap'
+import { apiUrl, staticUrl } from '../utils/api'
 
 
 function getLevelInfo(score: number = 0) {
@@ -59,7 +60,7 @@ export default function Profile() {
           if (token) {
             headers['Authorization'] = `Bearer ${token}`
           }
-          const response = await fetch(`http://localhost:8080/api/users/public?username=${urlUsername}`, {
+          const response = await fetch(apiUrl(`/api/users/public?username=${urlUsername}`), {
             headers
           })
           if (response.ok) {
@@ -115,7 +116,7 @@ export default function Profile() {
     setMessage({ type: '', text: '' })
 
     try {
-      const response = await fetch('http://localhost:8080/api/users/profile', {
+      const response = await fetch(apiUrl('/api/users/profile'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -152,22 +153,20 @@ export default function Profile() {
     )
   }
 
-  const avatarUrl = targetUser.avatar_url?.startsWith('static/')||targetUser.avatar_url?.startsWith('..\\static\\')
-    ? `http://localhost:8080/${targetUser.avatar_url}`
-    : targetUser.avatar_url
+  const avatarUrl = staticUrl(targetUser.avatar_url)
 
   
   const score = targetUser.score ?? 0
   const level = getLevelInfo(score)
 
   return (
-    <div className="max-w-6xl mx-auto p-4 lg:p-8">
+    <div className="w-full max-w-6xl mx-auto p-4 lg:p-8 min-w-0">
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
         {/* 背景装饰 */}
         <div className="h-32 bg-gradient-to-r from-pink-300/70 to-rose-200/70"></div>
 
-        <div className="px-8 pb-8">
-          <div className="relative flex justify-between items-end -mt-12 mb-6">
+        <div className="p-6 md:px-8 md:pb-8">
+          <div className="relative flex flex-col sm:flex-row sm:justify-between items-center sm:items-end -mt-16 sm:-mt-12 mb-6 gap-4 sm:gap-0">
             <div className="relative">
               <div className="w-32 h-32 rounded-2xl border-4 border-white overflow-hidden bg-gray-100 shadow-md">
                 {targetUser.avatar_url ? (
@@ -307,9 +306,9 @@ export default function Profile() {
                   </div>
                 </form>
               ) : (
-                <div className="space-y-8">
-                  <div className={`text-xs ${level.color}`}>
-                      <h1 className="text-3xl font-extrabold mb-2">{targetUser.display_name || targetUser.username}</h1>
+                <div className="space-y-8 min-w-0">
+                  <div className={`text-xs ${level.color} min-w-0`}>
+                      <h1 className="text-3xl font-extrabold mb-2 break-words truncate">{targetUser.display_name || targetUser.username}</h1>
                       <h2 className="text-1xl font-extrabold mb-2">
                         <div>
                           等级 · {level.title}
@@ -325,9 +324,9 @@ export default function Profile() {
                     </p>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6 pt-4">
-                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center">
-                      <div className="flex justify-between items-center mb-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-4 w-full min-w-0">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center min-w-0">
+                      <div className="flex justify-between items-center mb-1 gap-2">
                         <p className="text-sm text-gray-500">电子邮箱</p>
                         {isOwnProfile && targetUser.email ? (
                           <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${targetUser.is_verified ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
@@ -345,11 +344,11 @@ export default function Profile() {
                           </span>
                         )}
                       </div>
-                      <p className="font-semibold text-gray-900 text-sm truncate" title={targetUser.email || '私密信息'}>
+                      <p className="font-semibold text-gray-900 text-sm truncate w-full" title={targetUser.email || '私密信息'}>
                         {targetUser.email || 'ta不想让你看ta的邮箱！'}
                       </p>
                     </div>
-                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center min-w-0">
                       <p className="text-sm text-gray-500 mb-1">角色</p>
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${targetUser.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                         }`}>
@@ -395,7 +394,7 @@ export default function Profile() {
       </div>
       
       {/* 提交热力图区域 */}
-      <div className="mt-8">
+      <div className="mt-8 w-full min-w-0 overflow-hidden">
          <SubmissionHeatmap />
       </div>
     </div>

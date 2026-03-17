@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
+import { apiUrl, staticUrl } from '../utils/api'
 
 interface TeamMember {
     id: string
@@ -39,7 +40,7 @@ export default function TeamProfile() {
     const fetchTeam = async () => {
         setLoading(true)
         try {
-            const response = await fetch(`http://localhost:8080/api/teams/public?id=${teamId}`, {
+            const response = await fetch(apiUrl(`/api/teams/public?id=${teamId}`), {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {}
             })
             if (response.ok) {
@@ -70,7 +71,7 @@ export default function TeamProfile() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/update', {
+            const response = await fetch(apiUrl('/api/teams/update'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -99,7 +100,7 @@ export default function TeamProfile() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch('http://localhost:8080/api/teams/kick', {
+            const response = await fetch(apiUrl('/api/teams/kick'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -138,16 +139,16 @@ export default function TeamProfile() {
     return (
         <div className="max-w-6xl mx-auto space-y-8 p-4 lg:p-8">
             <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="h-48 bg-gradient-to-br from-pink-300/70 via-rose-200/70 to-pink-100/70 p-8 relative">
-                    <div className="flex justify-between items-start text-rose-950">
-                        <div className="space-y-2">
+                <div className="h-auto sm:h-48 bg-gradient-to-br from-pink-300/70 via-rose-200/70 to-pink-100/70 p-6 sm:p-8 relative">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-start items-center text-rose-950 gap-6 sm:gap-0">
+                        <div className="space-y-3 w-full sm:w-auto flex flex-col items-center sm:items-start text-center sm:text-left">
                             {isEditing ? (
-                                <form onSubmit={handleUpdateName} className="flex items-center gap-2">
+                                <form onSubmit={handleUpdateName} className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                                     <input
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="text-3xl font-black bg-white/40 border border-white/50 rounded px-2 py-1 outline-none focus:bg-white/60 transition text-rose-950 placeholder-rose-950/50"
+                                        className="text-2xl sm:text-3xl font-black bg-white/40 border border-white/50 rounded px-2 py-1 outline-none focus:bg-white/60 transition text-rose-950 placeholder-rose-950/50 w-[200px] sm:w-auto text-center sm:text-left"
                                         autoFocus
                                     />
                                     <button
@@ -166,12 +167,12 @@ export default function TeamProfile() {
                                     </button>
                                 </form>
                             ) : (
-                                <div className="flex items-center gap-3">
-                                    <h1 className="text-4xl font-black tracking-tight">{team.name}</h1>
+                                <div className="flex flex-col sm:flex-row items-center gap-3">
+                                    <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{team.name}</h1>
                                     {isLeader && (
                                         <button
                                             onClick={() => setIsEditing(true)}
-                                            className="px-2 py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold transition flex items-center gap-1"
+                                            className="px-2 py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold transition flex items-center gap-1 mt-2 sm:mt-0"
                                         >
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -181,20 +182,20 @@ export default function TeamProfile() {
                                     )}
                                 </div>
                             )}
-                            <div className="flex items-center gap-4 text-rose-900/80">
+                            <div className="flex flex-wrap justify-center sm:justify-start items-center gap-4 text-rose-900/80">
                                 {team.invite_code && (
                                     <div className="bg-white/40 border border-white/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-sm">
                                         邀请码: <span className="text-rose-600 font-mono tracking-widest">{team.invite_code}</span>
                                     </div>
                                 )}
-                                <div className="text-sm font-bold">
+                                <div className="text-sm font-bold bg-white/30 px-3 py-1 rounded-full">
                                     成员数: {team.members.length} / 5
                                 </div>
                             </div>
                         </div>
 
-                        <div className="text-right">
-                            <div className="bg-white/40 backdrop-blur-md rounded-2xl p-4 border border-rose-200/50 inline-block">
+                        <div className="w-full sm:w-auto text-center sm:text-right mt-2 sm:mt-0">
+                            <div className="bg-white/40 backdrop-blur-md rounded-2xl p-4 border border-rose-200/50 inline-block w-full sm:w-auto">
                                 <p className="text-4xl font-black leading-none mb-1 text-rose-950">{team.score}</p>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-60 text-rose-900">团队总积分</p>
                             </div>
@@ -219,7 +220,7 @@ export default function TeamProfile() {
                                         <div className="relative">
                                             <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white border border-gray-200 shadow-sm">
                                                 {member.avatar_url ? (
-                                                    <img src={member.avatar_url.startsWith('static/') ? `http://localhost:8080/${member.avatar_url}` : member.avatar_url} alt={member.username} className="w-full h-full object-cover" />
+                                                    <img src={staticUrl(member.avatar_url)} alt={member.username} className="w-full h-full object-cover" />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center font-bold text-blue-500 bg-blue-50 text-xl">
                                                         {member.username[0].toUpperCase()}

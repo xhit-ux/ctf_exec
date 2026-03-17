@@ -152,7 +152,7 @@ export default function SubmissionHeatmap() {
   }
 
   return (
-    <div className="w-full">
+    <div className="w-full min-w-0">
       <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
         <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
@@ -160,8 +160,8 @@ export default function SubmissionHeatmap() {
         活跃度 (最近一年)
       </h3>
 
-      <div className="bg-[#f6f8fa] border border-[#d0d7de] p-5 rounded-lg overflow-x-auto">
-        <div className="min-w-max">
+      <div className="bg-[#f6f8fa] border border-[#d0d7de] p-3 sm:p-5 rounded-lg overflow-x-auto">
+        <div className="min-w-max pb-2">
           <div className="mb-2 pl-10">
             <div className="relative h-5" style={{ width: `${gridPixelWidth}px` }}>
               {monthMarkers.map((marker) => (

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import ProblemCard from '../components/problem/ProblemCard'
 import { useAuth } from '../context/AuthContext'
 import { Problem } from '../types'
+import { apiUrl } from '../utils/api'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
@@ -22,7 +23,7 @@ export default function Problems() {
       return
     }
 
-    fetch('http://localhost:8080/api/problems', {
+    fetch(apiUrl('/api/problems'), {
       headers: { Authorization: `Bearer ${token}` }
     })
       .then(async res => {
