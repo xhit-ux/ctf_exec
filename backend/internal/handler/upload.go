@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -100,7 +101,7 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 	}
 
 	// 验证管理员权限
-	if claims.Role != "admin" {
+	if claims.Role != models.RoleAdmin && claims.Role != models.RoleRoot {
 		c.JSON(403, gin.H{"error": "仅管理员可上传比赛封面"})
 		return
 	}

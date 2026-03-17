@@ -6,6 +6,7 @@ import "time"
 type Submission struct {
 	ID           string    `json:"id"`
 	UserID       string    `json:"user_id"`
+	ContestID    *string   `json:"contest_id,omitempty"`
 	ProblemID    int       `json:"problem_id"`
 	Flag         string    `json:"flag"`
 	IsCorrect    bool      `json:"is_correct"`
@@ -15,7 +16,8 @@ type Submission struct {
 
 // CreateSubmissionRequest 创建提交请求
 type CreateSubmissionRequest struct {
-	ProblemID int    `json:"problem_id"`
-	Flag      string `json:"flag"`
-	IsCorrect bool   `json:"is_correct"` // 暂时由前端传递验证结果
+	ProblemID int     `json:"problem_id"`
+	Flag      string  `json:"flag"`
+	ContestID *string `json:"contest_id,omitempty"`
+	IsCorrect bool    `json:"is_correct"` // 由服务层计算
 }

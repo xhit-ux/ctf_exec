@@ -17,3 +17,25 @@ type ProblemDetail struct {
 	Problem
 	FlagHash string `json:"-"` // 不序列化
 }
+
+// CreateProblemRequest 创建题目请求
+type CreateProblemRequest struct {
+	Title       string   `json:"title"`
+	Category    string   `json:"category"`
+	Points      int      `json:"points"`
+	Difficulty  string   `json:"difficulty"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Flag        string   `json:"flag"`
+}
+
+// UpdateProblemRequest 更新题目请求
+type UpdateProblemRequest struct {
+	Title       string   `json:"title"`
+	Category    string   `json:"category"`
+	Points      int      `json:"points"`
+	Difficulty  string   `json:"difficulty"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Flag        string   `json:"flag"`
+}

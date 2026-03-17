@@ -17,6 +17,59 @@ type UserHandler struct {
 	leaderboardService service.LeaderboardService
 }
 
+// PatchUserRoleGin root 修改用户角色。
+func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
+	claimsInterface, exists := c.Get("claims")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
+		return
+	}
+
+	claims, ok := claimsInterface.(*utils.Claims)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
+		return
+	}
+
+	targetUserID := c.Param("id")
+	if targetUserID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户ID"})
+		return
+	}
+
+	var req models.UpdateUserRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	req.Role = models.NormalizeRole(req.Role)
+	if !models.IsValidRole(req.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非法角色值"})
+		return
+	}
+
+	if claims.UserID == targetUserID && req.Role != models.RoleRoot {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "禁止 root 自降级"})
+		return
+	}
+
+	if err := h.userRepo.UpdateUserRole(claims.UserID, targetUserID, req.Role, req.Reason, c.ClientIP()); err != nil {
+		if err.Error() == "目标用户不存在" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if err.Error() == "角色未发生变化" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
+}
+
 func NewUserHandler(userRepo *repository.UserRepository, leaderboardService service.LeaderboardService) *UserHandler {
 	return &UserHandler{
 		userRepo:           userRepo,
@@ -151,7 +204,7 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 		SolvedCount int    `json:"solved_count"`
 		Role        string `json:"role"`
 		CreatedAt   string `json:"created_at"`
-		Email       string `json:"email,omitempty"` // 根据隐私设置决定是否包含
+		Email       string `json:"email,omitempty"`       // 根据隐私设置决定是否包含
 		IsVerified  bool   `json:"is_verified,omitempty"` // 邮箱验证状态，当邮箱公开时包含
 	}
 

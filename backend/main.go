@@ -42,6 +42,7 @@ func main() {
 	probRepo := repository.NewProblemRepository(sqlDB)
 	subRepo := repository.NewSubmissionRepository(sqlDB)
 	teamRepo := repository.NewTeamRepository(sqlDB)
+	contestRepo := repository.NewContestRepository(sqlDB)
 
 	// 初始化服务层
 	authService := service.NewAuthService(userRepo)
@@ -57,10 +58,14 @@ func main() {
 	)
 
 	// 初始化提交服务（注入排行榜服务和Redis客户端）
+	contestService := service.NewContestService(contestRepo, teamRepo, leaderboardService)
+
+	// 初始化提交服务（注入排行榜服务和Redis客户端）
 	submissionService := service.NewSubmissionService(
 		subRepo,
 		probRepo,
 		leaderboardService,
+		contestService,
 		redisClient.Client,
 		cfg.RateLimit.SubmissionLimit,
 		cfg.RateLimit.WindowSeconds,
@@ -76,6 +81,7 @@ func main() {
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
+	contestHandler := handler.NewContestHandler(contestRepo, contestService)
 
 	// 创建 Gin 引擎
 	r := gin.Default()
@@ -123,6 +129,20 @@ func main() {
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
 		}
 
+		// 赛事公开路由
+		contests := api.Group("/contests")
+		{
+			contests.GET("", contestHandler.ListContestsGin)
+			contests.GET(":id", contestHandler.GetContestDetailGin)
+			contests.GET(":id/scoreboard", contestHandler.GetContestScoreboardGin)
+
+			contestAuth := contests.Group("")
+			contestAuth.Use(middleware.GinAuthMiddleware())
+			contestAuth.POST(":id/join", contestHandler.JoinContestGin)
+			contestAuth.POST(":id/leave", contestHandler.LeaveContestGin)
+			contestAuth.GET(":id/challenges", contestHandler.GetContestChallengesGin)
+		}
+
 		// 提交路由
 		submissions := api.Group("/submissions")
 		{
@@ -136,7 +156,36 @@ func main() {
 		{
 			upload.Use(middleware.GinAuthMiddleware())
 			upload.POST("/avatar", uploadHandler.UploadAvatarGin)
-			upload.POST("/contest-cover", uploadHandler.UploadContestCoverGin)
+			upload.POST("/contest-cover", middleware.RequireRoles(userRepo, "root", "admin"), uploadHandler.UploadContestCoverGin)
+		}
+
+		// 管理端路由
+		admin := api.Group("/admin")
+		{
+			admin.Use(middleware.GinAuthMiddleware())
+
+			adminUsers := admin.Group("/users")
+			{
+				adminUsers.PATCH(":id/role", middleware.RequireRoles(userRepo, "root"), userHandler.PatchUserRoleGin)
+			}
+
+			adminProblems := admin.Group("/problems")
+			{
+				adminProblems.Use(middleware.RequireRoles(userRepo, "root", "admin"))
+				adminProblems.POST("", probHandler.CreateProblemGin)
+				adminProblems.PUT(":id", probHandler.UpdateProblemGin)
+				adminProblems.DELETE(":id", probHandler.DeleteProblemGin)
+			}
+
+			adminContests := admin.Group("/contests")
+			{
+				adminContests.Use(middleware.RequireRoles(userRepo, "root", "admin"))
+				adminContests.POST("", contestHandler.CreateContestGin)
+				adminContests.PUT(":id", contestHandler.UpdateContestGin)
+				adminContests.DELETE(":id", contestHandler.DeleteContestGin)
+				adminContests.POST(":id/challenges", contestHandler.AddChallengeToContestGin)
+				adminContests.DELETE(":id/challenges/:challengeID", contestHandler.RemoveChallengeFromContestGin)
+			}
 		}
 
 		// 团队路由

@@ -58,6 +58,7 @@ export default function Header() {
             </Link>
             <nav className="hidden sm:flex sm:space-x-4 sm:items-center">
               <NavLinkItem to="/">题目大厅</NavLinkItem>
+              <NavLinkItem to="/contests">赛事大厅</NavLinkItem>
               <NavLinkItem to="/scoreboard">排行榜</NavLinkItem>
               {isAuthenticated && (
                 <>
@@ -164,6 +165,7 @@ export default function Header() {
         
         <div className="px-4 py-6 space-y-1 overflow-y-auto flex-1">
             <NavLinkItem to="/">题目大厅</NavLinkItem>
+          <NavLinkItem to="/contests">赛事</NavLinkItem>
             <NavLinkItem to="/scoreboard">排行榜</NavLinkItem>
             {isAuthenticated && (
               <>

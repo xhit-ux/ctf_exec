@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
@@ -79,6 +81,61 @@ func GinCORSMiddleware() gin.HandlerFunc {
 
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusOK)
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireRoles 要求当前登录用户属于指定角色之一。
+// 若传入 userRepo，会额外进行数据库角色一致性校验，降低角色变更后的旧 token 风险。
+func RequireRoles(userRepo *repository.UserRepository, roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		normalized := models.NormalizeRole(role)
+		if models.IsValidRole(normalized) {
+			allowed[normalized] = struct{}{}
+		}
+	}
+
+	return func(c *gin.Context) {
+		claimsInterface, exists := c.Get("claims")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
+			c.Abort()
+			return
+		}
+
+		claims, ok := claimsInterface.(*utils.Claims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
+			c.Abort()
+			return
+		}
+
+		effectiveRole := models.NormalizeRole(claims.Role)
+		if userRepo != nil {
+			user, err := userRepo.GetUserByID(claims.UserID)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "用户状态异常，请重新登录"})
+				c.Abort()
+				return
+			}
+
+			dbRole := models.NormalizeRole(user.Role)
+			if effectiveRole != dbRole {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "角色已变更，请重新登录"})
+				c.Abort()
+				return
+			}
+
+			effectiveRole = dbRole
+		}
+
+		if _, ok := allowed[effectiveRole]; !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "权限不足"})
+			c.Abort()
 			return
 		}
 

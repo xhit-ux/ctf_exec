@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,69 @@ import (
 // UserRepository 用户数据访问层
 type UserRepository struct {
 	db *sql.DB
+}
+
+// UpdateUserRole root 更新用户角色并写入审计日志。
+func (r *UserRepository) UpdateUserRole(operatorID, targetUserID, newRole, reason, ipAddress string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var oldRole string
+	selectQuery := `SELECT role FROM users WHERE id = ? AND is_active = 1 FOR UPDATE`
+	if scanErr := tx.QueryRow(selectQuery, targetUserID).Scan(&oldRole); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			err = fmt.Errorf("目标用户不存在")
+			return err
+		}
+		err = fmt.Errorf("查询目标用户角色失败: %w", scanErr)
+		return err
+	}
+
+	if oldRole == newRole {
+		err = fmt.Errorf("角色未发生变化")
+		return err
+	}
+
+	updateQuery := `UPDATE users SET role = ?, updated_at = NOW() WHERE id = ?`
+	if _, execErr := tx.Exec(updateQuery, newRole, targetUserID); execErr != nil {
+		err = fmt.Errorf("更新用户角色失败: %w", execErr)
+		return err
+	}
+
+	details := map[string]string{
+		"operator_id": operatorID,
+		"old_role":    oldRole,
+		"new_role":    newRole,
+		"reason":      reason,
+	}
+	detailsJSON, marshalErr := json.Marshal(details)
+	if marshalErr != nil {
+		err = fmt.Errorf("构造审计日志详情失败: %w", marshalErr)
+		return err
+	}
+
+	insertLogQuery := `
+		INSERT INTO user_activity_logs (id, user_id, action_type, target_id, details, ip_address, created_at)
+		VALUES (?, ?, 'role_change', ?, ?, ?, ?)
+	`
+	if _, execErr := tx.Exec(insertLogQuery, uuid.New().String(), operatorID, targetUserID, string(detailsJSON), ipAddress, time.Now()); execErr != nil {
+		err = fmt.Errorf("写入角色变更审计日志失败: %w", execErr)
+		return err
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("提交事务失败: %w", commitErr)
+	}
+
+	return nil
 }
 
 // NewUserRepository 创建用户仓库实例
@@ -243,7 +307,7 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 	} else {
 		emailPublicStr = "false"
 	}
-	
+
 	query := `
 		UPDATE users 
 		SET display_name = ?, email = ?, bio = ?, 
@@ -255,7 +319,7 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 		WHERE id = ? AND is_active = 1
 	`
 	params := []interface{}{req.DisplayName, req.Email, req.Bio, emailPublicStr, userID}
-	
+
 	result, err := r.db.Exec(query, params...)
 	if err != nil {
 		return fmt.Errorf("更新用户信息失败: %w", err)

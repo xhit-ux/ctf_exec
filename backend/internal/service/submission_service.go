@@ -13,7 +13,7 @@ import (
 
 // SubmissionService 提交服务接口
 type SubmissionService interface {
-	SubmitFlag(userID string, problemID int, flag string) (*models.Submission, error)
+	SubmitFlag(userID string, problemID int, flag string, contestID *string) (*models.Submission, error)
 	GetMySubmissions(userID string) ([]*models.Submission, error)
 	CheckRateLimit(userID string) (bool, int64, error)
 }
@@ -23,6 +23,7 @@ type SubmissionServiceImpl struct {
 	submissionRepo *repository.SubmissionRepository
 	problemRepo    *repository.ProblemRepository
 	leaderboardSvc LeaderboardService
+	contestSvc     ContestService
 	redisClient    *redis.Client
 	rateLimit      int
 	windowSeconds  int
@@ -33,6 +34,7 @@ func NewSubmissionService(
 	submissionRepo *repository.SubmissionRepository,
 	problemRepo *repository.ProblemRepository,
 	leaderboardSvc LeaderboardService,
+	contestSvc ContestService,
 	redisClient *redis.Client,
 	rateLimit int,
 	windowSeconds int,
@@ -41,6 +43,7 @@ func NewSubmissionService(
 		submissionRepo: submissionRepo,
 		problemRepo:    problemRepo,
 		leaderboardSvc: leaderboardSvc,
+		contestSvc:     contestSvc,
 		redisClient:    redisClient,
 		rateLimit:      rateLimit,
 		windowSeconds:  windowSeconds,
@@ -48,7 +51,7 @@ func NewSubmissionService(
 }
 
 // SubmitFlag 提交 flag
-func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string) (*models.Submission, error) {
+func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string, contestID *string) (*models.Submission, error) {
 	// 检查提交频率限制
 	allowed, remaining, err := s.CheckRateLimit(userID)
 	if err != nil {
@@ -73,8 +76,22 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	// 验证 flag (SHA256 哈希比较)
 	isCorrect := utils.VerifyFlagHash(flag, correctFlagHash)
 
-	// 检查是否已经正确提交过该题目
-	if isCorrect {
+	var contestScope *models.ContestParticipantScope
+	var contestScore int
+	if contestID != nil && *contestID != "" {
+		if s.contestSvc == nil {
+			return nil, fmt.Errorf("赛事服务不可用")
+		}
+		scope, score, err := s.contestSvc.ValidateContestSubmission(*contestID, userID, problemID)
+		if err != nil {
+			return nil, err
+		}
+		contestScope = scope
+		contestScore = score
+	}
+
+	// 非赛事场景：检查是否已经正确提交过该题目
+	if isCorrect && (contestID == nil || *contestID == "") {
 		submissions, err := s.submissionRepo.GetSubmissionsByUserID(userID)
 		if err == nil {
 			for _, sub := range submissions {
@@ -89,6 +106,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	req := &models.CreateSubmissionRequest{
 		ProblemID: problemID,
 		Flag:      flag,
+		ContestID: contestID,
 		IsCorrect: isCorrect,
 	}
 
@@ -100,6 +118,13 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 
 	// 更新排行榜（如果提交正确）
 	if isCorrect {
+		if contestID != nil && *contestID != "" {
+			err = s.contestSvc.ApplyContestSolve(*contestID, contestScope, contestScore, time.Now())
+			if err != nil {
+				fmt.Printf("更新赛事榜失败: %v\n", err)
+			}
+		}
+
 		// 更新用户分数到 Redis ZSET
 		err = s.updateLeaderboard(userID)
 		if err != nil {

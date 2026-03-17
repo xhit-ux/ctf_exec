@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/utils"
 )
 
 // ProblemRepository 题库数据访问层
@@ -129,4 +131,163 @@ func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Prob
 	}
 
 	return problems, nil
+}
+
+// CreateProblem 创建题目（管理端）。
+func (r *ProblemRepository) CreateProblem(req *models.CreateProblemRequest) (*models.Problem, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	insertProblemQuery := `
+		INSERT INTO problems (title, category, points, difficulty, description, flag_hash)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`
+	result, execErr := tx.Exec(
+		insertProblemQuery,
+		req.Title,
+		req.Category,
+		req.Points,
+		req.Difficulty,
+		req.Description,
+		utils.HashFlag(req.Flag),
+	)
+	if execErr != nil {
+		err = fmt.Errorf("创建题目失败: %w", execErr)
+		return nil, err
+	}
+
+	problemID, idErr := result.LastInsertId()
+	if idErr != nil {
+		err = fmt.Errorf("获取题目ID失败: %w", idErr)
+		return nil, err
+	}
+
+	if tagErr := r.syncProblemTagsTx(tx, int(problemID), req.Tags); tagErr != nil {
+		err = tagErr
+		return nil, err
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return nil, fmt.Errorf("提交事务失败: %w", commitErr)
+	}
+
+	return r.GetProblemByID(int(problemID))
+}
+
+// UpdateProblem 更新题目（管理端）。
+func (r *ProblemRepository) UpdateProblem(problemID int, req *models.UpdateProblemRequest) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var existsID int
+	checkQuery := `SELECT id FROM problems WHERE id = ?`
+	if scanErr := tx.QueryRow(checkQuery, problemID).Scan(&existsID); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			err = fmt.Errorf("题目不存在")
+			return err
+		}
+		err = fmt.Errorf("查询题目失败: %w", scanErr)
+		return err
+	}
+
+	updateQuery := `
+		UPDATE problems
+		SET title = ?, category = ?, points = ?, difficulty = ?, description = ?, updated_at = NOW()
+		WHERE id = ?
+	`
+	if _, execErr := tx.Exec(
+		updateQuery,
+		req.Title,
+		req.Category,
+		req.Points,
+		req.Difficulty,
+		req.Description,
+		problemID,
+	); execErr != nil {
+		err = fmt.Errorf("更新题目失败: %w", execErr)
+		return err
+	}
+
+	if strings.TrimSpace(req.Flag) != "" {
+		updateFlagQuery := `UPDATE problems SET flag_hash = ?, updated_at = NOW() WHERE id = ?`
+		if _, execErr := tx.Exec(updateFlagQuery, utils.HashFlag(req.Flag), problemID); execErr != nil {
+			err = fmt.Errorf("更新题目 flag 失败: %w", execErr)
+			return err
+		}
+	}
+
+	if tagErr := r.syncProblemTagsTx(tx, problemID, req.Tags); tagErr != nil {
+		err = tagErr
+		return err
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("提交事务失败: %w", commitErr)
+	}
+
+	return nil
+}
+
+// DeleteProblem 删除题目（管理端）。
+func (r *ProblemRepository) DeleteProblem(problemID int) error {
+	result, err := r.db.Exec(`DELETE FROM problems WHERE id = ?`, problemID)
+	if err != nil {
+		return fmt.Errorf("删除题目失败: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("获取影响行数失败: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("题目不存在")
+	}
+
+	return nil
+}
+
+func (r *ProblemRepository) syncProblemTagsTx(tx *sql.Tx, problemID int, tags []string) error {
+	if _, err := tx.Exec(`DELETE FROM challenge_tags WHERE challenge_id = ?`, problemID); err != nil {
+		return fmt.Errorf("清理题目标签失败: %w", err)
+	}
+
+	if len(tags) == 0 {
+		return nil
+	}
+
+	insertTagQuery := `INSERT INTO challenge_tags (challenge_id, tag) VALUES (?, ?)`
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		normalizedTag := strings.TrimSpace(tag)
+		if normalizedTag == "" {
+			continue
+		}
+		if _, ok := seen[normalizedTag]; ok {
+			continue
+		}
+		seen[normalizedTag] = struct{}{}
+
+		if _, err := tx.Exec(insertTagQuery, problemID, normalizedTag); err != nil {
+			return fmt.Errorf("写入题目标签失败: %w", err)
+		}
+	}
+
+	return nil
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Problem, Submission } from '../types'
 import { apiUrl } from '../utils/api'
@@ -7,6 +7,8 @@ import { apiUrl } from '../utils/api'
 export default function ProblemDetail() {
   const { id } = useParams()
   const pid = Number(id)
+  const [searchParams] = useSearchParams()
+  const contestID = searchParams.get('contest_id') || undefined
 
   const [problem, setProblem] = useState<Problem | null>(null)
   const [flag, setFlag] = useState('')
@@ -51,7 +53,7 @@ export default function ProblemDetail() {
         body: JSON.stringify({
           problem_id: problem.id,
           flag: flag,
-          // Removed is_correct, backend validates it
+          ...(contestID ? { contest_id: contestID } : {}),
         })
       })
 
@@ -98,6 +100,13 @@ export default function ProblemDetail() {
 
   return (
     <div>
+      {contestID && (
+        <div className="mb-4 text-sm bg-blue-50 border border-blue-100 text-blue-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
+          <span>当前提交将按赛事上下文计分（Contest ID: {contestID}）。</span>
+          <Link to={`/contests/${contestID}`} className="font-semibold hover:underline whitespace-nowrap">返回赛事</Link>
+        </div>
+      )}
+
       <h2 className="text-xl font-medium mb-4">{problem.title} · #{problem.id}</h2>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">

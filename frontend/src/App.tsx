@@ -11,6 +11,8 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Problems from './pages/Problems'
 import ProblemDetail from './pages/ProblemDetail'
+import Contests from './pages/contests'
+import ContestDetail from './pages/contestDetail'
 import MySubmissions from './pages/MySubmissions'
 import Profile from './pages/Profile'
 import Scoreboard from './pages/Scoreboard'
@@ -25,6 +27,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<MainLayout />}>
             <Route index element={<RequiresDesktop><Problems /></RequiresDesktop>} />
+            <Route path="contests" element={<Contests />} />
+            <Route path="contests/:id" element={<ContestDetail />} />
             <Route
               path="login"
               element={

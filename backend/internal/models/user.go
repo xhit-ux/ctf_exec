@@ -49,6 +49,12 @@ type UpdateProfileRequest struct {
 	EmailPublic bool   `json:"email_public"` // 是否公开邮箱
 }
 
+// UpdateUserRoleRequest root 修改用户角色请求
+type UpdateUserRoleRequest struct {
+	Role   string `json:"role"`
+	Reason string `json:"reason"`
+}
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Code    int    `json:"code"`
