@@ -1,6 +1,29 @@
 const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim()
+const rawServerHost = (import.meta.env.SERVER_HOST || import.meta.env.VITE_SERVER_HOST || '').trim()
+const rawServerPort = (import.meta.env.SERVER_PORT || import.meta.env.VITE_SERVER_PORT || '').trim()
+const rawApiProtocol = (import.meta.env.VITE_API_PROTOCOL || 'http').trim()
 
-export const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, '')
+function resolveApiBaseUrl(): string {
+  if (rawApiBaseUrl) {
+    return rawApiBaseUrl.replace(/\/+$/, '')
+  }
+
+  if (!rawServerHost && !rawServerPort) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(rawServerHost)) {
+    return rawServerHost.replace(/\/+$/, '')
+  }
+
+  const host = rawServerHost || 'localhost'
+  const protocol = /^https?$/i.test(rawApiProtocol) ? rawApiProtocol : 'http'
+  const portSegment = rawServerPort ? `:${rawServerPort}` : ''
+
+  return `${protocol}://${host}${portSegment}`.replace(/\/+$/, '')
+}
+
+export const API_BASE_URL = resolveApiBaseUrl()
 
 export function apiUrl(path: string): string {
   if (/^https?:\/\//i.test(path)) return path

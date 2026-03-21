@@ -222,8 +222,8 @@ func main() {
 		}
 	}()
 
-	log.Println("✓ 服务器启动在 :8080")
-	if err := r.Run(":8080"); err != nil {
+	log.Println("✓ 服务器启动在 :" + cfg.Server.Port)
+	if err := r.Run(":" + cfg.Server.Port); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
 }
