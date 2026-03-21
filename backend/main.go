@@ -45,7 +45,7 @@ func main() {
 	contestRepo := repository.NewContestRepository(sqlDB)
 
 	// 初始化服务层
-	authService := service.NewAuthService(userRepo)
+	authService := service.NewAuthService(userRepo, redisClient.Client, cfg)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
 
@@ -108,6 +108,7 @@ func main() {
 		// 认证路由
 		auth := api.Group("/auth")
 		{
+			auth.POST("/send-register-code", authHandler.SendRegisterCodeGin)
 			auth.POST("/register", authHandler.RegisterGin)
 			auth.POST("/login", authHandler.LoginGin)
 			auth.GET("/me", middleware.GinAuthMiddleware(), authHandler.GetCurrentUserGin)

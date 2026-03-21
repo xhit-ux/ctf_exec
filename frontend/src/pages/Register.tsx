@@ -1,24 +1,117 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import TurnstileWidget from '../components/auth/TurnstileWidget'
 
 export default function Register() {
     const [username, setUsername] = useState('')
     const [email, setEmail] = useState('')
+    const [emailCode, setEmailCode] = useState('')
     const [password, setPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
     const [loading, setLoading] = useState(false)
+    const [sendingCode, setSendingCode] = useState(false)
+    const [codeCooldown, setCodeCooldown] = useState(0)
     const [error, setError] = useState('')
+    const [botToken, setBotToken] = useState('')
+    const [showTurnstile, setShowTurnstile] = useState(false)
+    const [pendingSendAfterVerify, setPendingSendAfterVerify] = useState(false)
+    const [turnstileResetSignal, setTurnstileResetSignal] = useState(0)
+    const [captchaError, setCaptchaError] = useState('')
+
     const navigate = useNavigate()
     const { login } = useAuth()
+    const turnstileSiteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim()
+
+    useEffect(() => {
+        if (codeCooldown <= 0) return
+        const timer = window.setInterval(() => {
+            setCodeCooldown((prev) => (prev <= 1 ? 0 : prev - 1))
+        }, 1000)
+
+        return () => window.clearInterval(timer)
+    }, [codeCooldown])
+
+    const parseError = async (response: Response, fallback: string): Promise<string> => {
+        try {
+            const data = await response.json()
+            return data.error || data.message || fallback
+        } catch {
+            return fallback
+        }
+    }
+
+    const sendCodeRequest = async (token?: string) => {
+        const tokenToUse = token || botToken
+
+        setError('')
+        setCaptchaError('')
+
+        if (!email) {
+            setError('请先输入邮箱')
+            return
+        }
+
+        if (!turnstileSiteKey) {
+            setError('未配置 Turnstile 站点密钥，暂无法发送验证码')
+            return
+        }
+
+        setSendingCode(true)
+
+        try {
+            const response = await fetch(apiUrl('/api/auth/send-register-code'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ email, bot_token: tokenToUse }),
+            })
+
+            if (!response.ok) {
+                throw new Error(await parseError(response, '验证码发送失败'))
+            }
+
+            setCodeCooldown(60)
+            setShowTurnstile(false)
+        } catch (err) {
+            setError(err instanceof Error ? err.message : '验证码发送失败，请重试')
+        } finally {
+            setSendingCode(false)
+            setPendingSendAfterVerify(false)
+            setBotToken('')
+        }
+    }
+
+    const handleSendCode = async () => {
+        setError('')
+        setCaptchaError('')
+
+        if (!email) {
+            setError('请先输入邮箱')
+            return
+        }
+
+        if (!turnstileSiteKey) {
+            setError('未配置 Turnstile 站点密钥，暂无法发送验证码')
+            return
+        }
+
+        // 每次点击发送验证码都要求重新验证一次。
+        setBotToken('')
+        setPendingSendAfterVerify(true)
+        setShowTurnstile(true)
+        setTurnstileResetSignal((prev) => prev + 1)
+        setCaptchaError('请先完成验证，再自动发送验证码')
+    }
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
 
         // 本地验证
-        if (!username || !email || !password) {
+        if (!username || !email || !password || !emailCode) {
             setError('请填写所有字段')
             return
         }
@@ -41,12 +134,11 @@ export default function Register() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ username, email, password }),
+                body: JSON.stringify({ username, email, password, email_code: emailCode }),
             })
 
             if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.message || '注册失败')
+                throw new Error(await parseError(response, '注册失败'))
             }
 
             const data = await response.json()
@@ -113,16 +205,66 @@ export default function Register() {
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
+                    <div className="flex gap-2">
+                        <input
+                            type="email"
+                            className="flex-1 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            disabled={loading || sendingCode}
+                            placeholder="用于接收通知和找回密码"
+                            required
+                        />
+                        <button
+                            type="button"
+                            onClick={handleSendCode}
+                            disabled={loading || sendingCode || codeCooldown > 0}
+                            className="px-4 py-3 rounded-lg border border-indigo-200 text-indigo-600 font-semibold bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {sendingCode ? '发送中' : codeCooldown > 0 ? `${codeCooldown}s` : '发送验证码'}
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">邮箱验证码</label>
                     <input
-                        type="email"
+                        type="text"
                         className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        value={emailCode}
+                        onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         disabled={loading}
-                        placeholder="用于接收通知和找回密码"
+                        placeholder="输入 6 位验证码"
                         required
                     />
                 </div>
+                {showTurnstile && (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div className="text-xs text-gray-500 mb-2">完成人机验证后会自动发送验证码</div>
+                        {turnstileSiteKey ? (
+                        <TurnstileWidget
+                            siteKey={turnstileSiteKey}
+                            resetSignal={turnstileResetSignal}
+                            onVerify={(token) => {
+                                setBotToken(token)
+                                setCaptchaError('')
+                                if (pendingSendAfterVerify) {
+                                    void sendCodeRequest(token)
+                                }
+                            }}
+                            onExpire={() => setBotToken('')}
+                            onError={() => {
+                                setBotToken('')
+                                setCaptchaError('验证码组件加载失败，请刷新页面重试')
+                            }}
+                        />
+                        ) : (
+                            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                                Turnstile 未配置，请设置前端环境变量 `VITE_TURNSTILE_SITE_KEY`
+                            </div>
+                        )}
+                        {captchaError && <div className="text-xs text-red-600 mt-2">{captchaError}</div>}
+                    </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">密码</label>
                     <input

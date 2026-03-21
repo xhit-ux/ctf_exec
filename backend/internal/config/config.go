@@ -18,22 +18,24 @@ type Config struct {
 	Upload      UploadConfig
 	RateLimit   RateLimitConfig
 	Leaderboard LeaderboardConfig
+	Email       EmailConfig
+	Bot         BotProtectionConfig
 }
 
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
-	Host                 string
-	Port                 int
-	User                 string
-	Password             string
-	Name                 string
-	Charset              string
-	ParseTime            bool
-	Local                string
-	MaxOpenConns         int
-	MaxIdleConns         int
-	ConnMaxLifetime      time.Duration
-	ConnMaxIdleTime      time.Duration
+	Host            string
+	Port            int
+	User            string
+	Password        string
+	Name            string
+	Charset         string
+	ParseTime       bool
+	Local           string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
+	ConnMaxIdleTime time.Duration
 }
 
 // RedisConfig Redis配置
@@ -58,19 +60,35 @@ type JWTConfig struct {
 
 // UploadConfig 上传配置
 type UploadConfig struct {
-	StaticPath     string
-	MaxUploadSize  int64
+	StaticPath    string
+	MaxUploadSize int64
 }
 
 // RateLimitConfig 提交限流配置
 type RateLimitConfig struct {
-	SubmissionLimit   int
-	WindowSeconds    int
+	SubmissionLimit int
+	WindowSeconds   int
 }
 
 // LeaderboardConfig 排行榜配置
 type LeaderboardConfig struct {
 	CacheTTLSeconds int
+}
+
+// EmailConfig 邮件与邮箱验证码配置
+type EmailConfig struct {
+	ResendAPIKey                 string
+	ResendFromEmail              string
+	VerificationCodeTTLSeconds   int
+	VerificationSendCooldownSecs int
+	VerificationDailyLimit       int
+}
+
+// BotProtectionConfig 机器人验证配置（Turnstile）
+type BotProtectionConfig struct {
+	Enabled            bool
+	TurnstileSecretKey string
+	TurnstileVerifyURL string
 }
 
 // LoadConfig 从环境变量加载配置
@@ -136,6 +154,20 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("加载排行榜配置失败: %w", err)
 	}
 	config.Leaderboard = *leaderboardConfig
+
+	// 加载邮件配置
+	emailConfig, err := loadEmailConfig()
+	if err != nil {
+		return nil, fmt.Errorf("加载邮件配置失败: %w", err)
+	}
+	config.Email = *emailConfig
+
+	// 加载机器人验证配置
+	botConfig, err := loadBotProtectionConfig()
+	if err != nil {
+		return nil, fmt.Errorf("加载机器人验证配置失败: %w", err)
+	}
+	config.Bot = *botConfig
 
 	return config, nil
 }
@@ -236,6 +268,29 @@ func loadLeaderboardConfig() (*LeaderboardConfig, error) {
 
 	return &LeaderboardConfig{
 		CacheTTLSeconds: cacheTTL,
+	}, nil
+}
+
+// loadEmailConfig 加载邮件配置
+func loadEmailConfig() (*EmailConfig, error) {
+	return &EmailConfig{
+		ResendAPIKey:                 getEnv("RESEND_API_KEY", ""),
+		ResendFromEmail:              getEnv("RESEND_FROM_EMAIL", ""),
+		VerificationCodeTTLSeconds:   getEnvInt("EMAIL_VERIFY_CODE_TTL_SECONDS", 300),
+		VerificationSendCooldownSecs: getEnvInt("EMAIL_VERIFY_SEND_COOLDOWN_SECONDS", 60),
+		VerificationDailyLimit:       getEnvInt("EMAIL_VERIFY_DAILY_LIMIT", 20),
+	}, nil
+}
+
+// loadBotProtectionConfig 加载机器人验证配置
+func loadBotProtectionConfig() (*BotProtectionConfig, error) {
+	secretKey := getEnv("TURNSTILE_SECRET_KEY", "")
+	enabled := getEnvBool("TURNSTILE_ENABLED", secretKey != "")
+
+	return &BotProtectionConfig{
+		Enabled:            enabled,
+		TurnstileSecretKey: secretKey,
+		TurnstileVerifyURL: getEnv("TURNSTILE_VERIFY_URL", "https://challenges.cloudflare.com/turnstile/v0/siteverify"),
 	}, nil
 }
 

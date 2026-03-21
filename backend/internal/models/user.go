@@ -24,9 +24,17 @@ type User struct {
 
 // RegisterRequest 注册请求
 type RegisterRequest struct {
-	Username string `json:"username"`
+	Username  string `json:"username"`
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	EmailCode string `json:"email_code"`
+	BotToken  string `json:"bot_token"`
+}
+
+// SendRegisterCodeRequest 发送注册邮箱验证码请求
+type SendRegisterCodeRequest struct {
 	Email    string `json:"email"`
-	Password string `json:"password"`
+	BotToken string `json:"bot_token"`
 }
 
 // LoginRequest 登陆请求

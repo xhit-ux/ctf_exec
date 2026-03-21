@@ -105,7 +105,7 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash st
 		"user",       // 默认角色
 		req.Username, // 初始显示名称同用户名
 		1,            // is_active
-		0,            // is_verified
+		1,            // is_verified
 		now,
 		now,
 	)
@@ -125,7 +125,7 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash st
 		Role:        "user",
 		DisplayName: req.Username,
 		IsActive:    true,
-		IsVerified:  false,
+		IsVerified:  true,
 		Score:       0,
 		SolvedCount: 0,
 		CreatedAt:   now,
