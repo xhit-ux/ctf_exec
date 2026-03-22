@@ -9,6 +9,8 @@ USE ctf_exec;
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS user_activity_logs;
+DROP TABLE IF EXISTS contest_leaderboards;
+DROP TABLE IF EXISTS leaderboard_global;
 DROP TABLE IF EXISTS contest_scores;
 DROP TABLE IF EXISTS contest_participants;
 DROP TABLE IF EXISTS contest_challenges;
@@ -84,6 +86,41 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_score ON users(score DESC, last_login_at ASC);
 CREATE INDEX idx_users_role ON users(role);
+
+-- ----------------------------------------------------------
+-- 1.1 Global Leaderboard Snapshot
+-- ----------------------------------------------------------
+
+CREATE TABLE leaderboard_global (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    board_type VARCHAR(16) NOT NULL,
+
+    rank_num INT NOT NULL,
+    ref_id CHAR(36) NOT NULL,
+
+    username VARCHAR(32),
+    display_name VARCHAR(64),
+    avatar_url VARCHAR(1024),
+
+    team_name VARCHAR(100),
+
+    score INT NOT NULL DEFAULT 0,
+    solved_count INT NOT NULL DEFAULT 0,
+
+    total_score INT NOT NULL DEFAULT 0,
+    avg_score DECIMAL(10,2) NOT NULL DEFAULT 0,
+    member_count INT NOT NULL DEFAULT 0,
+
+    snapshot_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_board_type CHECK (board_type IN ('user', 'team')),
+    UNIQUE KEY uniq_board_rank (board_type, rank_num),
+    UNIQUE KEY uniq_board_ref (board_type, ref_id)
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_leaderboard_board_rank ON leaderboard_global(board_type, rank_num);
+CREATE INDEX idx_leaderboard_board_user ON leaderboard_global(board_type, username);
 
 -- ----------------------------------------------------------
 -- 2. Teams
@@ -372,6 +409,27 @@ CREATE TABLE contest_scores (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
 
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- Contest Realtime Leaderboard Metadata
+-- ----------------------------------------------------------
+
+CREATE TABLE contest_leaderboards (
+    contest_id CHAR(36) PRIMARY KEY,
+
+    mode VARCHAR(32) NOT NULL DEFAULT 'redis_realtime',
+    redis_user_key VARCHAR(255) NOT NULL,
+    redis_team_key VARCHAR(255) NOT NULL,
+
+    is_active TINYINT(1) NOT NULL DEFAULT 1,
+    last_synced_at DATETIME,
+
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_contest_lb_mode CHECK (mode IN ('redis_realtime', 'snapshot')),
+    FOREIGN KEY (contest_id) REFERENCES contests(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------

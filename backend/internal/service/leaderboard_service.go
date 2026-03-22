@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/cache"
@@ -42,9 +44,9 @@ type LeaderboardService interface {
 
 // LeaderboardServiceImpl 排行榜服务实现
 type LeaderboardServiceImpl struct {
-	redisClient   *redis.Client
-	userRepo      *repository.UserRepository
-	teamRepo      *repository.TeamRepository
+	redisClient    *redis.Client
+	userRepo       *repository.UserRepository
+	teamRepo       *repository.TeamRepository
 	leaderboardCfg config.LeaderboardConfig
 }
 
@@ -61,6 +63,47 @@ func NewLeaderboardService(
 		teamRepo:       teamRepo,
 		leaderboardCfg: cfg.Leaderboard,
 	}
+}
+
+// StartSnapshotScheduler 启动全站榜单快照定时任务。
+// 按 interval 周期刷新。
+func (s *LeaderboardServiceImpl) StartSnapshotScheduler(interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if err := s.RefreshGlobalLeaderboardSnapshot(); err != nil {
+				log.Printf("定时刷新全站榜单快照失败: %v", err)
+				continue
+			}
+			log.Println("✓ 全站榜单快照已刷新")
+		}
+	}()
+}
+
+// RefreshGlobalLeaderboardSnapshot 刷新用户与团队全站榜单快照。
+func (s *LeaderboardServiceImpl) RefreshGlobalLeaderboardSnapshot() error {
+	now := time.Now()
+
+	if err := s.userRepo.RefreshGlobalUserLeaderboardSnapshot(now); err != nil {
+		return fmt.Errorf("刷新用户榜单快照失败: %w", err)
+	}
+
+	if err := s.teamRepo.RefreshGlobalTeamLeaderboardSnapshot(now); err != nil {
+		return fmt.Errorf("刷新团队榜单快照失败: %w", err)
+	}
+
+	cachePayload := map[string]string{
+		"mode":         "snapshot",
+		"refreshed_at": now.Format(time.RFC3339),
+	}
+	raw, err := json.Marshal(cachePayload)
+	if err == nil {
+		_ = s.redisClient.Set(context.Background(), "leaderboard:global", raw, time.Duration(s.leaderboardCfg.CacheTTLSeconds)*time.Second).Err()
+	}
+
+	return nil
 }
 
 // UpdateGlobalUserScore 更新全站用户分数
@@ -302,30 +345,32 @@ func (s *LeaderboardServiceImpl) GetContestTeamRank(ctx context.Context, contest
 
 // SyncUserScoreFromDB 从数据库同步用户分数到Redis
 func (s *LeaderboardServiceImpl) SyncUserScoreFromDB(userID string) error {
-	// 从数据库获取用户信息
+	// 保留提交后增量同步能力：仅更新单个用户分数到 Redis，避免全量重算。
 	user, err := s.userRepo.GetUserByID(userID)
 	if err != nil {
 		return fmt.Errorf("获取用户信息失败: %w", err)
 	}
 
-	// 更新Redis排行榜
 	return s.UpdateGlobalUserScore(user.ID, float64(user.Score))
 }
 
 // SyncTeamScoreFromDB 从数据库同步团队分数到Redis
 func (s *LeaderboardServiceImpl) SyncTeamScoreFromDB(teamID string) error {
-	// 从数据库获取团队信息
+	// 保留提交后增量同步能力：仅更新单个团队分数到 Redis，避免全量重算。
 	team, err := s.teamRepo.GetTeamByID(teamID)
 	if err != nil {
 		return fmt.Errorf("获取团队信息失败: %w", err)
 	}
 
-	// 更新Redis排行榜
 	return s.UpdateGlobalTeamScore(team.ID, float64(team.Score))
 }
 
 // SyncAllScoresFromDB 从数据库同步所有用户和团队分数到Redis
 func (s *LeaderboardServiceImpl) SyncAllScoresFromDB() error {
+	if err := s.RefreshGlobalLeaderboardSnapshot(); err != nil {
+		return err
+	}
+
 	// 获取所有用户
 	users, err := s.userRepo.GetAllUsers()
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -71,15 +72,22 @@ func NewUserHandler(userRepo *repository.UserRepository, leaderboardService serv
 
 // GetLeaderboardGin Gin 版本的获取排行榜
 func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
-	limitStr := c.Query("limit")
-	limit := 10 // 默认 10
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
+	page := 1
+	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
 		}
 	}
 
-	users, err := h.userRepo.GetLeaderboard(limit)
+	pageSize := 5
+	if sizeStr := c.DefaultQuery("page_size", "5"); sizeStr != "" {
+		if s, err := strconv.Atoi(sizeStr); err == nil && s > 0 && s <= 100 {
+			pageSize = s
+		}
+	}
+
+	offset := (page - 1) * pageSize
+	users, total, err := h.userRepo.GetLeaderboardPage(offset, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取排行榜失败"})
 		return
@@ -102,11 +110,55 @@ func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
 			Score:       u.Score,
 			SolvedCount: u.SolvedCount,
 			AvatarURL:   u.AvatarURL,
-			Rank:        i + 1,
+			Rank:        offset + i + 1,
 		}
 	}
 
-	c.JSON(http.StatusOK, safeUsers)
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       safeUsers,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// GetLeaderboardUserByUsernameGin 按用户名检索排行榜用户
+func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
+	username := strings.TrimSpace(c.Query("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	u, rank, err := h.userRepo.GetLeaderboardUserByUsername(username)
+	if err != nil {
+		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": err.Error()})
+		return
+	}
+
+	type SafeUser struct {
+		Username    string `json:"username"`
+		DisplayName string `json:"display_name"`
+		Score       int    `json:"score"`
+		SolvedCount int    `json:"solved_count"`
+		AvatarURL   string `json:"avatar_url"`
+		Rank        int    `json:"rank"`
+	}
+
+	c.JSON(http.StatusOK, SafeUser{
+		Username:    u.Username,
+		DisplayName: u.DisplayName,
+		Score:       u.Score,
+		SolvedCount: u.SolvedCount,
+		AvatarURL:   u.AvatarURL,
+		Rank:        rank,
+	})
 }
 
 // UpdateProfileGin Gin 版本的更新当前用户信息

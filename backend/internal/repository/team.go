@@ -206,38 +206,121 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 
 // GetTeamRanking 获取团队排行榜 (按人均积分)
 func (r *TeamRepository) GetTeamRanking(limit int) ([]*models.TeamLeaderboardEntry, error) {
-	query := `
-		SELECT 
-			t.id,
-			t.name, 
-			IFNULL(SUM(u.score), 0) as total_score, 
-			IFNULL(AVG(u.score), 0) as avg_score, 
-			COUNT(u.id) as member_count
-		FROM teams t
-		JOIN team_members tm ON t.id = tm.team_id
-		JOIN users u ON tm.user_id = u.id
-		GROUP BY t.id
-		ORDER BY avg_score DESC, total_score DESC
-		LIMIT ?
-	`
-	rows, err := r.db.Query(query, limit)
+	ranking, _, err := r.GetTeamRankingPage(0, limit)
 	if err != nil {
 		return nil, err
+	}
+
+	return ranking, nil
+}
+
+// GetTeamRankingPage 分页获取团队排行榜（按人均积分）
+func (r *TeamRepository) GetTeamRankingPage(offset int, limit int) ([]*models.TeamLeaderboardEntry, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	var total int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM leaderboard_global WHERE board_type = 'team'`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT 
+			COALESCE(ref_id, ''),
+			COALESCE(team_name, ''),
+			total_score,
+			avg_score,
+			member_count,
+			rank_num
+		FROM leaderboard_global
+		WHERE board_type = 'team'
+		ORDER BY rank_num ASC
+		LIMIT ? OFFSET ?
+	`
+	rows, err := r.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 
 	ranking := make([]*models.TeamLeaderboardEntry, 0)
-	rank := 1
 	for rows.Next() {
-		entry := &models.TeamLeaderboardEntry{Rank: rank}
-		err := rows.Scan(&entry.ID, &entry.Name, &entry.TotalScore, &entry.AvgScore, &entry.MemberCount)
+		entry := &models.TeamLeaderboardEntry{}
+		err := rows.Scan(&entry.ID, &entry.Name, &entry.TotalScore, &entry.AvgScore, &entry.MemberCount, &entry.Rank)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		ranking = append(ranking, entry)
-		rank++
 	}
-	return ranking, nil
+	return ranking, total, nil
+}
+
+// RefreshGlobalTeamLeaderboardSnapshot 刷新团队全站排行榜快照
+func (r *TeamRepository) RefreshGlobalTeamLeaderboardSnapshot(snapshotAt time.Time) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启刷新团队榜单事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(`DELETE FROM leaderboard_global WHERE board_type = 'team'`); err != nil {
+		return fmt.Errorf("清理团队榜单快照失败: %w", err)
+	}
+
+	insertSQL := `
+		INSERT INTO leaderboard_global (
+			board_type, rank_num, ref_id, team_name, username, display_name, avatar_url,
+			score, solved_count, total_score, avg_score, member_count, snapshot_at
+		)
+		SELECT
+			'team' AS board_type,
+			ranked.rank_num,
+			ranked.id,
+			ranked.name,
+			NULL,
+			NULL,
+			NULL,
+			0,
+			0,
+			ranked.total_score,
+			ranked.avg_score,
+			ranked.member_count,
+			?
+		FROM (
+			SELECT
+				t.id,
+				t.name,
+				IFNULL(SUM(u.score), 0) AS total_score,
+				IFNULL(AVG(u.score), 0) AS avg_score,
+				COUNT(u.id) AS member_count,
+				(@rn := @rn + 1) AS rank_num
+			FROM teams t
+			JOIN team_members tm ON t.id = tm.team_id
+			JOIN users u ON tm.user_id = u.id AND u.is_active = 1
+			JOIN (SELECT @rn := 0) r
+			GROUP BY t.id, t.name
+			ORDER BY avg_score DESC, total_score DESC, t.id ASC
+		) ranked
+	`
+
+	if _, err = tx.Exec(insertSQL, snapshotAt); err != nil {
+		return fmt.Errorf("写入团队榜单快照失败: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("提交团队榜单快照事务失败: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateTeam 更新队伍信息

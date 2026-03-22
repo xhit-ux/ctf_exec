@@ -182,19 +182,40 @@ func (h *TeamHandler) DissolveTeamGin(c *gin.Context) {
 
 // GetTeamLeaderboardGin Gin 版本的获取团队排行榜
 func (h *TeamHandler) GetTeamLeaderboardGin(c *gin.Context) {
-	limitStr := c.Query("limit")
-	limit := 10
-	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-		limit = l
+	page := 1
+	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
 	}
 
-	ranking, err := h.teamService.GetTeamLeaderboard(limit)
+	pageSize := 5
+	if sizeStr := c.DefaultQuery("page_size", "5"); sizeStr != "" {
+		if s, err := strconv.Atoi(sizeStr); err == nil && s > 0 && s <= 100 {
+			pageSize = s
+		}
+	}
+
+	offset := (page - 1) * pageSize
+
+	ranking, total, err := h.teamRepo.GetTeamRankingPage(offset, pageSize)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取排行榜失败"})
 		return
 	}
 
-	c.JSON(http.StatusOK, ranking)
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       ranking,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
 }
 
 // GetTeamPublicGin Gin 版本的获取公共团队信息

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
@@ -118,6 +119,7 @@ func main() {
 		users := api.Group("/users")
 		{
 			users.GET("/leaderboard", userHandler.GetLeaderboardGin)
+			users.GET("/leaderboard/search", userHandler.GetLeaderboardUserByUsernameGin)
 			users.PUT("/profile", middleware.GinAuthMiddleware(), userHandler.UpdateProfileGin)
 			users.GET("/public", middleware.GinOptionalAuthMiddleware(), userHandler.GetPublicProfileGin)
 		}
@@ -222,6 +224,9 @@ func main() {
 			log.Println("✓ 排行榜数据同步完成")
 		}
 	}()
+
+	// 全站榜单采用延迟快照模式：每 5 分钟定时刷新一次。
+	leaderboardService.StartSnapshotScheduler(5 * time.Minute)
 
 	log.Println("✓ 服务器启动在 :" + cfg.Server.Port)
 	if err := r.Run(":" + cfg.Server.Port); err != nil {

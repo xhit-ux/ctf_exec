@@ -195,55 +195,142 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 
 // GetLeaderboard 获取排行榜
 func (r *UserRepository) GetLeaderboard(limit int) ([]*models.User, error) {
-	var users []*models.User
-	query := `
-		SELECT id, username, md5(email), role, display_name, 
-		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
-		       created_at
-		FROM users 
-		WHERE is_active = 1
-		ORDER BY score DESC, solved_count DESC, created_at ASC
-		LIMIT ?
-	`
-	// Note: I removed password_hash, updated_at etc. to keep it lighter,
-	// AND used md5(email) to pretend we map email to gravatar-ish id if needed,
-	// but actually the struct expectation requires matching fields.
-	// Let's stick to filling the struct.
-
-	query = `
-		SELECT id, username, email, role, display_name, 
-		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
-		       created_at, updated_at
-		FROM users 
-		WHERE is_active = 1
-		ORDER BY score DESC, solved_count DESC, created_at ASC
-		LIMIT ?
-	`
-
-	rows, err := r.db.Query(query, limit)
+	users, _, err := r.GetLeaderboardPage(0, limit)
 	if err != nil {
-		return nil, fmt.Errorf("查询排行榜失败: %w", err)
+		return nil, err
+	}
+
+	return users, nil
+}
+
+// GetLeaderboardPage 分页获取排行榜
+func (r *UserRepository) GetLeaderboardPage(offset int, limit int) ([]*models.User, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	var total int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM leaderboard_global WHERE board_type = 'user'`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计排行榜总人数失败: %w", err)
+	}
+
+	var users []*models.User
+
+	query := `
+		SELECT ref_id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), score, solved_count
+		FROM leaderboard_global
+		WHERE board_type = 'user'
+		ORDER BY rank_num ASC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询排行榜失败: %w", err)
 	}
 	defer rows.Close()
 
 	for rows.Next() {
 		user := &models.User{}
-		var email string
-		// We select email but maybe we shouldn't expose it publically?
-		// For now, I'll select it but the frontend might hide it.
 		err := rows.Scan(
-			&user.ID, &user.Username, &email, &user.Role, &user.DisplayName,
-			&user.AvatarURL, &user.Bio, &user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
-			&user.CreatedAt, &user.UpdatedAt,
+			&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Score, &user.SolvedCount,
 		)
-		user.Email = email // Assign
 		if err != nil {
-			return nil, fmt.Errorf("扫描用户行失败: %w", err)
+			return nil, 0, fmt.Errorf("扫描用户行失败: %w", err)
 		}
 		users = append(users, user)
 	}
 
-	return users, nil
+	return users, total, nil
+}
+
+// GetLeaderboardUserByUsername 通过用户名获取排行榜中的用户和排名
+func (r *UserRepository) GetLeaderboardUserByUsername(username string) (*models.User, int, error) {
+	queryUser := `
+		SELECT ref_id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), score, solved_count, rank_num
+		FROM leaderboard_global
+		WHERE board_type = 'user' AND username = ?
+		LIMIT 1
+	`
+
+	user := &models.User{}
+	var rank int
+	err := r.db.QueryRow(queryUser, username).Scan(
+		&user.ID, &user.Username, &user.DisplayName, &user.AvatarURL, &user.Score, &user.SolvedCount, &rank,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, 0, apperr.New(apperr.ErrNotFound, "用户不存在")
+		}
+		return nil, 0, fmt.Errorf("查询用户失败: %w", err)
+	}
+
+	return user, rank, nil
+}
+
+// RefreshGlobalUserLeaderboardSnapshot 刷新用户全站排行榜快照
+func (r *UserRepository) RefreshGlobalUserLeaderboardSnapshot(snapshotAt time.Time) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启刷新用户榜单事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.Exec(`DELETE FROM leaderboard_global WHERE board_type = 'user'`); err != nil {
+		return fmt.Errorf("清理用户榜单快照失败: %w", err)
+	}
+
+	insertSQL := `
+		INSERT INTO leaderboard_global (
+			board_type, rank_num, ref_id, username, display_name, avatar_url,
+			score, solved_count, total_score, avg_score, member_count, snapshot_at
+		)
+		SELECT
+			'user' AS board_type,
+			ranked.rank_num,
+			ranked.id,
+			ranked.username,
+			ranked.display_name,
+			ranked.avatar_url,
+			ranked.score,
+			ranked.solved_count,
+			0,
+			0,
+			0,
+			?
+		FROM (
+			SELECT
+				u.id,
+				u.username,
+				COALESCE(u.display_name, '') AS display_name,
+				COALESCE(u.avatar_url, '') AS avatar_url,
+				u.score,
+				u.solved_count,
+				(@rn := @rn + 1) AS rank_num
+			FROM users u
+			JOIN (SELECT @rn := 0) r
+			WHERE u.is_active = 1
+			ORDER BY u.score DESC, u.solved_count DESC, u.created_at ASC, u.id ASC
+		) ranked
+	`
+
+	if _, err = tx.Exec(insertSQL, snapshotAt); err != nil {
+		return fmt.Errorf("写入用户榜单快照失败: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("提交用户榜单快照事务失败: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateLastLogin 更新最后登陆时间
