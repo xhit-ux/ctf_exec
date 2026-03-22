@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import AvatarUpload from '../components/upload/AvatarUpload'
 import SubmissionHeatmap from '../components/profile/SubmissionHeatmap'
 import { apiUrl, staticUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 
 function getLevelInfo(score: number = 0) {
@@ -132,11 +133,10 @@ export default function Profile() {
         setIsEditing(false)
         setMessage({ type: 'success', text: '个人资料已更新' })
       } else {
-        const errorData = await response.json()
-        setMessage({ type: 'error', text: errorData.error || '更新失败' })
+        setMessage({ type: 'error', text: await readSafeErrorMessage(response, '更新失败，请稍后重试') })
       }
     } catch (err) {
-      setMessage({ type: 'error', text: '网络错误，请稍后再试' })
+      setMessage({ type: 'error', text: fromUnknownError(err, '网络错误，请稍后再试') })
     } finally {
       setSaving(false)
     }

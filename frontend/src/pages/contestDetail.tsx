@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl, staticUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import {
   MOCK_CONTESTS,
   MOCK_CONTEST_CHALLENGES,
@@ -202,15 +203,16 @@ export default function ContestDetail() {
       })
 
       if (!res.ok) {
-        const maybeJson = await res.json().catch(() => null)
-        throw new Error(maybeJson?.error || '获取赛事题目失败')
+        setChallengeError(await readSafeErrorMessage(res, '获取赛事题目失败，请稍后重试'))
+        setChallenges([])
+        return
       }
 
       const payload = await res.json()
       setChallenges(asArray<ContestChallenge>(payload))
     } catch (err) {
       console.error(err)
-      setChallengeError((err as Error).message || '获取赛事题目失败')
+      setChallengeError(fromUnknownError(err, '获取赛事题目失败，请稍后重试'))
       setChallenges([])
     } finally {
       setLoadingChallenges(false)
@@ -237,8 +239,10 @@ export default function ContestDetail() {
     try {
       const res = await fetch(apiUrl(`/api/contests/${contestID}/scoreboard?type=${kind}&limit=50`))
       if (!res.ok) {
-        const maybeJson = await res.json().catch(() => null)
-        throw new Error(maybeJson?.error || '获取赛事榜单失败')
+        setScoreError(await readSafeErrorMessage(res, '获取赛事榜单失败，请稍后重试'))
+        if (kind === 'user') setUserScores([])
+        if (kind === 'team') setTeamScores([])
+        return
       }
 
       const payload = await res.json()
@@ -249,7 +253,7 @@ export default function ContestDetail() {
       }
     } catch (err) {
       console.error(err)
-      setScoreError((err as Error).message || '获取赛事榜单失败')
+      setScoreError(fromUnknownError(err, '获取赛事榜单失败，请稍后重试'))
       if (kind === 'user') setUserScores([])
       if (kind === 'team') setTeamScores([])
     } finally {
@@ -305,8 +309,11 @@ export default function ContestDetail() {
       })
 
       if (!res.ok) {
-        const maybeJson = await res.json().catch(() => null)
-        throw new Error(maybeJson?.error || `${mode === 'join' ? '报名' : '退赛'}失败`)
+        setActionMessage({
+          type: 'error',
+          text: await readSafeErrorMessage(res, `${mode === 'join' ? '报名' : '退赛'}失败，请稍后重试`),
+        })
+        return
       }
 
       setActionMessage({
@@ -320,7 +327,7 @@ export default function ContestDetail() {
     } catch (err) {
       setActionMessage({
         type: 'error',
-        text: (err as Error).message || `${mode === 'join' ? '报名' : '退赛'}失败`,
+        text: fromUnknownError(err, `${mode === 'join' ? '报名' : '退赛'}失败，请稍后重试`),
       })
     } finally {
       setActionLoading(false)

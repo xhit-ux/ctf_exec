@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiUrl } from '../utils/api'
 import Pagination from '../components/common/Pagination'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 interface LeaderboardUser {
     rank: number
@@ -99,15 +100,18 @@ export default function Scoreboard() {
         setSearchError('')
         try {
             const res = await fetch(apiUrl(`/api/users/leaderboard/search?username=${encodeURIComponent(username)}`))
-            const data = await res.json()
             if (!res.ok) {
-                throw new Error(data?.error || '检索失败')
+                setPinnedUser(null)
+                setSearchError(await readSafeErrorMessage(res, '检索失败，请稍后重试'))
+                return
             }
+
+            const data = await res.json()
 
             setPinnedUser(data as LeaderboardUser)
         } catch (err) {
             setPinnedUser(null)
-            setSearchError(err instanceof Error ? err.message : '检索失败')
+            setSearchError(fromUnknownError(err, '检索失败，请稍后重试'))
         } finally {
             setSearchLoading(false)
         }

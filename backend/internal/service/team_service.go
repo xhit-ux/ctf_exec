@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ctf_exec/backend/internal/apperr"
+	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 )
@@ -156,7 +157,7 @@ func (s *TeamServiceImpl) UpdateTeam(userID string, name string) error {
 	}
 
 	// 检查是否是队长
-	if team.LeaderID != userID {
+	if !authz.IsTeamLeader(userID, team.LeaderID) {
 		return apperr.New(apperr.ErrForbidden, "只有队长可以修改队伍信息")
 	}
 
@@ -193,7 +194,7 @@ func (s *TeamServiceImpl) KickMember(userID string, targetUserID string) error {
 		return fmt.Errorf("获取队伍信息失败: %w", err)
 	}
 
-	if team.LeaderID != userID {
+	if !authz.IsTeamLeader(userID, team.LeaderID) {
 		return apperr.New(apperr.ErrForbidden, "只有队长可以踢出成员")
 	}
 

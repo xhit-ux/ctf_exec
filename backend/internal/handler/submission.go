@@ -54,7 +54,7 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 	// 使用 Service 层提交（包含限流和排行榜更新）
 	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag, req.ContestID)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 

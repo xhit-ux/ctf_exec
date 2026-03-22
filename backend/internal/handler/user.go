@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -38,18 +39,13 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	}
 
 	req.Role = models.NormalizeRole(req.Role)
-	if !models.IsValidRole(req.Role) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "非法角色值"})
-		return
-	}
-
-	if claims.UserID == targetUserID && req.Role != models.RoleRoot {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "禁止 root 自降级"})
+	if err := authz.CanPatchUserRole(claims.UserID, targetUserID, claims.Role, req.Role); err != nil {
+		writeError(c, err, http.StatusForbidden)
 		return
 	}
 
 	if err := h.userRepo.UpdateUserRole(claims.UserID, targetUserID, req.Role, req.Reason, c.ClientIP()); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -131,7 +127,7 @@ func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
 
 	u, rank, err := h.userRepo.GetLeaderboardUserByUsername(username)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusNotFound)
 		return
 	}
 
@@ -191,7 +187,7 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	// 更新用户信息
 	err := h.userRepo.UpdateProfile(claims.UserID, &req)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 

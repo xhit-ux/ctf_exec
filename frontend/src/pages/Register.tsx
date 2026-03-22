@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 
 export default function Register() {
@@ -33,15 +34,6 @@ export default function Register() {
         return () => window.clearInterval(timer)
     }, [codeCooldown])
 
-    const parseError = async (response: Response, fallback: string): Promise<string> => {
-        try {
-            const data = await response.json()
-            return data.error || data.message || fallback
-        } catch {
-            return fallback
-        }
-    }
-
     const sendCodeRequest = async (token?: string) => {
         const tokenToUse = token || botToken
 
@@ -70,13 +62,14 @@ export default function Register() {
             })
 
             if (!response.ok) {
-                throw new Error(await parseError(response, '验证码发送失败'))
+                setError(await readSafeErrorMessage(response, '验证码发送失败，请稍后重试'))
+                return
             }
 
             setCodeCooldown(60)
             setShowTurnstile(false)
         } catch (err) {
-            setError(err instanceof Error ? err.message : '验证码发送失败，请重试')
+            setError(fromUnknownError(err, '验证码发送失败，请稍后重试'))
         } finally {
             setSendingCode(false)
             setPendingSendAfterVerify(false)
@@ -138,7 +131,8 @@ export default function Register() {
             })
 
             if (!response.ok) {
-                throw new Error(await parseError(response, '注册失败'))
+                setError(await readSafeErrorMessage(response, '注册失败，请稍后重试'))
+                return
             }
 
             const data = await response.json()
@@ -149,7 +143,7 @@ export default function Register() {
             // 重定向到首页
             navigate('/')
         } catch (err) {
-            setError(err instanceof Error ? err.message : '注册失败，请重试')
+            setError(fromUnknownError(err, '注册失败，请稍后重试'))
         } finally {
             setLoading(false)
         }

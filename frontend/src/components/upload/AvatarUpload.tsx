@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import ImageCropper from './ImageCropper'
 import { apiUrl, staticUrl } from '../../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../../utils/error'
 
 interface AvatarUploadProps {
   currentAvatarUrl?: string
@@ -83,17 +84,9 @@ export default function AvatarUpload({ currentAvatarUrl, onUploadSuccess }: Avat
         body: formData,
       })
 
-      const contentType = response.headers.get('content-type')
-      let errorMessage = '上传失败'
-
       if (!response.ok) {
-        if (contentType && contentType.includes('application/json')) {
-          const data = await response.json()
-          errorMessage = data.error || errorMessage
-        } else {
-          errorMessage = await response.text()
-        }
-        throw new Error(errorMessage)
+        setError(await readSafeErrorMessage(response, '上传失败，请稍后重试'))
+        return
       }
 
       const data = await response.json()
@@ -104,7 +97,7 @@ export default function AvatarUpload({ currentAvatarUrl, onUploadSuccess }: Avat
         onUploadSuccess(data.avatar_url)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '上传失败，请重试')
+      setError(fromUnknownError(err, '上传失败，请稍后重试'))
     } finally {
       setUploading(false)
     }

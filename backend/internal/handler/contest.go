@@ -54,7 +54,7 @@ func (h *ContestHandler) GetContestDetailGin(c *gin.Context) {
 			c.JSON(statusCode, gin.H{"error": "获取赛事详情失败"})
 			return
 		}
-		c.JSON(statusCode, gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -79,7 +79,7 @@ func (h *ContestHandler) CreateContestGin(c *gin.Context) {
 
 	contest, err := h.repo.CreateContest(&req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *ContestHandler) UpdateContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateContest(contestID, &req); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -124,7 +124,7 @@ func (h *ContestHandler) DeleteContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.DeleteContest(contestID); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -149,7 +149,7 @@ func (h *ContestHandler) AddChallengeToContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.AddChallengeToContest(contestID, req.ChallengeID, req.ScoreOverride); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -166,7 +166,7 @@ func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.RemoveChallengeFromContest(contestID, challengeID); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -192,7 +192,7 @@ func (h *ContestHandler) JoinContestGin(c *gin.Context) {
 	}
 
 	if err := h.svc.JoinContest(contestID, claims.UserID, req.TeamID); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 
@@ -218,7 +218,7 @@ func (h *ContestHandler) LeaveContestGin(c *gin.Context) {
 	}
 
 	if err := h.svc.LeaveContest(contestID, claims.UserID, req.TeamID); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 
@@ -239,7 +239,7 @@ func (h *ContestHandler) GetContestChallengesGin(c *gin.Context) {
 
 	items, err := h.svc.GetContestChallengesForUser(contestID, claims.UserID)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 
@@ -268,7 +268,7 @@ func (h *ContestHandler) GetContestScoreboardGin(c *gin.Context) {
 
 	items, err := h.svc.GetContestScoreboard(contestID, boardType, limit)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 export default function Login() {
     const [username, setUsername] = useState('')
@@ -26,8 +27,8 @@ export default function Login() {
             })
 
             if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.message || '登陆失败')
+                setError(await readSafeErrorMessage(response, '登录失败，请重试'))
+                return
             }
 
             const data = await response.json()
@@ -38,7 +39,7 @@ export default function Login() {
             // 重定向到首页
             navigate('/')
         } catch (err) {
-            setError(err instanceof Error ? err.message : '登陆失败，请重试')
+            setError(fromUnknownError(err, '登录失败，请重试'))
         } finally {
             setLoading(false)
         }

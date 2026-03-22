@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
 import { apiUrl, staticUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 interface TeamMember {
     id: string
@@ -85,11 +86,10 @@ export default function TeamProfile() {
                 if (team) setTeam({ ...team, name: editName })
                 setIsEditing(false)
             } else {
-                const error = await response.json()
-                setMessage({ type: 'error', text: error.error || '更新失败' })
+                setMessage({ type: 'error', text: await readSafeErrorMessage(response, '更新失败，请稍后重试') })
             }
         } catch (err) {
-            setMessage({ type: 'error', text: '网络错误' })
+            setMessage({ type: 'error', text: fromUnknownError(err, '网络异常，请稍后重试') })
         } finally {
             setIsProcessing(false)
         }
@@ -113,11 +113,10 @@ export default function TeamProfile() {
                 setMessage({ type: 'success', text: `已移除成员 ${memberName}` })
                 fetchTeam() // 重新获取成员列表
             } else {
-                const error = await response.json()
-                alert(error.error || '移除失败')
+                alert(await readSafeErrorMessage(response, '移除失败，请稍后重试'))
             }
         } catch (err) {
-            alert('网络错误')
+            alert(fromUnknownError(err, '网络异常，请稍后重试'))
         } finally {
             setIsProcessing(false)
         }

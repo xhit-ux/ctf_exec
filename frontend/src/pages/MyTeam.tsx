@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
 import { apiUrl, staticUrl } from '../utils/api'
+import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 interface TeamMember {
     id: string
@@ -80,11 +81,10 @@ export default function MyTeam() {
                 fetchTeam()
                 setMessage({ type: 'success', text: '队伍创建成功！' })
             } else {
-                const error = await response.json()
-                setMessage({ type: 'error', text: error.error || '创建失败' })
+                setMessage({ type: 'error', text: await readSafeErrorMessage(response, '创建失败，请稍后重试') })
             }
         } catch (err) {
-            setMessage({ type: 'error', text: '网络错误' })
+            setMessage({ type: 'error', text: fromUnknownError(err, '网络异常，请稍后重试') })
         } finally {
             setIsProcessing(false)
         }
@@ -110,11 +110,10 @@ export default function MyTeam() {
                 fetchTeam()
                 setMessage({ type: 'success', text: '已加入团队！' })
             } else {
-                const error = await response.json()
-                setMessage({ type: 'error', text: error.error || '加入失败' })
+                setMessage({ type: 'error', text: await readSafeErrorMessage(response, '加入失败，请稍后重试') })
             }
         } catch (err) {
-            setMessage({ type: 'error', text: '网络错误' })
+            setMessage({ type: 'error', text: fromUnknownError(err, '网络异常，请稍后重试') })
         } finally {
             setIsProcessing(false)
         }
@@ -145,11 +144,10 @@ export default function MyTeam() {
                 setIsEditing(false)
                 fetchTeam()
             } else {
-                const error = await response.json()
-                setMessage({ type: 'error', text: error.error || '更新失败' })
+                setMessage({ type: 'error', text: await readSafeErrorMessage(response, '更新失败，请稍后重试') })
             }
         } catch (err) {
-            setMessage({ type: 'error', text: '网络错误' })
+            setMessage({ type: 'error', text: fromUnknownError(err, '网络异常，请稍后重试') })
         } finally {
             setIsProcessing(false)
         }
@@ -173,11 +171,10 @@ export default function MyTeam() {
                 setMessage({ type: 'success', text: `已移除成员 ${memberName}` })
                 fetchTeam()
             } else {
-                const error = await response.json()
-                alert(error.error || '移除失败')
+                alert(await readSafeErrorMessage(response, '移除失败，请稍后重试'))
             }
         } catch (err) {
-            alert('网络错误')
+            alert(fromUnknownError(err, '网络异常，请稍后重试'))
         } finally {
             setIsProcessing(false)
         }
@@ -199,11 +196,10 @@ export default function MyTeam() {
                 setTeam(null)
                 setMessage({ type: 'success', text: '已退出队伍' })
             } else {
-                const error = await response.json()
-                alert(error.error || '退出失败')
+                alert(await readSafeErrorMessage(response, '退出失败，请稍后重试'))
             }
         } catch (err) {
-            alert('网络错误')
+            alert(fromUnknownError(err, '网络异常，请稍后重试'))
         } finally {
             setIsProcessing(false)
         }
@@ -225,11 +221,10 @@ export default function MyTeam() {
                 setTeam(null)
                 setMessage({ type: 'success', text: '队伍已解散' })
             } else {
-                const error = await response.json()
-                alert(error.error || '解散失败')
+                alert(await readSafeErrorMessage(response, '解散失败，请稍后重试'))
             }
         } catch (err) {
-            alert('网络错误')
+            alert(fromUnknownError(err, '网络异常，请稍后重试'))
         } finally {
             setIsProcessing(false)
         }

@@ -38,7 +38,7 @@ func (h *ProblemHandler) CreateProblemGin(c *gin.Context) {
 
 	problem, err := h.repo.CreateProblem(&req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -70,7 +70,7 @@ func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateProblem(id, &req); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -87,7 +87,7 @@ func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	}
 
 	if err := h.repo.DeleteProblem(id); err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -140,7 +140,7 @@ func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 
 	problem, err := h.repo.GetProblemByID(id)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusNotFound)
 		return
 	}
 

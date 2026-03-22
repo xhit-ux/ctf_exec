@@ -30,7 +30,7 @@ func (h *AuthHandler) SendRegisterCodeGin(c *gin.Context) {
 
 	err := h.authService.SendRegisterCode(&req, c.ClientIP())
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -48,7 +48,7 @@ func (h *AuthHandler) RegisterGin(c *gin.Context) {
 	// 调用服务层
 	response, err := h.authService.Register(&req, c.ClientIP())
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
@@ -66,7 +66,7 @@ func (h *AuthHandler) LoginGin(c *gin.Context) {
 	// 调用服务层
 	response, err := h.authService.Login(&req)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusUnauthorized), gin.H{"error": err.Error()})
+		writeError(c, err, http.StatusUnauthorized)
 		return
 	}
 
