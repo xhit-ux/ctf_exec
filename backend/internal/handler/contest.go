@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -174,14 +174,8 @@ func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 }
 
 func (h *ContestHandler) JoinContestGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -206,14 +200,8 @@ func (h *ContestHandler) JoinContestGin(c *gin.Context) {
 }
 
 func (h *ContestHandler) LeaveContestGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -238,14 +226,8 @@ func (h *ContestHandler) LeaveContestGin(c *gin.Context) {
 }
 
 func (h *ContestHandler) GetContestChallengesGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 

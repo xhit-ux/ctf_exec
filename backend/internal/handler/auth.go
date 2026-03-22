@@ -3,9 +3,9 @@ package handler
 import (
 	"net/http"
 
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/service"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -75,16 +75,8 @@ func (h *AuthHandler) LoginGin(c *gin.Context) {
 
 // GetCurrentUserGin Gin 版本的获取当前用户信息处理
 func (h *AuthHandler) GetCurrentUserGin(c *gin.Context) {
-	// 从 Gin 上下文中获取用户信息
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 

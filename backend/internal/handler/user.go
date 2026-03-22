@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,15 +20,8 @@ type UserHandler struct {
 
 // PatchUserRoleGin root 修改用户角色。
 func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -163,16 +156,8 @@ func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
 
 // UpdateProfileGin Gin 版本的更新当前用户信息
 func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
-	// 从 Gin 上下文中获取用户信息
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -264,27 +249,20 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 	}
 
 	// 检查用户是否已登录
-	claimsInterface, exists := c.Get("claims")
-	if exists {
-		claims, ok := claimsInterface.(*utils.Claims)
-		if ok {
-			// 用户已登录
-			if claims.UserID == user.ID {
-				// 查看自己的个人资料：始终显示邮箱（如果存在）
-				if user.Email != "" {
-					publicUser.Email = user.Email
-					publicUser.IsVerified = user.IsVerified
-				}
-			} else {
-				// 查看其他用户的个人资料：根据隐私设置决定
-				if preferences.EmailPublic && user.Email != "" {
-					publicUser.Email = user.Email
-					publicUser.IsVerified = user.IsVerified
-				}
+	if claims, err := middleware.GetClaims(c); err == nil {
+		// 用户已登录
+		if claims.UserID == user.ID {
+			// 查看自己的个人资料：始终显示邮箱（如果存在）
+			if user.Email != "" {
+				publicUser.Email = user.Email
+				publicUser.IsVerified = user.IsVerified
 			}
 		} else {
-			// claims 类型错误，视为未登录
-			// 不包含邮箱
+			// 查看其他用户的个人资料：根据隐私设置决定
+			if preferences.EmailPublic && user.Email != "" {
+				publicUser.Email = user.Email
+				publicUser.IsVerified = user.IsVerified
+			}
 		}
 	}
 	// 如果未登录，不包含邮箱

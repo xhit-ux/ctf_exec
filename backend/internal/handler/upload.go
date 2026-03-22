@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -23,15 +23,8 @@ func NewUploadHandler(userRepo *repository.UserRepository) *UploadHandler {
 // UploadAvatarGin Gin 版本的上传用户头像
 func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 	// 从 Gin 上下文中获取 claims
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(401, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(401, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -88,21 +81,8 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 // UploadContestCoverGin Gin 版本的上传比赛封面
 func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 	// 从 Gin 上下文中获取 claims
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(401, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	_, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(401, gin.H{"error": "无效的用户信息"})
-		return
-	}
-
-	// 验证管理员权限
-	if claims.Role != models.RoleAdmin && claims.Role != models.RoleRoot {
-		c.JSON(403, gin.H{"error": "仅管理员可上传比赛封面"})
 		return
 	}
 

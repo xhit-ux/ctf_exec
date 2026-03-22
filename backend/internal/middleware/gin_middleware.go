@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -9,6 +10,45 @@ import (
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
+
+const claimsContextKey = "claims"
+
+func extractBearerToken(header string) (string, error) {
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || parts[0] != "Bearer" {
+		return "", fmt.Errorf("invalid authorization header format")
+	}
+
+	return parts[1], nil
+}
+
+// GetClaims 从上下文获取并校验 claims。
+func GetClaims(c *gin.Context) (*utils.Claims, error) {
+	claimsInterface, exists := c.Get(claimsContextKey)
+	if !exists {
+		return nil, fmt.Errorf("claims not found")
+	}
+
+	claims, ok := claimsInterface.(*utils.Claims)
+	if !ok {
+		return nil, fmt.Errorf("invalid claims type")
+	}
+
+	claims.Role = models.NormalizeRole(claims.Role)
+	return claims, nil
+}
+
+// MustGetClaims 从上下文读取 claims，失败时自动返回 401 并终止请求。
+func MustGetClaims(c *gin.Context) (*utils.Claims, bool) {
+	claims, err := GetClaims(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
+		c.Abort()
+		return nil, false
+	}
+
+	return claims, true
+}
 
 // GinAuthMiddleware Gin 认证中间件
 func GinAuthMiddleware() gin.HandlerFunc {
@@ -21,15 +61,12 @@ func GinAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// 提取 bearer token
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
+		tokenString, err := extractBearerToken(authHeader)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
 			c.Abort()
 			return
 		}
-
-		tokenString := parts[1]
 
 		// 验证 token
 		claims, err := utils.VerifyToken(tokenString)
@@ -39,8 +76,10 @@ func GinAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+		claims.Role = models.NormalizeRole(claims.Role)
+
 		// 将 claims 存储在 Gin 上下文中
-		c.Set("claims", claims)
+		c.Set(claimsContextKey, claims)
 		c.Next()
 	}
 }
@@ -54,20 +93,22 @@ func GinOptionalAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" {
-			c.Next()
-			return
-		}
-
-		claims, err := utils.VerifyToken(parts[1])
+		tokenString, err := extractBearerToken(authHeader)
 		if err != nil {
 			c.Next()
 			return
 		}
 
+		claims, err := utils.VerifyToken(tokenString)
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		claims.Role = models.NormalizeRole(claims.Role)
+
 		// 将 claims 存储在 Gin 上下文中
-		c.Set("claims", claims)
+		c.Set(claimsContextKey, claims)
 		c.Next()
 	}
 }
@@ -100,17 +141,8 @@ func RequireRoles(userRepo *repository.UserRepository, roles ...string) gin.Hand
 	}
 
 	return func(c *gin.Context) {
-		claimsInterface, exists := c.Get("claims")
-		if !exists {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权的请求"})
-			c.Abort()
-			return
-		}
-
-		claims, ok := claimsInterface.(*utils.Claims)
+		claims, ok := MustGetClaims(c)
 		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
-			c.Abort()
 			return
 		}
 
@@ -141,4 +173,14 @@ func RequireRoles(userRepo *repository.UserRepository, roles ...string) gin.Hand
 
 		c.Next()
 	}
+}
+
+// RequireSiteAdminOrRoot 要求角色为 root 或 site_admin。
+func RequireSiteAdminOrRoot(userRepo *repository.UserRepository) gin.HandlerFunc {
+	return RequireRoles(userRepo, models.RoleRoot, models.RoleSiteAdmin)
+}
+
+// RequireRoot 要求角色为 root。
+func RequireRoot(userRepo *repository.UserRepository) gin.HandlerFunc {
+	return RequireRoles(userRepo, models.RoleRoot)
 }

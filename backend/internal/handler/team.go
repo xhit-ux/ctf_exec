@@ -4,10 +4,10 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -25,15 +25,8 @@ func NewTeamHandler(teamRepo *repository.TeamRepository, teamService service.Tea
 
 // CreateTeamGin Gin 版本的创建队伍
 func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -67,15 +60,8 @@ func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
 
 // JoinTeamGin Gin 版本的加入队伍
 func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -108,15 +94,8 @@ func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
 
 // GetMyTeamGin Gin 版本的获取我的队伍信息
 func (h *TeamHandler) GetMyTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -136,15 +115,8 @@ func (h *TeamHandler) GetMyTeamGin(c *gin.Context) {
 
 // LeaveTeamGin Gin 版本的退出队伍
 func (h *TeamHandler) LeaveTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -159,15 +131,8 @@ func (h *TeamHandler) LeaveTeamGin(c *gin.Context) {
 
 // DissolveTeamGin Gin 版本的解散队伍
 func (h *TeamHandler) DissolveTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -251,15 +216,12 @@ func (h *TeamHandler) GetTeamPublicGin(c *gin.Context) {
 	team.Members = members
 
 	// 脱敏处理：如果请求者不是成员，隐藏邀请码
-	claimsInterface, exists := c.Get("claims")
 	isMember := false
-	if exists {
-		if claims, ok := claimsInterface.(*utils.Claims); ok {
-			for _, m := range members {
-				if m.ID == claims.UserID {
-					isMember = true
-					break
-				}
+	if claims, err := middleware.GetClaims(c); err == nil {
+		for _, m := range members {
+			if m.ID == claims.UserID {
+				isMember = true
+				break
 			}
 		}
 	}
@@ -273,15 +235,8 @@ func (h *TeamHandler) GetTeamPublicGin(c *gin.Context) {
 
 // UpdateTeamGin Gin 版本的更新团队信息 (仅队长)
 func (h *TeamHandler) UpdateTeamGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 
@@ -307,15 +262,8 @@ func (h *TeamHandler) UpdateTeamGin(c *gin.Context) {
 
 // KickMemberGin Gin 版本的踢出成员 (仅队长)
 func (h *TeamHandler) KickMemberGin(c *gin.Context) {
-	claimsInterface, exists := c.Get("claims")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "未授权"})
-		return
-	}
-
-	claims, ok := claimsInterface.(*utils.Claims)
+	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
 		return
 	}
 

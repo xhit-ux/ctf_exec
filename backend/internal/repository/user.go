@@ -213,17 +213,23 @@ func (r *UserRepository) GetLeaderboardPage(offset int, limit int) ([]*models.Us
 	}
 
 	var total int
-	if err := r.db.QueryRow(`SELECT COUNT(*) FROM leaderboard_global WHERE board_type = 'user'`).Scan(&total); err != nil {
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM leaderboard_global lg
+		JOIN users u ON u.id = lg.ref_id
+		WHERE lg.board_type = 'user' AND u.role <> 'root'
+	`).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("统计排行榜总人数失败: %w", err)
 	}
 
 	var users []*models.User
 
 	query := `
-		SELECT ref_id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), score, solved_count
-		FROM leaderboard_global
-		WHERE board_type = 'user'
-		ORDER BY rank_num ASC
+		SELECT lg.ref_id, lg.username, COALESCE(lg.display_name, ''), COALESCE(lg.avatar_url, ''), lg.score, lg.solved_count
+		FROM leaderboard_global lg
+		JOIN users u ON u.id = lg.ref_id
+		WHERE lg.board_type = 'user' AND u.role <> 'root'
+		ORDER BY lg.rank_num ASC
 		LIMIT ? OFFSET ?
 	`
 
@@ -250,9 +256,16 @@ func (r *UserRepository) GetLeaderboardPage(offset int, limit int) ([]*models.Us
 // GetLeaderboardUserByUsername 通过用户名获取排行榜中的用户和排名
 func (r *UserRepository) GetLeaderboardUserByUsername(username string) (*models.User, int, error) {
 	queryUser := `
-		SELECT ref_id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), score, solved_count, rank_num
-		FROM leaderboard_global
-		WHERE board_type = 'user' AND username = ?
+		SELECT lg.ref_id, lg.username, COALESCE(lg.display_name, ''), COALESCE(lg.avatar_url, ''), lg.score, lg.solved_count,
+			(
+				SELECT COUNT(*)
+				FROM leaderboard_global lg2
+				JOIN users u2 ON u2.id = lg2.ref_id
+				WHERE lg2.board_type = 'user' AND u2.role <> 'root' AND lg2.rank_num <= lg.rank_num
+			) AS rank_filtered
+		FROM leaderboard_global lg
+		JOIN users u ON u.id = lg.ref_id
+		WHERE lg.board_type = 'user' AND lg.username = ? AND u.role <> 'root'
 		LIMIT 1
 	`
 
@@ -317,7 +330,7 @@ func (r *UserRepository) RefreshGlobalUserLeaderboardSnapshot(snapshotAt time.Ti
 				(@rn := @rn + 1) AS rank_num
 			FROM users u
 			JOIN (SELECT @rn := 0) r
-			WHERE u.is_active = 1
+			WHERE u.is_active = 1 AND u.role <> 'root'
 			ORDER BY u.score DESC, u.solved_count DESC, u.created_at ASC, u.id ASC
 		) ranked
 	`

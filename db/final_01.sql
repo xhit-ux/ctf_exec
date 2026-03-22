@@ -649,3 +649,64 @@ VALUES
 ('90000000-0000-0000-0000-000000000018', 'Blue Team Simulation Day', 'Defense-focused simulation and analysis tasks.', '/static/covers/contest_18.jpg', '2026-04-08 09:00:00', '2026-04-08 17:00:00', 'jeopardy'),
 ('90000000-0000-0000-0000-000000000019', 'Capture Spring Finals', 'Final spring contest with cumulative ranking.', '/static/covers/contest_19.jpg', '2026-04-12 10:00:00', '2026-04-12 20:00:00', 'jeopardy'),
 ('90000000-0000-0000-0000-000000000020', 'Preparation Cup 2026', 'Preparation cup for upcoming provincial CTF.', '/static/covers/contest_20.jpg', '2026-04-15 10:00:00', '2026-04-15 18:00:00', 'jeopardy');
+
+-- ==========================================================
+-- RBAC Incremental Migration
+-- ==========================================================
+
+-- 1) users.role: admin -> site_admin and update role check constraint
+UPDATE users
+SET role = 'site_admin'
+WHERE role = 'admin';
+
+ALTER TABLE users
+    DROP CHECK role_valid;
+
+ALTER TABLE users
+    ADD CONSTRAINT role_valid CHECK (role IN ('root', 'site_admin', 'user'));
+
+-- 2) contest_admins: contest-scoped admin assignment table
+CREATE TABLE contest_admins (
+    id CHAR(36) PRIMARY KEY,
+    contest_id CHAR(36) NOT NULL,
+    user_id CHAR(36) NOT NULL,
+    role VARCHAR(16) NOT NULL DEFAULT 'admin',
+    granted_by CHAR(36),
+    granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT chk_contest_admin_role CHECK (role IN ('admin', 'observer')),
+    CONSTRAINT uniq_contest_admin_user UNIQUE (contest_id, user_id),
+
+    FOREIGN KEY (contest_id) REFERENCES contests(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_contest_admins_contest_id ON contest_admins(contest_id);
+CREATE INDEX idx_contest_admins_user_id ON contest_admins(user_id);
+
+-- 3) contests: add creator binding
+ALTER TABLE contests
+    ADD COLUMN created_by CHAR(36) NULL AFTER scoring_type,
+    ADD CONSTRAINT fk_contests_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL;
+
+-- 4) problems: add scope + contest binding + creator binding
+ALTER TABLE problems
+    ADD COLUMN created_by CHAR(36) NULL AFTER run_command,
+    ADD COLUMN scope VARCHAR(16) NOT NULL DEFAULT 'platform' AFTER created_by,
+    ADD COLUMN contest_id CHAR(36) NULL AFTER scope,
+    ADD CONSTRAINT chk_problem_scope CHECK (scope IN ('platform', 'contest')),
+    ADD CONSTRAINT fk_problems_created_by
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+    ADD CONSTRAINT fk_problems_contest_id
+        FOREIGN KEY (contest_id) REFERENCES contests(id) ON DELETE CASCADE;
+
+CREATE INDEX idx_problems_scope ON problems(scope);
+CREATE INDEX idx_problems_created_by ON problems(created_by);
+
+-- 5) contest_participants: add registration status workflow
+ALTER TABLE contest_participants
+    ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'approved' AFTER registered_at,
+    ADD CONSTRAINT chk_contest_participant_status
+        CHECK (status IN ('approved', 'pending', 'rejected'));

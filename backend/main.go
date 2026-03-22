@@ -159,7 +159,7 @@ func main() {
 		{
 			upload.Use(middleware.GinAuthMiddleware())
 			upload.POST("/avatar", uploadHandler.UploadAvatarGin)
-			upload.POST("/contest-cover", middleware.RequireRoles(userRepo, "root", "admin"), uploadHandler.UploadContestCoverGin)
+			upload.POST("/contest-cover", middleware.RequireSiteAdminOrRoot(userRepo), uploadHandler.UploadContestCoverGin)
 		}
 
 		// 管理端路由
@@ -169,12 +169,12 @@ func main() {
 
 			adminUsers := admin.Group("/users")
 			{
-				adminUsers.PATCH(":id/role", middleware.RequireRoles(userRepo, "root"), userHandler.PatchUserRoleGin)
+				adminUsers.PATCH(":id/role", middleware.RequireRoot(userRepo), userHandler.PatchUserRoleGin)
 			}
 
 			adminProblems := admin.Group("/problems")
 			{
-				adminProblems.Use(middleware.RequireRoles(userRepo, "root", "admin"))
+				adminProblems.Use(middleware.RequireSiteAdminOrRoot(userRepo))
 				adminProblems.POST("", probHandler.CreateProblemGin)
 				adminProblems.PUT(":id", probHandler.UpdateProblemGin)
 				adminProblems.DELETE(":id", probHandler.DeleteProblemGin)
@@ -182,7 +182,7 @@ func main() {
 
 			adminContests := admin.Group("/contests")
 			{
-				adminContests.Use(middleware.RequireRoles(userRepo, "root", "admin"))
+				adminContests.Use(middleware.RequireSiteAdminOrRoot(userRepo))
 				adminContests.POST("", contestHandler.CreateContestGin)
 				adminContests.PUT(":id", contestHandler.UpdateContestGin)
 				adminContests.DELETE(":id", contestHandler.DeleteContestGin)

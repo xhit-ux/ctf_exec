@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -104,17 +104,14 @@ func (h *ProblemHandler) GetProblemsGin(c *gin.Context) {
 	var err error
 
 	// 从 Gin 上下文中获取 claims
-	claimsInterface, exists := c.Get("claims")
-	if exists {
-		if claims, ok := claimsInterface.(*utils.Claims); ok {
-			problems, err = h.repo.GetProblemsWithStatus(claims.UserID)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "获取题目列表失败"})
-				return
-			}
-			c.JSON(http.StatusOK, problems)
+	if claims, err := middleware.GetClaims(c); err == nil {
+		problems, err = h.repo.GetProblemsWithStatus(claims.UserID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取题目列表失败"})
 			return
 		}
+		c.JSON(http.StatusOK, problems)
+		return
 	}
 
 	// 如果没有认证信息，获取普通题目列表
