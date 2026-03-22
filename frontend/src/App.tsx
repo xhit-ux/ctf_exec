@@ -90,7 +90,7 @@ export default function App() {
             <Route
               path="admin"
               element={
-                <ProtectedRoute requiredRole="admin">
+                <ProtectedRoute requiredRoles={["root", "site_admin"]}>
                   <RequiresDesktop>
                     <Admin />
                   </RequiresDesktop>

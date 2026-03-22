@@ -19,6 +19,122 @@ type UserHandler struct {
 	leaderboardService service.LeaderboardService
 }
 
+// ListAdminUsersGin root 查看用户列表。
+func (h *UserHandler) ListAdminUsersGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	page := 1
+	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	pageSize := 10
+	if pageSizeStr := c.DefaultQuery("page_size", "10"); pageSizeStr != "" {
+		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	offset := (page - 1) * pageSize
+	role := models.NormalizeRole(claims.Role)
+	excludeRoot := role != models.RoleRoot
+	excludeUserID := claims.UserID
+
+	items, total, err := h.userRepo.ListAdminUsers(offset, pageSize, keyword, excludeRoot, excludeUserID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// PatchUserActiveGin 管理端封禁/解封用户。
+func (h *UserHandler) PatchUserActiveGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	targetUserID := c.Param("id")
+	if targetUserID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户ID"})
+		return
+	}
+
+	var req models.UpdateUserActiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	if err := h.userRepo.UpdateUserActiveStatus(claims.UserID, targetUserID, req.IsActive, req.Reason, c.ClientIP()); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	statusText := "已封禁"
+	if req.IsActive {
+		statusText = "已解封"
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": statusText})
+}
+
+// ListRoleChangeLogsGin root 查看角色变更审计日志。
+func (h *UserHandler) ListRoleChangeLogsGin(c *gin.Context) {
+	page := 1
+	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	pageSize := 10
+	if pageSizeStr := c.DefaultQuery("page_size", "10"); pageSizeStr != "" {
+		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 && parsed <= 100 {
+			pageSize = parsed
+		}
+	}
+
+	offset := (page - 1) * pageSize
+	items, total, err := h.userRepo.ListRoleChangeLogs(offset, pageSize)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
 // PatchUserRoleGin root 修改用户角色。
 func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)

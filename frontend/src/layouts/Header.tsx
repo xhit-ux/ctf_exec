@@ -12,6 +12,10 @@ function getLevelInfo(score: number = 0) {
   return { title: '大师', color: 'text-red-600', bg: 'bg-red-100' }
 }
 
+function canAccessSiteAdmin(role?: string) {
+  return role === 'root' || role === 'site_admin'
+}
+
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
@@ -64,7 +68,7 @@ export default function Header() {
                 <>
                   <NavLinkItem to="/submissions">提交记录</NavLinkItem>
                   <NavLinkItem to="/team">我的队伍</NavLinkItem>
-                  {user?.role === 'admin' && (
+                  {canAccessSiteAdmin(user?.role) && (
                     <NavLinkItem to="/admin">管理面板</NavLinkItem>
                   )}
                 </>
@@ -173,7 +177,7 @@ export default function Header() {
                 <NavLinkItem to="/submissions">提交记录</NavLinkItem>
                 <NavLinkItem to="/team">我的队伍</NavLinkItem>
                 <NavLinkItem to="/profile">个人中心</NavLinkItem>
-                {user?.role === 'admin' && <NavLinkItem to="/admin">管理面板</NavLinkItem>}
+                {canAccessSiteAdmin(user?.role) && <NavLinkItem to="/admin">管理面板</NavLinkItem>}
               </>
             )}
         </div>

@@ -63,6 +63,39 @@ type UpdateUserRoleRequest struct {
 	Reason string `json:"reason"`
 }
 
+// UpdateUserActiveRequest 管理端更新用户激活状态。
+type UpdateUserActiveRequest struct {
+	IsActive bool   `json:"is_active"`
+	Reason   string `json:"reason"`
+}
+
+// AdminUserListItem root 管理页用户列表项。
+type AdminUserListItem struct {
+	ID          string    `json:"id"`
+	Username    string    `json:"username"`
+	DisplayName string    `json:"display_name"`
+	Email       string    `json:"email"`
+	Role        string    `json:"role"`
+	IsActive    bool      `json:"is_active"`
+	IsVerified  bool      `json:"is_verified"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// AdminRoleChangeLogItem root 角色变更审计日志项。
+type AdminRoleChangeLogItem struct {
+	ID               string    `json:"id"`
+	OperatorUserID   string    `json:"operator_user_id"`
+	OperatorUsername string    `json:"operator_username"`
+	TargetUserID     string    `json:"target_user_id"`
+	TargetUsername   string    `json:"target_username"`
+	OldRole          string    `json:"old_role"`
+	NewRole          string    `json:"new_role"`
+	Reason           string    `json:"reason"`
+	IP               string    `json:"ip"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
 // ErrorResponse 错误响应
 type ErrorResponse struct {
 	Code    int    `json:"code"`

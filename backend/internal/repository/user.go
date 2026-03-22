@@ -81,6 +81,74 @@ func (r *UserRepository) UpdateUserRole(operatorID, targetUserID, newRole, reaso
 	return nil
 }
 
+// UpdateUserActiveStatus 管理端更新用户激活状态并写入审计日志。
+func (r *UserRepository) UpdateUserActiveStatus(operatorID, targetUserID string, isActive bool, reason, ipAddress string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var oldActive bool
+	var targetRole string
+	query := `SELECT is_active, role FROM users WHERE id = ? FOR UPDATE`
+	if scanErr := tx.QueryRow(query, targetUserID).Scan(&oldActive, &targetRole); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			err = apperr.New(apperr.ErrNotFound, "目标用户不存在")
+			return err
+		}
+		err = fmt.Errorf("查询目标用户状态失败: %w", scanErr)
+		return err
+	}
+
+	if models.NormalizeRole(targetRole) == models.RoleRoot {
+		err = apperr.New(apperr.ErrForbidden, "禁止修改 root 账号状态")
+		return err
+	}
+
+	if oldActive == isActive {
+		err = apperr.New(apperr.ErrBadRequest, "状态未发生变化")
+		return err
+	}
+
+	if _, execErr := tx.Exec(`UPDATE users SET is_active = ?, updated_at = NOW() WHERE id = ?`, isActive, targetUserID); execErr != nil {
+		err = fmt.Errorf("更新用户状态失败: %w", execErr)
+		return err
+	}
+
+	details := map[string]interface{}{
+		"operator_id":   operatorID,
+		"old_is_active": oldActive,
+		"new_is_active": isActive,
+		"reason":        reason,
+	}
+	detailsJSON, marshalErr := json.Marshal(details)
+	if marshalErr != nil {
+		err = fmt.Errorf("构造状态变更审计日志详情失败: %w", marshalErr)
+		return err
+	}
+
+	insertLogQuery := `
+		INSERT INTO user_activity_logs (id, user_id, action_type, target_id, details, ip_address, created_at)
+		VALUES (?, ?, 'user_status_change', ?, ?, ?, ?)
+	`
+	if _, execErr := tx.Exec(insertLogQuery, uuid.New().String(), operatorID, targetUserID, string(detailsJSON), ipAddress, time.Now()); execErr != nil {
+		err = fmt.Errorf("写入状态变更审计日志失败: %w", execErr)
+		return err
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		return fmt.Errorf("提交事务失败: %w", commitErr)
+	}
+
+	return nil
+}
+
 // NewUserRepository 创建用户仓库实例
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
@@ -471,4 +539,138 @@ func (r *UserRepository) GetAllUsers() ([]*models.User, error) {
 	}
 
 	return users, nil
+}
+
+// ListAdminUsers root 分页查询用户列表。
+func (r *UserRepository) ListAdminUsers(offset int, limit int, keyword string, excludeRoot bool, excludeUserID string) ([]*models.AdminUserListItem, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	trimmedKeyword := "%" + keyword + "%"
+
+	var total int
+	countQuery := `
+		SELECT COUNT(*)
+		FROM users
+		WHERE (? = '' OR username LIKE ? OR display_name LIKE ? OR email LIKE ?)
+			AND (? = 0 OR role <> 'root')
+			AND (? = '' OR id <> ?)
+	`
+	if err := r.db.QueryRow(countQuery, keyword, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计用户总数失败: %w", err)
+	}
+
+	query := `
+		SELECT id, username, COALESCE(display_name, ''), COALESCE(email, ''), role, is_active, is_verified, created_at, updated_at
+		FROM users
+		WHERE (? = '' OR username LIKE ? OR display_name LIKE ? OR email LIKE ?)
+			AND (? = 0 OR role <> 'root')
+			AND (? = '' OR id <> ?)
+		ORDER BY created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, keyword, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询用户列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.AdminUserListItem, 0)
+	for rows.Next() {
+		item := &models.AdminUserListItem{}
+		if scanErr := rows.Scan(
+			&item.ID,
+			&item.Username,
+			&item.DisplayName,
+			&item.Email,
+			&item.Role,
+			&item.IsActive,
+			&item.IsVerified,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); scanErr != nil {
+			return nil, 0, fmt.Errorf("扫描用户列表失败: %w", scanErr)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("遍历用户列表失败: %w", err)
+	}
+
+	return items, total, nil
+}
+
+// ListRoleChangeLogs root 分页查询角色变更日志。
+func (r *UserRepository) ListRoleChangeLogs(offset int, limit int) ([]*models.AdminRoleChangeLogItem, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+
+	var total int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM user_activity_logs WHERE action_type = 'role_change'`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计角色变更日志失败: %w", err)
+	}
+
+	query := `
+		SELECT
+			l.id,
+			COALESCE(l.user_id, ''),
+			COALESCE(op.username, ''),
+			COALESCE(l.target_id, ''),
+			COALESCE(tg.username, ''),
+			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.details, '$.old_role')), ''),
+			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.details, '$.new_role')), ''),
+			COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.details, '$.reason')), ''),
+			COALESCE(l.ip_address, ''),
+			l.created_at
+		FROM user_activity_logs l
+		LEFT JOIN users op ON op.id = l.user_id
+		LEFT JOIN users tg ON tg.id = l.target_id
+		WHERE l.action_type = 'role_change'
+		ORDER BY l.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询角色变更日志失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.AdminRoleChangeLogItem, 0)
+	for rows.Next() {
+		item := &models.AdminRoleChangeLogItem{}
+		if scanErr := rows.Scan(
+			&item.ID,
+			&item.OperatorUserID,
+			&item.OperatorUsername,
+			&item.TargetUserID,
+			&item.TargetUsername,
+			&item.OldRole,
+			&item.NewRole,
+			&item.Reason,
+			&item.IP,
+			&item.CreatedAt,
+		); scanErr != nil {
+			return nil, 0, fmt.Errorf("扫描角色变更日志失败: %w", scanErr)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("遍历角色变更日志失败: %w", err)
+	}
+
+	return items, total, nil
 }

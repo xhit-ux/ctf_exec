@@ -473,7 +473,7 @@ INSERT INTO users
 VALUES
 ('00000000-0000-0000-0000-000000000001','root','root@ctf.local','$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe','root','Root','Default root account','System Root','CTF Platform','CN',1,1),
 ('11111111-1111-1111-1111-111111111111','alice','alice@example.com','$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe','user','Alice','Demo user Alice','Alice L','University A','CN',1,1),
-('22222222-2222-2222-2222-222222222222','bob','bob@example.com','$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe','admin','Bob','Demo admin Bob','Bob K','University B','US',1,1);
+('22222222-2222-2222-2222-222222222222','bob','bob@example.com','$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe','user','Bob','Demo user Bob','Bob K','University B','US',1,1);
 
 -- 补齐测试用户到 20 条（不含 root）
 INSERT INTO users

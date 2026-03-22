@@ -44,6 +44,7 @@ func main() {
 	subRepo := repository.NewSubmissionRepository(sqlDB)
 	teamRepo := repository.NewTeamRepository(sqlDB)
 	contestRepo := repository.NewContestRepository(sqlDB)
+	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
 
 	// 初始化服务层
 	authService := service.NewAuthService(userRepo, redisClient.Client, cfg)
@@ -83,6 +84,7 @@ func main() {
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
 	contestHandler := handler.NewContestHandler(contestRepo, contestService)
+	siteConfigHandler := handler.NewSiteConfigHandler(siteConfigRepo)
 
 	// 创建 Gin 引擎
 	r := gin.Default()
@@ -169,7 +171,17 @@ func main() {
 
 			adminUsers := admin.Group("/users")
 			{
+				adminUsers.GET("", middleware.RequireSiteAdminOrRoot(userRepo), userHandler.ListAdminUsersGin)
+				adminUsers.GET("/role-change-logs", middleware.RequireRoot(userRepo), userHandler.ListRoleChangeLogsGin)
+				adminUsers.PATCH(":id/active", middleware.RequireSiteAdminOrRoot(userRepo), userHandler.PatchUserActiveGin)
 				adminUsers.PATCH(":id/role", middleware.RequireRoot(userRepo), userHandler.PatchUserRoleGin)
+			}
+
+			adminSiteConfig := admin.Group("/site-config")
+			{
+				adminSiteConfig.Use(middleware.RequireRoot(userRepo))
+				adminSiteConfig.GET("", siteConfigHandler.GetSiteConfigGin)
+				adminSiteConfig.PUT("", siteConfigHandler.UpdateSiteConfigGin)
 			}
 
 			adminProblems := admin.Group("/problems")

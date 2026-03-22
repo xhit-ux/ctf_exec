@@ -350,7 +350,7 @@ export default function Profile() {
                     </div>
                     <div className="p-4 bg-gray-50 rounded-xl border border-gray-100 flex flex-col justify-center min-w-0">
                       <p className="text-sm text-gray-500 mb-1">角色</p>
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${targetUser.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${(targetUser.role === 'root' || targetUser.role === 'site_admin') ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
                         }`}>
                         {targetUser.role}
                       </span>

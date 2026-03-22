@@ -4,10 +4,11 @@ import { useAuth } from '../../context/AuthContext'
 
 interface ProtectedRouteProps {
     children: React.ReactNode
-    requiredRole?: 'admin' | 'user'
+    requiredRole?: string
+    requiredRoles?: string[]
 }
 
-export default function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requiredRole, requiredRoles }: ProtectedRouteProps) {
     const { user, isAuthenticated, isLoading } = useAuth()
     const location = useLocation()
 
@@ -19,8 +20,13 @@ export default function ProtectedRoute({ children, requiredRole }: ProtectedRout
         return <Navigate to="/login" state={{ from: location }} replace />
     }
 
-    if (requiredRole && user?.role !== requiredRole) {
-        // 如果是普通用户尝试访问 admin 页面，重定向到首页
+        const roleChecks = requiredRoles && requiredRoles.length > 0
+            ? requiredRoles
+            : requiredRole
+                ? [requiredRole]
+                : []
+
+        if (roleChecks.length > 0 && !roleChecks.includes(user?.role || '')) {
         return <Navigate to="/" replace />
     }
 
