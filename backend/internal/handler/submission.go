@@ -62,20 +62,7 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 	// 使用 Service 层提交（包含限流和排行榜更新）
 	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag, req.ContestID)
 	if err != nil {
-		// 根据错误类型返回适当的 HTTP 状态码
-		statusCode := http.StatusInternalServerError
-		errorMsg := err.Error()
-
-		// 特定错误处理
-		if errorMsg == "你已经解决过这个题目了" {
-			statusCode = http.StatusConflict
-		} else if errorMsg == "提交过于频繁，请稍后再试" || errorMsg == "题目不存在" {
-			statusCode = http.StatusBadRequest
-		} else if errorMsg == "获取题目 Flag 失败" {
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{"error": errorMsg})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 

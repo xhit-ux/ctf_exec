@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/service"
@@ -31,18 +30,7 @@ func (h *AuthHandler) SendRegisterCodeGin(c *gin.Context) {
 
 	err := h.authService.SendRegisterCode(&req, c.ClientIP())
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-		errorMsg := err.Error()
-
-		if strings.Contains(errorMsg, "请求验证失败") || strings.Contains(errorMsg, "机器人验证") {
-			statusCode = http.StatusBadRequest
-		} else if strings.Contains(errorMsg, "已被使用") {
-			statusCode = http.StatusConflict
-		} else if strings.Contains(errorMsg, "频繁") || strings.Contains(errorMsg, "上限") {
-			statusCode = http.StatusTooManyRequests
-		}
-
-		c.JSON(statusCode, gin.H{"error": errorMsg})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -60,20 +48,7 @@ func (h *AuthHandler) RegisterGin(c *gin.Context) {
 	// 调用服务层
 	response, err := h.authService.Register(&req, c.ClientIP())
 	if err != nil {
-		// 根据错误类型设置相应的 HTTP 状态码
-		statusCode := http.StatusInternalServerError
-		errorMsg := err.Error()
-
-		// 根据错误消息判断状态码
-		if strings.Contains(errorMsg, "用户名已被使用") || strings.Contains(errorMsg, "邮箱已被使用") {
-			statusCode = http.StatusConflict
-		} else if strings.Contains(errorMsg, "请求验证失败") || strings.Contains(errorMsg, "机器人验证") || strings.Contains(errorMsg, "验证码") {
-			statusCode = http.StatusBadRequest
-		} else if strings.Contains(errorMsg, "频繁") || strings.Contains(errorMsg, "上限") {
-			statusCode = http.StatusTooManyRequests
-		}
-
-		c.JSON(statusCode, gin.H{"error": errorMsg})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -91,14 +66,7 @@ func (h *AuthHandler) LoginGin(c *gin.Context) {
 	// 调用服务层
 	response, err := h.authService.Login(&req)
 	if err != nil {
-		statusCode := http.StatusUnauthorized
-		errorMsg := err.Error()
-
-		if strings.Contains(errorMsg, "请求验证失败") {
-			statusCode = http.StatusBadRequest
-		}
-
-		c.JSON(statusCode, gin.H{"error": errorMsg})
+		c.JSON(statusCodeByError(err, http.StatusUnauthorized), gin.H{"error": err.Error()})
 		return
 	}
 

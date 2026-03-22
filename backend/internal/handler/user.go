@@ -55,15 +55,7 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	}
 
 	if err := h.userRepo.UpdateUserRole(claims.UserID, targetUserID, req.Role, req.Reason, c.ClientIP()); err != nil {
-		if err.Error() == "目标用户不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		if err.Error() == "角色未发生变化" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -162,7 +154,7 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	// 更新用户信息
 	err := h.userRepo.UpdateProfile(claims.UserID, &req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -180,7 +172,7 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 
 	user, err := h.userRepo.GetUserByUsername(username)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": "用户不存在"})
 		return
 	}
 

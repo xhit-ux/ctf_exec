@@ -51,7 +51,7 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 
 	// 验证图片文件
 	if err := utils.ValidateImageFile(header, utils.MaxAvatarSize); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, 400), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 	if err := h.userRepo.UpdateAvatarURL(claims.UserID, filePath); err != nil {
 		// 如果数据库更新失败，尝试删除已上传的文件
 		utils.DeleteFile(filePath)
-		c.JSON(500, gin.H{"error": fmt.Sprintf("更新头像失败: %v", err)})
+		c.JSON(statusCodeByError(err, 500), gin.H{"error": fmt.Sprintf("更新头像失败: %v", err)})
 		return
 	}
 
@@ -120,7 +120,7 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 	defer file.Close()
 
 	if err := utils.ValidateImageFile(header, utils.MaxCoverSize); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, 400), gin.H{"error": err.Error()})
 		return
 	}
 

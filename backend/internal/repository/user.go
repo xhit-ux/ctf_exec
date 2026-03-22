@@ -3,11 +3,13 @@ package repository
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -33,7 +35,7 @@ func (r *UserRepository) UpdateUserRole(operatorID, targetUserID, newRole, reaso
 	selectQuery := `SELECT role FROM users WHERE id = ? AND is_active = 1 FOR UPDATE`
 	if scanErr := tx.QueryRow(selectQuery, targetUserID).Scan(&oldRole); scanErr != nil {
 		if scanErr == sql.ErrNoRows {
-			err = fmt.Errorf("目标用户不存在")
+			err = apperr.New(apperr.ErrNotFound, "目标用户不存在")
 			return err
 		}
 		err = fmt.Errorf("查询目标用户角色失败: %w", scanErr)
@@ -41,7 +43,7 @@ func (r *UserRepository) UpdateUserRole(operatorID, targetUserID, newRole, reaso
 	}
 
 	if oldRole == newRole {
-		err = fmt.Errorf("角色未发生变化")
+		err = apperr.New(apperr.ErrBadRequest, "角色未发生变化")
 		return err
 	}
 
@@ -111,9 +113,9 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash st
 	)
 
 	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "Duplicate entry") {
-			return nil, fmt.Errorf("用户名已被使用")
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return nil, apperr.New(apperr.ErrConflict, "用户名已被使用")
 		}
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
@@ -153,7 +155,7 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("用户不存在")
+		return nil, apperr.New(apperr.ErrNotFound, "用户不存在")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
@@ -182,7 +184,7 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("用户不存在")
+		return nil, apperr.New(apperr.ErrNotFound, "用户不存在")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("查询用户失败: %w", err)
@@ -290,7 +292,7 @@ func (r *UserRepository) UpdateAvatarURL(userID, avatarURL string) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("用户不存在")
+		return apperr.New(apperr.ErrNotFound, "用户不存在")
 	}
 
 	return nil
@@ -331,7 +333,7 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("用户不存在或无权更新")
+		return apperr.New(apperr.ErrNotFound, "用户不存在或无权更新")
 	}
 
 	return nil

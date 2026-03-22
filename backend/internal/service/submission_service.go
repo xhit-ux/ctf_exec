@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -58,18 +60,24 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		return nil, fmt.Errorf("检查提交限制失败: %w", err)
 	}
 	if !allowed {
-		return nil, fmt.Errorf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining)
+		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining))
 	}
 
 	// 获取题目信息
 	problem, err := s.problemRepo.GetProblemByID(problemID)
 	if err != nil {
-		return nil, fmt.Errorf("题目不存在: %w", err)
+		if errors.Is(err, apperr.ErrNotFound) {
+			return nil, apperr.New(apperr.ErrBadRequest, "题目不存在")
+		}
+		return nil, fmt.Errorf("查询题目失败: %w", err)
 	}
 
 	// 获取题目的正确 flag hash
 	correctFlagHash, err := s.problemRepo.GetFlagHashByProblemID(problemID)
 	if err != nil {
+		if errors.Is(err, apperr.ErrNotFound) {
+			return nil, apperr.New(apperr.ErrNotFound, "获取题目 Flag 失败")
+		}
 		return nil, fmt.Errorf("获取题目 Flag Hash 失败: %w", err)
 	}
 
@@ -80,7 +88,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	var contestScore int
 	if contestID != nil && *contestID != "" {
 		if s.contestSvc == nil {
-			return nil, fmt.Errorf("赛事服务不可用")
+			return nil, apperr.New(apperr.ErrBadRequest, "赛事服务不可用")
 		}
 		scope, score, err := s.contestSvc.ValidateContestSubmission(*contestID, userID, problemID)
 		if err != nil {
@@ -96,7 +104,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		if err == nil {
 			for _, sub := range submissions {
 				if sub.ProblemID == problemID && sub.IsCorrect {
-					return nil, fmt.Errorf("你已经解决过这个题目了")
+					return nil, apperr.New(apperr.ErrConflict, "你已经解决过这个题目了")
 				}
 			}
 		}
@@ -106,8 +114,12 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	req := &models.CreateSubmissionRequest{
 		ProblemID: problemID,
 		Flag:      flag,
+		TeamID:    nil,
 		ContestID: contestID,
 		IsCorrect: isCorrect,
+	}
+	if contestScope != nil {
+		req.TeamID = contestScope.TeamID
 	}
 
 	// 保存提交记录

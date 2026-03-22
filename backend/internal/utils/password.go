@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -19,7 +20,7 @@ func HashPassword(password string) (string, error) {
 func VerifyPassword(hashedPassword, password string) error {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	if err != nil {
-		return fmt.Errorf("密码错误")
+		return apperr.New(apperr.ErrUnauthorized, "密码错误")
 	}
 	return nil
 }

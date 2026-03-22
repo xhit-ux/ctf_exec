@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -65,7 +66,7 @@ func VerifyToken(tokenString string) (*Claims, error) {
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf("token 无效")
+		return nil, apperr.New(apperr.ErrUnauthorized, "token 无效")
 	}
 
 	return claims, nil

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
 )
@@ -70,7 +71,7 @@ func (r *ProblemRepository) GetProblemByID(id int) (*models.Problem, error) {
 	err := r.db.QueryRow(query, id).Scan(&p.ID, &p.Title, &p.Category, &p.Points, &p.Difficulty, &p.Description, &tagsJSON)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("题目不存在")
+			return nil, apperr.New(apperr.ErrNotFound, "题目不存在")
 		}
 		return nil, fmt.Errorf("查询题目失败: %w", err)
 	}
@@ -88,7 +89,7 @@ func (r *ProblemRepository) GetFlagHashByProblemID(id int) (string, error) {
 	err := r.db.QueryRow(query, id).Scan(&flagHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("题目不存在")
+			return "", apperr.New(apperr.ErrNotFound, "题目不存在")
 		}
 		return "", fmt.Errorf("查询 Flag Hash 失败: %w", err)
 	}
@@ -199,7 +200,7 @@ func (r *ProblemRepository) UpdateProblem(problemID int, req *models.UpdateProbl
 	checkQuery := `SELECT id FROM problems WHERE id = ?`
 	if scanErr := tx.QueryRow(checkQuery, problemID).Scan(&existsID); scanErr != nil {
 		if scanErr == sql.ErrNoRows {
-			err = fmt.Errorf("题目不存在")
+			err = apperr.New(apperr.ErrNotFound, "题目不存在")
 			return err
 		}
 		err = fmt.Errorf("查询题目失败: %w", scanErr)
@@ -257,7 +258,7 @@ func (r *ProblemRepository) DeleteProblem(problemID int) error {
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("题目不存在")
+		return apperr.New(apperr.ErrNotFound, "题目不存在")
 	}
 
 	return nil

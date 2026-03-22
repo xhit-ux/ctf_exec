@@ -2,11 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math/rand"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -46,7 +49,7 @@ func (r *TeamRepository) CreateTeam(userID string, name string) (*models.Team, e
 		return nil, err
 	}
 	if memberCount > 0 {
-		return nil, fmt.Errorf("你已经在队伍中了")
+		return nil, apperr.New(apperr.ErrConflict, "你已经在队伍中了")
 	}
 
 	// 2. 创建队伍
@@ -59,6 +62,10 @@ func (r *TeamRepository) CreateTeam(userID string, name string) (*models.Team, e
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, teamID, name, inviteCode, userID, now, now)
 	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return nil, apperr.New(apperr.ErrConflict, "队伍名称已存在")
+		}
 		return nil, fmt.Errorf("创建队伍失败: %w", err)
 	}
 
@@ -103,6 +110,9 @@ func (r *TeamRepository) GetTeamByID(teamID string) (*models.Team, error) {
 		&team.Score, &team.SolvedCount, &team.CreatedAt, &team.UpdatedAt,
 	)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperr.New(apperr.ErrNotFound, "队伍不存在")
+		}
 		return nil, err
 	}
 	return team, nil
@@ -156,7 +166,7 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 	err = tx.QueryRow("SELECT id FROM teams WHERE invite_code = ?", inviteCode).Scan(&teamID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return fmt.Errorf("无效的邀请码")
+			return apperr.New(apperr.ErrBadRequest, "无效的邀请码")
 		}
 		return err
 	}
@@ -168,7 +178,7 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 		return err
 	}
 	if memberCount >= 5 {
-		return fmt.Errorf("队伍已满 (上限 5 人)")
+		return apperr.New(apperr.ErrConflict, "队伍已满 (上限 5 人)")
 	}
 
 	// 3. 检查用户是否已在队伍中
@@ -178,7 +188,7 @@ func (r *TeamRepository) JoinTeam(userID string, inviteCode string) error {
 		return err
 	}
 	if userInTeamCount > 0 {
-		return fmt.Errorf("你已经在队伍中了，请先退出当前队伍")
+		return apperr.New(apperr.ErrConflict, "你已经在队伍中了，请先退出当前队伍")
 	}
 
 	// 4. 加入队伍
@@ -249,13 +259,13 @@ func (r *TeamRepository) KickMember(teamID string, userID string) error {
 	var role string
 	err = tx.QueryRow("SELECT team_id, role_in_team FROM team_members WHERE user_id = ?", userID).Scan(&memberTeamID, &role)
 	if err != nil {
-		return fmt.Errorf("成员不存在或不在队伍中")
+		return apperr.New(apperr.ErrNotFound, "成员不存在或不在队伍中")
 	}
 	if memberTeamID != teamID {
-		return fmt.Errorf("该成员不属于你的队伍")
+		return apperr.New(apperr.ErrForbidden, "该成员不属于你的队伍")
 	}
 	if role == "leader" {
-		return fmt.Errorf("不能踢出队长")
+		return apperr.New(apperr.ErrBadRequest, "不能踢出队长")
 	}
 
 	// 2. 删除成员记录
@@ -280,11 +290,11 @@ func (r *TeamRepository) LeaveTeam(userID string) error {
 	var role string
 	err = tx.QueryRow("SELECT team_id, role_in_team FROM team_members WHERE user_id = ?", userID).Scan(&teamID, &role)
 	if err != nil {
-		return fmt.Errorf("你不在任何队伍中")
+		return apperr.New(apperr.ErrNotFound, "你不在任何队伍中")
 	}
 
 	if role == "leader" {
-		return fmt.Errorf("队长不能直接退出，请先解散队伍或转让队长")
+		return apperr.New(apperr.ErrBadRequest, "队长不能直接退出，请先解散队伍或转让队长")
 	}
 
 	// 2. 删除成员记录
@@ -309,7 +319,7 @@ func (r *TeamRepository) DissolveTeam(userID string) error {
 	var role string
 	err = tx.QueryRow("SELECT team_id, role_in_team FROM team_members WHERE user_id = ?", userID).Scan(&teamID, &role)
 	if err != nil || role != "leader" {
-		return fmt.Errorf("仅队长可以解散队伍")
+		return apperr.New(apperr.ErrForbidden, "仅队长可以解散队伍")
 	}
 
 	// 2. 删除所有成员记录
@@ -332,10 +342,13 @@ func (r *TeamRepository) GetTeamByUserID(userID string) (*models.Team, error) {
 	var teamID sql.NullString
 	err := r.db.QueryRow("SELECT team_id FROM team_members WHERE user_id = ?", userID).Scan(&teamID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperr.New(apperr.ErrNotFound, "不在队伍中")
+		}
 		return nil, err
 	}
 	if !teamID.Valid {
-		return nil, fmt.Errorf("不在队伍中")
+		return nil, apperr.New(apperr.ErrNotFound, "不在队伍中")
 	}
 
 	team, err := r.GetTeamByID(teamID.String)

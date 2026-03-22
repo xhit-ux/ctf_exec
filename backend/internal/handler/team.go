@@ -50,7 +50,7 @@ func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
 
 	team, err := h.teamService.CreateTeam(claims.UserID, req.Name)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
 
 	err := h.teamService.JoinTeam(claims.UserID, req.InviteCode)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -122,7 +122,12 @@ func (h *TeamHandler) GetMyTeamGin(c *gin.Context) {
 
 	team, err := h.teamService.GetMyTeam(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "未加入任何队伍"})
+		statusCode := statusCodeByError(err, http.StatusNotFound)
+		if statusCode == http.StatusNotFound {
+			c.JSON(statusCode, gin.H{"error": "未加入任何队伍"})
+			return
+		}
+		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -145,7 +150,7 @@ func (h *TeamHandler) LeaveTeamGin(c *gin.Context) {
 
 	err := h.teamService.LeaveTeam(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -168,7 +173,7 @@ func (h *TeamHandler) DissolveTeamGin(c *gin.Context) {
 
 	err := h.teamService.DissolveTeam(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -272,7 +277,7 @@ func (h *TeamHandler) UpdateTeamGin(c *gin.Context) {
 
 	err := h.teamService.UpdateTeam(claims.UserID, req.Name)
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusForbidden), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -301,7 +306,7 @@ func (h *TeamHandler) KickMemberGin(c *gin.Context) {
 
 	err := h.teamService.KickMember(claims.UserID, req.UserID)
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusForbidden), gin.H{"error": err.Error()})
 		return
 	}
 

@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 )
@@ -34,10 +35,10 @@ func NewTeamService(teamRepo *repository.TeamRepository) *TeamServiceImpl {
 func (s *TeamServiceImpl) CreateTeam(userID string, name string) (*models.Team, error) {
 	// 验证队伍名称
 	if name == "" {
-		return nil, fmt.Errorf("队伍名称不能为空")
+		return nil, apperr.New(apperr.ErrBadRequest, "队伍名称不能为空")
 	}
 	if len(name) < 2 || len(name) > 32 {
-		return nil, fmt.Errorf("队伍名称长度应在 2-32 个字符之间")
+		return nil, apperr.New(apperr.ErrBadRequest, "队伍名称长度应在 2-32 个字符之间")
 	}
 
 	team, err := s.teamRepo.CreateTeam(userID, name)
@@ -51,7 +52,7 @@ func (s *TeamServiceImpl) CreateTeam(userID string, name string) (*models.Team, 
 // JoinTeam 加入队伍
 func (s *TeamServiceImpl) JoinTeam(userID string, inviteCode string) error {
 	if inviteCode == "" {
-		return fmt.Errorf("邀请码不能为空")
+		return apperr.New(apperr.ErrBadRequest, "邀请码不能为空")
 	}
 
 	err := s.teamRepo.JoinTeam(userID, inviteCode)
@@ -119,7 +120,7 @@ func (s *TeamServiceImpl) GetTeamLeaderboard(limit int) ([]*models.TeamLeaderboa
 // GetTeamPublic 获取公开队伍信息
 func (s *TeamServiceImpl) GetTeamPublic(teamID string) (*models.Team, error) {
 	if teamID == "" {
-		return nil, fmt.Errorf("队伍ID不能为空")
+		return nil, apperr.New(apperr.ErrBadRequest, "队伍ID不能为空")
 	}
 
 	team, err := s.teamRepo.GetTeamByID(teamID)
@@ -156,15 +157,15 @@ func (s *TeamServiceImpl) UpdateTeam(userID string, name string) error {
 
 	// 检查是否是队长
 	if team.LeaderID != userID {
-		return fmt.Errorf("只有队长可以修改队伍信息")
+		return apperr.New(apperr.ErrForbidden, "只有队长可以修改队伍信息")
 	}
 
 	// 验证队伍名称
 	if name == "" {
-		return fmt.Errorf("队伍名称不能为空")
+		return apperr.New(apperr.ErrBadRequest, "队伍名称不能为空")
 	}
 	if len(name) < 2 || len(name) > 32 {
-		return fmt.Errorf("队伍名称长度应在 2-32 个字符之间")
+		return apperr.New(apperr.ErrBadRequest, "队伍名称长度应在 2-32 个字符之间")
 	}
 
 	err = s.teamRepo.UpdateTeam(team.ID, name)
@@ -178,12 +179,12 @@ func (s *TeamServiceImpl) UpdateTeam(userID string, name string) error {
 // KickMember 踢出成员
 func (s *TeamServiceImpl) KickMember(userID string, targetUserID string) error {
 	if targetUserID == "" {
-		return fmt.Errorf("目标用户ID不能为空")
+		return apperr.New(apperr.ErrBadRequest, "目标用户ID不能为空")
 	}
 
 	// 不能踢自己
 	if userID == targetUserID {
-		return fmt.Errorf("不能踢出自己")
+		return apperr.New(apperr.ErrBadRequest, "不能踢出自己")
 	}
 
 	// 验证权限：必须是队长
@@ -193,7 +194,7 @@ func (s *TeamServiceImpl) KickMember(userID string, targetUserID string) error {
 	}
 
 	if team.LeaderID != userID {
-		return fmt.Errorf("只有队长可以踢出成员")
+		return apperr.New(apperr.ErrForbidden, "只有队长可以踢出成员")
 	}
 
 	err = s.teamRepo.KickMember(team.ID, targetUserID)

@@ -2,11 +2,14 @@ package repository
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/go-sql-driver/mysql"
 	"github.com/google/uuid"
 )
 
@@ -73,7 +76,7 @@ func (r *ContestRepository) GetContestByID(contestID string) (*models.Contest, e
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("赛事不存在")
+			return nil, apperr.New(apperr.ErrNotFound, "赛事不存在")
 		}
 		return nil, fmt.Errorf("查询赛事失败: %w", err)
 	}
@@ -143,7 +146,7 @@ func (r *ContestRepository) UpdateContest(contestID string, req *models.UpdateCo
 		return fmt.Errorf("获取影响行数失败: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("赛事不存在")
+		return apperr.New(apperr.ErrNotFound, "赛事不存在")
 	}
 
 	return nil
@@ -160,7 +163,7 @@ func (r *ContestRepository) DeleteContest(contestID string) error {
 		return fmt.Errorf("获取影响行数失败: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("赛事不存在")
+		return apperr.New(apperr.ErrNotFound, "赛事不存在")
 	}
 
 	return nil
@@ -191,7 +194,7 @@ func (r *ContestRepository) RemoveChallengeFromContest(contestID string, challen
 		return fmt.Errorf("获取影响行数失败: %w", err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("赛事题目关联不存在")
+		return apperr.New(apperr.ErrNotFound, "赛事题目关联不存在")
 	}
 
 	return nil
@@ -214,8 +217,9 @@ func (r *ContestRepository) JoinContest(contestID, userID string, teamID *string
 
 	_, err := r.db.Exec(query, participantID, contestID, userIDVal, teamIDVal, time.Now())
 	if err != nil {
-		if strings.Contains(err.Error(), "Duplicate entry") {
-			return fmt.Errorf("已报名该赛事")
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+			return apperr.New(apperr.ErrConflict, "已报名该赛事")
 		}
 		return fmt.Errorf("报名失败: %w", err)
 	}
@@ -239,7 +243,7 @@ func (r *ContestRepository) LeaveContest(contestID, userID string, teamID *strin
 
 	rows, err := result.RowsAffected()
 	if err == nil && rows == 0 {
-		return fmt.Errorf("未找到报名记录")
+		return apperr.New(apperr.ErrNotFound, "未找到报名记录")
 	}
 
 	return nil
@@ -329,7 +333,7 @@ func (r *ContestRepository) GetContestChallengeScore(contestID string, problemID
 	err := r.db.QueryRow(query, contestID, problemID).Scan(&override, &points)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return 0, fmt.Errorf("赛事题目不存在")
+			return 0, apperr.New(apperr.ErrNotFound, "赛事题目不存在")
 		}
 		return 0, fmt.Errorf("获取赛事题目分值失败: %w", err)
 	}

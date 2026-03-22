@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 )
@@ -54,7 +55,7 @@ func (s *ContestServiceImpl) JoinContest(contestID, userID string, teamID *strin
 
 	status := s.GetContestStatus(contest)
 	if status == "ended" {
-		return fmt.Errorf("赛事已结束，无法报名")
+		return apperr.New(apperr.ErrBadRequest, "赛事已结束，无法报名")
 	}
 
 	if teamID != nil && strings.TrimSpace(*teamID) != "" {
@@ -64,7 +65,7 @@ func (s *ContestServiceImpl) JoinContest(contestID, userID string, teamID *strin
 			return err
 		}
 		if !member {
-			return fmt.Errorf("用户不属于该团队")
+			return apperr.New(apperr.ErrForbidden, "用户不属于该团队")
 		}
 
 		if err := s.contestRepo.JoinContest(contestID, userID, &normalizedTeamID); err != nil {
@@ -91,7 +92,7 @@ func (s *ContestServiceImpl) LeaveContest(contestID, userID string, teamID *stri
 			return err
 		}
 		if !member {
-			return fmt.Errorf("用户不属于该团队")
+			return apperr.New(apperr.ErrForbidden, "用户不属于该团队")
 		}
 		return s.contestRepo.LeaveContest(contestID, userID, &normalizedTeamID)
 	}
@@ -112,14 +113,14 @@ func (s *ContestServiceImpl) GetContestChallengesForUser(contestID, userID strin
 	if !isUserParticipant {
 		team, teamErr := s.teamRepo.GetTeamByUserID(userID)
 		if teamErr != nil || team == nil {
-			return nil, fmt.Errorf("未报名该赛事")
+			return nil, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
 		}
 		isTeamParticipant, err := s.contestRepo.IsParticipant(contestID, userID, &team.ID)
 		if err != nil {
 			return nil, err
 		}
 		if !isTeamParticipant {
-			return nil, fmt.Errorf("未报名该赛事")
+			return nil, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
 		}
 	}
 
@@ -178,7 +179,7 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 	}
 
 	if s.GetContestStatus(contest) != "running" {
-		return nil, 0, fmt.Errorf("赛事未处于进行中")
+		return nil, 0, apperr.New(apperr.ErrBadRequest, "赛事未处于进行中")
 	}
 
 	allowed, err := s.contestRepo.IsProblemInContest(contestID, problemID)
@@ -186,7 +187,7 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 		return nil, 0, err
 	}
 	if !allowed {
-		return nil, 0, fmt.Errorf("题目不在该赛事中")
+		return nil, 0, apperr.New(apperr.ErrBadRequest, "题目不在该赛事中")
 	}
 
 	var scope models.ContestParticipantScope
@@ -199,14 +200,14 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 	} else {
 		team, teamErr := s.teamRepo.GetTeamByUserID(userID)
 		if teamErr != nil || team == nil {
-			return nil, 0, fmt.Errorf("未报名该赛事")
+			return nil, 0, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
 		}
 		isTeamParticipant, err := s.contestRepo.IsParticipant(contestID, userID, &team.ID)
 		if err != nil {
 			return nil, 0, err
 		}
 		if !isTeamParticipant {
-			return nil, 0, fmt.Errorf("未报名该赛事")
+			return nil, 0, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
 		}
 		scope.TeamID = &team.ID
 	}
@@ -217,7 +218,7 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 			return nil, 0, err
 		}
 		if solved {
-			return nil, 0, fmt.Errorf("该题在赛事中已解出")
+			return nil, 0, apperr.New(apperr.ErrConflict, "该题在赛事中已解出")
 		}
 	} else {
 		solved, err := s.contestRepo.HasSolvedInContest(contestID, problemID, userID, nil)
@@ -225,7 +226,7 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 			return nil, 0, err
 		}
 		if solved {
-			return nil, 0, fmt.Errorf("该题在赛事中已解出")
+			return nil, 0, apperr.New(apperr.ErrConflict, "该题在赛事中已解出")
 		}
 	}
 
@@ -239,7 +240,7 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 
 func (s *ContestServiceImpl) ApplyContestSolve(contestID string, scope *models.ContestParticipantScope, score int, solvedAt time.Time) error {
 	if scope == nil {
-		return fmt.Errorf("赛事主体信息为空")
+		return apperr.New(apperr.ErrBadRequest, "赛事主体信息为空")
 	}
 
 	if scope.TeamID != nil {
@@ -254,7 +255,7 @@ func (s *ContestServiceImpl) ApplyContestSolve(contestID string, scope *models.C
 	}
 
 	if scope.UserID == nil {
-		return fmt.Errorf("赛事个人主体为空")
+		return apperr.New(apperr.ErrBadRequest, "赛事个人主体为空")
 	}
 	latest, err := s.contestRepo.UpsertContestUserScore(contestID, *scope.UserID, score, solvedAt)
 	if err != nil {

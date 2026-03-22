@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/google/uuid"
 )
 
@@ -32,19 +33,19 @@ var AllowedImageExtensions = map[string]bool{
 func ValidateImageFile(header *multipart.FileHeader, maxSize int64) error {
 	// 检查文件大小
 	if header.Size > maxSize {
-		return fmt.Errorf("文件大小超过限制，最大允许 %d MB", maxSize/(1024*1024))
+		return apperr.New(apperr.ErrBadRequest, fmt.Sprintf("文件大小超过限制，最大允许 %d MB", maxSize/(1024*1024)))
 	}
 
 	// 检查文件扩展名
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if !AllowedImageExtensions[ext] {
-		return fmt.Errorf("不支持的文件格式，仅支持: jpg, jpeg, png, gif, webp")
+		return apperr.New(apperr.ErrBadRequest, "不支持的文件格式，仅支持: jpg, jpeg, png, gif, webp")
 	}
 
 	// 检查 MIME 类型
 	contentType := header.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "image/") {
-		return fmt.Errorf("文件类型必须是图片")
+		return apperr.New(apperr.ErrBadRequest, "文件类型必须是图片")
 	}
 
 	return nil

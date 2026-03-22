@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,11 +49,12 @@ func (h *ContestHandler) GetContestDetailGin(c *gin.Context) {
 
 	contest, err := h.repo.GetContestByID(contestID)
 	if err != nil {
-		if err.Error() == "赛事不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		statusCode := statusCodeByError(err, http.StatusInternalServerError)
+		if statusCode == http.StatusInternalServerError {
+			c.JSON(statusCode, gin.H{"error": "获取赛事详情失败"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取赛事详情失败"})
+		c.JSON(statusCode, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -106,11 +109,7 @@ func (h *ContestHandler) UpdateContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateContest(contestID, &req); err != nil {
-		if err.Error() == "赛事不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -125,11 +124,7 @@ func (h *ContestHandler) DeleteContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.DeleteContest(contestID); err != nil {
-		if err.Error() == "赛事不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -171,11 +166,7 @@ func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 	}
 
 	if err := h.repo.RemoveChallengeFromContest(contestID, challengeID); err != nil {
-		if err.Error() == "赛事题目关联不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -201,13 +192,13 @@ func (h *ContestHandler) JoinContestGin(c *gin.Context) {
 	}
 
 	var req models.JoinContestRequest
-	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
 		return
 	}
 
 	if err := h.svc.JoinContest(contestID, claims.UserID, req.TeamID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -233,13 +224,13 @@ func (h *ContestHandler) LeaveContestGin(c *gin.Context) {
 	}
 
 	var req models.LeaveContestRequest
-	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
 		return
 	}
 
 	if err := h.svc.LeaveContest(contestID, claims.UserID, req.TeamID); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -266,7 +257,7 @@ func (h *ContestHandler) GetContestChallengesGin(c *gin.Context) {
 
 	items, err := h.svc.GetContestChallengesForUser(contestID, claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -295,7 +286,7 @@ func (h *ContestHandler) GetContestScoreboardGin(c *gin.Context) {
 
 	items, err := h.svc.GetContestScoreboard(contestID, boardType, limit)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusBadRequest), gin.H{"error": err.Error()})
 		return
 	}
 

@@ -25,11 +25,11 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 	now := time.Now()
 
 	query := `
-		INSERT INTO submissions (id, user_id, problem_id, contest_id, flag, is_correct, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO submissions (id, user_id, team_id, problem_id, contest_id, flag, is_correct, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, submissionID, userID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, now)
+	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, now)
 	if err != nil {
 		return nil, fmt.Errorf("创建提交记录失败: %w", err)
 	}
@@ -37,6 +37,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 	return &models.Submission{
 		ID:        submissionID,
 		UserID:    userID,
+		TeamID:    req.TeamID,
 		ContestID: req.ContestID,
 		ProblemID: req.ProblemID,
 		Flag:      req.Flag,
@@ -49,7 +50,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.Submission, error) {
 	var submissions []*models.Submission
 	query := `
-		SELECT s.id, s.user_id, s.problem_id, s.contest_id, s.flag, s.is_correct, s.created_at, p.title
+		SELECT s.id, s.user_id, s.team_id, s.problem_id, s.contest_id, s.flag, s.is_correct, s.created_at, p.title
 		FROM submissions s
 		LEFT JOIN problems p ON s.problem_id = p.id
 		WHERE s.user_id = ?
@@ -64,10 +65,15 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 
 	for rows.Next() {
 		s := &models.Submission{}
+		var teamID sql.NullString
 		var contestID sql.NullString
-		err := rows.Scan(&s.ID, &s.UserID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &s.CreatedAt, &s.ProblemTitle)
+		err := rows.Scan(&s.ID, &s.UserID, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &s.CreatedAt, &s.ProblemTitle)
 		if err != nil {
 			return nil, fmt.Errorf("扫描提交记录失败: %w", err)
+		}
+		if teamID.Valid {
+			v := teamID.String
+			s.TeamID = &v
 		}
 		if contestID.Valid {
 			v := contestID.String

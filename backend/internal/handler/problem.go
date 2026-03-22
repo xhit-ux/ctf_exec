@@ -70,11 +70,7 @@ func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
 	}
 
 	if err := h.repo.UpdateProblem(id, &req); err != nil {
-		if err.Error() == "题目不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -91,11 +87,7 @@ func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	}
 
 	if err := h.repo.DeleteProblem(id); err != nil {
-		if err.Error() == "题目不存在" {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusInternalServerError), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -151,7 +143,7 @@ func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 
 	problem, err := h.repo.GetProblemByID(id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": err.Error()})
 		return
 	}
 

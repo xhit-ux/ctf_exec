@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/models"
@@ -53,7 +54,7 @@ func NewAuthService(userRepo *repository.UserRepository, redisClient *redis.Clie
 // SendRegisterCode 发送注册验证码
 func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, clientIP string) error {
 	if err := validateSendCodeRequest(req); err != nil {
-		return fmt.Errorf("请求验证失败: %w", err)
+		return apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
 	}
 
 	normalizedEmail := normalizeEmail(req.Email)
@@ -67,7 +68,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 		return fmt.Errorf("检查邮箱失败: %w", err)
 	}
 	if exists {
-		return fmt.Errorf("邮箱已被使用")
+		return apperr.New(apperr.ErrConflict, "邮箱已被使用")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -79,7 +80,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 		return fmt.Errorf("验证码限流检查失败: %w", err)
 	}
 	if ttl > 0 {
-		return fmt.Errorf("验证码发送过于频繁，请 %d 秒后重试", int(ttl.Seconds()))
+		return apperr.New(apperr.ErrTooManyRequests, fmt.Sprintf("验证码发送过于频繁，请 %d 秒后重试", int(ttl.Seconds())))
 	}
 
 	if err := s.checkAndIncreaseDailyLimit(ctx, normalizedEmail); err != nil {
@@ -117,7 +118,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 
 	// 验证输入
 	if err := validateRegisterRequest(req); err != nil {
-		return nil, fmt.Errorf("请求验证失败: %w", err)
+		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
 	}
 
 	normalizedEmail := normalizeEmail(req.Email)
@@ -132,7 +133,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 		return nil, fmt.Errorf("检查用户名失败: %w", err)
 	}
 	if exists {
-		return nil, fmt.Errorf("用户名已被使用")
+		return nil, apperr.New(apperr.ErrConflict, "用户名已被使用")
 	}
 
 	// 检查邮箱是否存在
@@ -142,7 +143,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 			return nil, fmt.Errorf("检查邮箱失败: %w", err)
 		}
 		if exists {
-			return nil, fmt.Errorf("邮箱已被使用")
+			return nil, apperr.New(apperr.ErrConflict, "邮箱已被使用")
 		}
 	}
 
@@ -176,18 +177,18 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 func (s *AuthServiceImpl) Login(req *models.LoginRequest) (*models.AuthResponse, error) {
 	// 验证输入
 	if err := validateLoginRequest(req); err != nil {
-		return nil, fmt.Errorf("请求验证失败: %w", err)
+		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
 	}
 
 	// 查询用户
 	user, err := s.userRepo.GetUserByUsername(req.Username)
 	if err != nil {
-		return nil, fmt.Errorf("用户名或密码错误")
+		return nil, apperr.New(apperr.ErrUnauthorized, "用户名或密码错误")
 	}
 
 	// 验证密码
 	if err := utils.VerifyPassword(user.PasswordHash, req.Password); err != nil {
-		return nil, fmt.Errorf("用户名或密码错误")
+		return nil, apperr.New(apperr.ErrUnauthorized, "用户名或密码错误")
 	}
 
 	// 更新最后登陆时间
@@ -212,7 +213,7 @@ func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 	codeKey := cache.GetEmailVerifyCodeKey(email)
 	storedHash, err := s.redisClient.Get(ctx, codeKey).Result()
 	if err == redis.Nil {
-		return fmt.Errorf("验证码已过期或不存在，请重新获取")
+		return apperr.New(apperr.ErrBadRequest, "验证码已过期或不存在，请重新获取")
 	}
 	if err != nil {
 		return fmt.Errorf("验证码校验失败: %w", err)
@@ -220,7 +221,7 @@ func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 
 	computedHash := hashEmailCode(email, strings.TrimSpace(rawCode))
 	if subtle.ConstantTimeCompare([]byte(storedHash), []byte(computedHash)) != 1 {
-		return fmt.Errorf("邮箱验证码错误")
+		return apperr.New(apperr.ErrBadRequest, "邮箱验证码错误")
 	}
 
 	if err := s.redisClient.Del(ctx, codeKey).Err(); err != nil {
@@ -243,7 +244,7 @@ func (s *AuthServiceImpl) checkAndIncreaseDailyLimit(ctx context.Context, email 
 	}
 
 	if int(count) > s.emailCfg.VerificationDailyLimit {
-		return fmt.Errorf("验证码发送已达当日上限，请明日再试")
+		return apperr.New(apperr.ErrTooManyRequests, "验证码发送已达当日上限，请明日再试")
 	}
 
 	return nil
@@ -263,7 +264,7 @@ func (s *AuthServiceImpl) verifyBotToken(botToken, clientIP string) error {
 	}
 
 	if strings.TrimSpace(botToken) == "" {
-		return fmt.Errorf("请先完成机器人验证")
+		return apperr.New(apperr.ErrBadRequest, "请先完成机器人验证")
 	}
 
 	if err := s.limitBotVerifyByIP(ctx, ip); err != nil {
@@ -285,7 +286,7 @@ func (s *AuthServiceImpl) verifyBotToken(botToken, clientIP string) error {
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("机器人验证请求失败")
+		return apperr.New(apperr.ErrBadRequest, "机器人验证请求失败")
 	}
 	defer resp.Body.Close()
 
@@ -295,11 +296,11 @@ func (s *AuthServiceImpl) verifyBotToken(botToken, clientIP string) error {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&verifyResp); err != nil {
-		return fmt.Errorf("机器人验证响应解析失败")
+		return apperr.New(apperr.ErrBadRequest, "机器人验证响应解析失败")
 	}
 
 	if !verifyResp.Success {
-		return fmt.Errorf("机器人验证未通过")
+		return apperr.New(apperr.ErrBadRequest, "机器人验证未通过")
 	}
 
 	return nil
@@ -320,7 +321,7 @@ func (s *AuthServiceImpl) limitBotVerifyByIP(ctx context.Context, clientIP strin
 		_ = s.redisClient.Expire(ctx, key, 60*time.Second).Err()
 	}
 	if count > 30 {
-		return fmt.Errorf("请求过于频繁，请稍后再试")
+		return apperr.New(apperr.ErrTooManyRequests, "请求过于频繁，请稍后再试")
 	}
 
 	return nil
@@ -379,7 +380,7 @@ func isValidEmail(email string) bool {
 
 func generateNumericCode(length int) (string, error) {
 	if length <= 0 {
-		return "", fmt.Errorf("验证码长度无效")
+		return "", apperr.New(apperr.ErrBadRequest, "验证码长度无效")
 	}
 
 	b := make([]byte, length)
@@ -403,35 +404,35 @@ func hashEmailCode(email, code string) string {
 // 验证注册请求
 func validateRegisterRequest(req *models.RegisterRequest) error {
 	if strings.TrimSpace(req.Username) == "" {
-		return fmt.Errorf("用户名不能为空")
+		return apperr.New(apperr.ErrBadRequest, "用户名不能为空")
 	}
 	if len(req.Username) < 3 || len(req.Username) > 32 {
-		return fmt.Errorf("用户名长度应在 3-32 个字符之间")
+		return apperr.New(apperr.ErrBadRequest, "用户名长度应在 3-32 个字符之间")
 	}
 	if strings.TrimSpace(req.Email) == "" {
-		return fmt.Errorf("邮箱不能为空")
+		return apperr.New(apperr.ErrBadRequest, "邮箱不能为空")
 	}
 	if !isValidEmail(req.Email) {
-		return fmt.Errorf("邮箱格式不正确")
+		return apperr.New(apperr.ErrBadRequest, "邮箱格式不正确")
 	}
 	if len(req.Password) < 6 {
-		return fmt.Errorf("密码长度至少 6 个字符")
+		return apperr.New(apperr.ErrBadRequest, "密码长度至少 6 个字符")
 	}
 	if len(req.Password) > 128 {
-		return fmt.Errorf("密码长度不能超过 128 个字符")
+		return apperr.New(apperr.ErrBadRequest, "密码长度不能超过 128 个字符")
 	}
 	if len(strings.TrimSpace(req.EmailCode)) != 6 {
-		return fmt.Errorf("邮箱验证码格式不正确")
+		return apperr.New(apperr.ErrBadRequest, "邮箱验证码格式不正确")
 	}
 	return nil
 }
 
 func validateSendCodeRequest(req *models.SendRegisterCodeRequest) error {
 	if strings.TrimSpace(req.Email) == "" {
-		return fmt.Errorf("邮箱不能为空")
+		return apperr.New(apperr.ErrBadRequest, "邮箱不能为空")
 	}
 	if !isValidEmail(req.Email) {
-		return fmt.Errorf("邮箱格式不正确")
+		return apperr.New(apperr.ErrBadRequest, "邮箱格式不正确")
 	}
 
 	return nil
@@ -440,10 +441,10 @@ func validateSendCodeRequest(req *models.SendRegisterCodeRequest) error {
 // 验证登录请求
 func validateLoginRequest(req *models.LoginRequest) error {
 	if strings.TrimSpace(req.Username) == "" {
-		return fmt.Errorf("用户名不能为空")
+		return apperr.New(apperr.ErrBadRequest, "用户名不能为空")
 	}
 	if strings.TrimSpace(req.Password) == "" {
-		return fmt.Errorf("密码不能为空")
+		return apperr.New(apperr.ErrBadRequest, "密码不能为空")
 	}
 	return nil
 }

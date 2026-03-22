@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 )
@@ -67,7 +68,7 @@ func (s *UserServiceImpl) UpdateProfile(userID string, req *models.UpdateProfile
 				return fmt.Errorf("获取用户信息失败: %w", err)
 			}
 			if user.Email != req.Email {
-				return fmt.Errorf("邮箱已被其他用户使用")
+				return apperr.New(apperr.ErrConflict, "邮箱已被其他用户使用")
 			}
 		}
 	}
@@ -91,7 +92,7 @@ func (s *UserServiceImpl) GetPublicProfile(userID string) (*models.User, error) 
 	// 隐藏敏感信息
 	user.Email = ""
 	user.PasswordHash = ""
-	user.IsActive = false // 不公开
+	user.IsActive = false   // 不公开
 	user.IsVerified = false // 不公开
 
 	return user, nil
