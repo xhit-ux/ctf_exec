@@ -5,7 +5,7 @@ type TurnstileWidgetProps = {
   resetSignal?: number
   onVerify: (token: string) => void
   onExpire?: () => void
-  onError?: () => void
+  onError?: (reason?: string) => void
 }
 
 declare global {
@@ -17,7 +17,7 @@ declare global {
           sitekey: string
           callback: (token: string) => void
           'expired-callback'?: () => void
-          'error-callback'?: () => void
+          'error-callback'?: (errorCode?: string) => void
           theme?: 'light' | 'dark' | 'auto'
         }
       ) => string
@@ -27,7 +27,8 @@ declare global {
 }
 
 const SCRIPT_ID = 'cf-turnstile-script'
-const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+const DEFAULT_SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+const SCRIPT_SRC = (import.meta.env.VITE_TURNSTILE_SCRIPT_URL || DEFAULT_SCRIPT_SRC).trim()
 
 function loadTurnstileScript(): Promise<void> {
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null
@@ -46,7 +47,7 @@ function loadTurnstileScript(): Promise<void> {
     script.async = true
     script.defer = true
     script.onload = () => resolve()
-    script.onerror = () => reject(new Error('Turnstile script load failed'))
+    script.onerror = () => reject(new Error('turnstile_script_load_failed'))
     document.head.appendChild(script)
   })
 }
@@ -79,13 +80,13 @@ export default function TurnstileWidget({
         sitekey: siteKey,
         callback: onVerify,
         'expired-callback': onExpire,
-        'error-callback': onError,
+        'error-callback': (errorCode?: string) => onError?.(errorCode || 'turnstile_render_error'),
         theme: 'light',
       })
     }
 
     renderWidget().catch(() => {
-      onError?.()
+      onError?.('turnstile_script_load_failed')
     })
 
     return () => {

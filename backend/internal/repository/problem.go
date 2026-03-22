@@ -29,6 +29,10 @@ func (r *ProblemRepository) GetProblems() ([]*models.Problem, error) {
 		       IFNULL(CAST(JSON_ARRAYAGG(ct.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN challenge_tags ct ON p.id = ct.challenge_id
+		WHERE p.scope = 'platform'
+		  AND p.status = 'published'
+		  AND (p.visible_from IS NULL OR p.visible_from <= NOW())
+		  AND (p.visible_to IS NULL OR p.visible_to >= NOW())
 		GROUP BY p.id, p.title, p.category, p.points, p.difficulty, p.description
 		ORDER BY p.id ASC
 	`
@@ -64,6 +68,10 @@ func (r *ProblemRepository) GetProblemByID(id int) (*models.Problem, error) {
 		FROM problems p
 		LEFT JOIN challenge_tags ct ON p.id = ct.challenge_id
 		WHERE p.id = ?
+		  AND p.scope = 'platform'
+		  AND p.status = 'published'
+		  AND (p.visible_from IS NULL OR p.visible_from <= NOW())
+		  AND (p.visible_to IS NULL OR p.visible_to >= NOW())
 		GROUP BY p.id, p.title, p.category, p.points, p.difficulty, p.description
 	`
 
@@ -106,6 +114,10 @@ func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Prob
 		FROM problems p
 		LEFT JOIN challenge_tags ct ON p.id = ct.challenge_id
 		LEFT JOIN submissions s ON p.id = s.problem_id AND s.user_id = ? AND s.is_correct = 1
+		WHERE p.scope = 'platform'
+		  AND p.status = 'published'
+		  AND (p.visible_from IS NULL OR p.visible_from <= NOW())
+		  AND (p.visible_to IS NULL OR p.visible_to >= NOW())
 		GROUP BY p.id, p.title, p.category, p.points, p.difficulty, p.description
 		ORDER BY p.id ASC
 	`

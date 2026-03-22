@@ -23,9 +23,20 @@ func CanAccessRole(currentRole string, allowedRoles ...string) bool {
 
 // CanPatchUserRole 判断角色变更操作是否被允许。
 func CanPatchUserRole(actorUserID, targetUserID, actorRole, targetRole string) error {
+	normalizedActorRole := models.NormalizeRole(actorRole)
 	normalizedTargetRole := models.NormalizeRole(targetRole)
+
+	if normalizedActorRole != models.RoleRoot {
+		return apperr.New(apperr.ErrForbidden, "仅 root 可修改全局角色")
+	}
+
 	if !models.IsValidRole(normalizedTargetRole) {
 		return apperr.New(apperr.ErrBadRequest, "非法角色变更")
+	}
+
+	// root 账号保持唯一：禁止将其他用户提升为 root。
+	if actorUserID != targetUserID && normalizedTargetRole == models.RoleRoot {
+		return apperr.New(apperr.ErrForbidden, "root 账号必须保持唯一，禁止提权为 root")
 	}
 
 	// root 不能把自己降级成非 root，避免系统丢失最高权限账户。
@@ -33,7 +44,6 @@ func CanPatchUserRole(actorUserID, targetUserID, actorRole, targetRole string) e
 		return apperr.New(apperr.ErrBadRequest, "禁止 root 自降级")
 	}
 
-	_ = actorRole // 预留给后续扩展更细粒度 RBAC 策略。
 	return nil
 }
 

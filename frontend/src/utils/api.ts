@@ -1,6 +1,6 @@
 const rawApiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').trim()
-const rawServerHost = (import.meta.env.SERVER_HOST || import.meta.env.VITE_SERVER_HOST || '').trim()
-const rawServerPort = (import.meta.env.SERVER_PORT || import.meta.env.VITE_SERVER_PORT || '').trim()
+const rawServerHost = (import.meta.env.VITE_SERVER_HOST || '').trim()
+const rawServerPort = (import.meta.env.VITE_SERVER_PORT || '').trim()
 const rawApiProtocol = (import.meta.env.VITE_API_PROTOCOL || 'http').trim()
 
 function resolveApiBaseUrl(): string {

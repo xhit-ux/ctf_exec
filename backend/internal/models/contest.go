@@ -8,6 +8,8 @@ type Contest struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	CoverImage  string     `json:"cover_image"`
+	Visibility  string     `json:"visibility"`
+	CreatedBy   *string    `json:"created_by,omitempty"`
 	StartTime   *time.Time `json:"start_time,omitempty"`
 	EndTime     *time.Time `json:"end_time,omitempty"`
 	ScoringType string     `json:"scoring_type"`
@@ -20,6 +22,7 @@ type CreateContestRequest struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	CoverImage  string     `json:"cover_image"`
+	Visibility  string     `json:"visibility"`
 	StartTime   *time.Time `json:"start_time"`
 	EndTime     *time.Time `json:"end_time"`
 	ScoringType string     `json:"scoring_type"`
@@ -30,6 +33,7 @@ type UpdateContestRequest struct {
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
 	CoverImage  string     `json:"cover_image"`
+	Visibility  string     `json:"visibility"`
 	StartTime   *time.Time `json:"start_time"`
 	EndTime     *time.Time `json:"end_time"`
 	ScoringType string     `json:"scoring_type"`

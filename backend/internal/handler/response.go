@@ -35,7 +35,7 @@ func logError(c *gin.Context, statusCode int, err error) {
 		userID = claims.UserID
 	}
 
-	log.Printf("[api-error] status=%d method=%s path=%s ip=%s user_id=%s err=%v", statusCode, c.Request.Method, c.FullPath(), c.ClientIP(), userID, err)
+	log.Printf("[api-error] status=%d method=%s path=%s ip=%s user_id=%s err=%v", statusCode, c.Request.Method, c.FullPath(), realClientIP(c), userID, err)
 }
 
 func publicErrorMessage(err error, statusCode int) string {

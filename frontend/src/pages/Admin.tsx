@@ -762,7 +762,6 @@ export default function Admin() {
                           <td className="px-3 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${roleBadgeClass(item.role)}`}>{item.role}</span></td>
                           <td className="px-3 py-3">
                             <select value={roleDraft[item.id] || item.role} onChange={(e) => setRoleDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} className="px-2 py-1 border border-gray-300 rounded-md">
-                              <option value="root">root</option>
                               <option value="site_admin">site_admin</option>
                               <option value="user">user</option>
                             </select>

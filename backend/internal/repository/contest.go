@@ -22,19 +22,30 @@ func NewContestRepository(db *sql.DB) *ContestRepository {
 	return &ContestRepository{db: db}
 }
 
-func (r *ContestRepository) CreateContest(req *models.CreateContestRequest) (*models.Contest, error) {
+func (r *ContestRepository) CreateContest(req *models.CreateContestRequest, createdBy string) (*models.Contest, error) {
 	contestID := uuid.New().String()
 	now := time.Now()
 	scoringType := req.ScoringType
 	if scoringType == "" {
 		scoringType = "jeopardy"
 	}
+	visibility := strings.ToLower(strings.TrimSpace(req.Visibility))
+	if visibility == "" {
+		visibility = "public"
+	}
 
 	query := `
 		INSERT INTO contests (
-			id, title, description, cover_image, start_time, end_time, scoring_type, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, title, description, cover_image, visibility, created_by, start_time, end_time, scoring_type, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
+
+	var createdByVal interface{}
+	if strings.TrimSpace(createdBy) == "" {
+		createdByVal = nil
+	} else {
+		createdByVal = strings.TrimSpace(createdBy)
+	}
 
 	_, err := r.db.Exec(
 		query,
@@ -42,6 +53,8 @@ func (r *ContestRepository) CreateContest(req *models.CreateContestRequest) (*mo
 		req.Title,
 		req.Description,
 		req.CoverImage,
+		visibility,
+		createdByVal,
 		req.StartTime,
 		req.EndTime,
 		scoringType,
@@ -58,7 +71,7 @@ func (r *ContestRepository) CreateContest(req *models.CreateContestRequest) (*mo
 func (r *ContestRepository) GetContestByID(contestID string) (*models.Contest, error) {
 	contest := &models.Contest{}
 	query := `
-		SELECT id, title, COALESCE(description, ''), COALESCE(cover_image, ''), start_time, end_time, scoring_type, created_at, updated_at
+		SELECT id, title, COALESCE(description, ''), COALESCE(cover_image, ''), visibility, created_by, start_time, end_time, scoring_type, created_at, updated_at
 		FROM contests
 		WHERE id = ?
 	`
@@ -68,6 +81,8 @@ func (r *ContestRepository) GetContestByID(contestID string) (*models.Contest, e
 		&contest.Title,
 		&contest.Description,
 		&contest.CoverImage,
+		&contest.Visibility,
+		&contest.CreatedBy,
 		&contest.StartTime,
 		&contest.EndTime,
 		&contest.ScoringType,
@@ -86,8 +101,9 @@ func (r *ContestRepository) GetContestByID(contestID string) (*models.Contest, e
 
 func (r *ContestRepository) ListContests(limit int) ([]*models.Contest, error) {
 	query := `
-		SELECT id, title, COALESCE(description, ''), COALESCE(cover_image, ''), start_time, end_time, scoring_type, created_at, updated_at
+		SELECT id, title, COALESCE(description, ''), COALESCE(cover_image, ''), visibility, created_by, start_time, end_time, scoring_type, created_at, updated_at
 		FROM contests
+		WHERE visibility IN ('public', 'invite_only')
 		ORDER BY created_at DESC
 		LIMIT ?
 	`
@@ -106,6 +122,8 @@ func (r *ContestRepository) ListContests(limit int) ([]*models.Contest, error) {
 			&contest.Title,
 			&contest.Description,
 			&contest.CoverImage,
+			&contest.Visibility,
+			&contest.CreatedBy,
 			&contest.StartTime,
 			&contest.EndTime,
 			&contest.ScoringType,
@@ -123,15 +141,20 @@ func (r *ContestRepository) ListContests(limit int) ([]*models.Contest, error) {
 func (r *ContestRepository) UpdateContest(contestID string, req *models.UpdateContestRequest) error {
 	query := `
 		UPDATE contests
-		SET title = ?, description = ?, cover_image = ?, start_time = ?, end_time = ?, scoring_type = ?, updated_at = NOW()
+		SET title = ?, description = ?, cover_image = ?, visibility = ?, start_time = ?, end_time = ?, scoring_type = ?, updated_at = NOW()
 		WHERE id = ?
 	`
+	visibility := strings.ToLower(strings.TrimSpace(req.Visibility))
+	if visibility == "" {
+		visibility = "public"
+	}
 
 	result, err := r.db.Exec(
 		query,
 		req.Title,
 		req.Description,
 		req.CoverImage,
+		visibility,
 		req.StartTime,
 		req.EndTime,
 		req.ScoringType,

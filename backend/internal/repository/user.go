@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
@@ -155,15 +156,16 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 }
 
 // CreateUser 创建新用户
-func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash string) (*models.User, error) {
+func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash, registrationIP string) (*models.User, error) {
 	userID := uuid.New().String()
 	now := time.Now()
+	safeRegistrationIP := normalizeIPAddress(registrationIP)
 
 	query := `
 		INSERT INTO users (
 			id, username, email, password_hash, role, display_name, 
-			is_active, is_verified, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			is_active, is_verified, registration_ip, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := r.db.Exec(
@@ -176,6 +178,7 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash st
 		req.Username, // 初始显示名称同用户名
 		1,            // is_active
 		1,            // is_verified
+		safeRegistrationIP,
 		now,
 		now,
 	)
@@ -414,14 +417,28 @@ func (r *UserRepository) RefreshGlobalUserLeaderboardSnapshot(snapshotAt time.Ti
 	return nil
 }
 
-// UpdateLastLogin 更新最后登陆时间
-func (r *UserRepository) UpdateLastLogin(userID string) error {
-	query := `UPDATE users SET last_login_at = NOW() WHERE id = ?`
-	_, err := r.db.Exec(query, userID)
+// UpdateLastLogin 更新最后登陆时间和登录 IP
+func (r *UserRepository) UpdateLastLogin(userID, lastLoginIP string) error {
+	query := `UPDATE users SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?`
+	_, err := r.db.Exec(query, normalizeIPAddress(lastLoginIP), userID)
 	if err != nil {
 		return fmt.Errorf("更新登陆时间失败: %w", err)
 	}
 	return nil
+}
+
+func normalizeIPAddress(raw string) string {
+	ip := strings.TrimSpace(raw)
+	if ip == "" {
+		return ""
+	}
+
+	// users.last_login_ip / registration_ip 均为 VARCHAR(45)
+	if len(ip) > 45 {
+		return ip[:45]
+	}
+
+	return ip
 }
 
 // UserExistsByUsername 检查用户名是否存在

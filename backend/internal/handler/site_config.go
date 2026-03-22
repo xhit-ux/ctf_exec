@@ -54,7 +54,7 @@ func (h *SiteConfigHandler) UpdateSiteConfigGin(c *gin.Context) {
 	}
 	req.DefaultContestVisibility = visibility
 
-	if err := h.repo.UpdateSiteConfig(claims.UserID, &req, c.ClientIP()); err != nil {
+	if err := h.repo.UpdateSiteConfig(claims.UserID, &req, realClientIP(c)); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}

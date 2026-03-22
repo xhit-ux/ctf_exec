@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -15,12 +16,14 @@ import (
 )
 
 type ContestHandler struct {
-	repo *repository.ContestRepository
-	svc  service.ContestService
+	repo             *repository.ContestRepository
+	userRepo         *repository.UserRepository
+	contestAdminRepo repository.ContestAdminRepository
+	svc              service.ContestService
 }
 
-func NewContestHandler(repo *repository.ContestRepository, svc service.ContestService) *ContestHandler {
-	return &ContestHandler{repo: repo, svc: svc}
+func NewContestHandler(repo *repository.ContestRepository, userRepo *repository.UserRepository, contestAdminRepo repository.ContestAdminRepository, svc service.ContestService) *ContestHandler {
+	return &ContestHandler{repo: repo, userRepo: userRepo, contestAdminRepo: contestAdminRepo, svc: svc}
 }
 
 func (h *ContestHandler) ListContestsGin(c *gin.Context) {
@@ -58,10 +61,22 @@ func (h *ContestHandler) GetContestDetailGin(c *gin.Context) {
 		return
 	}
 
+	if strings.EqualFold(contest.Visibility, "private") {
+		if !h.canAccessPrivateContest(c, contestID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该私有赛事"})
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, contest)
 }
 
 func (h *ContestHandler) CreateContestGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
 	var req models.CreateContestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
@@ -76,8 +91,12 @@ func (h *ContestHandler) CreateContestGin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "结束时间不能早于开始时间"})
 		return
 	}
+	if !isValidContestVisibility(req.Visibility) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "visibility 仅支持 public/invite_only/private"})
+		return
+	}
 
-	contest, err := h.repo.CreateContest(&req)
+	contest, err := h.repo.CreateContest(&req, claims.UserID)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
@@ -107,6 +126,10 @@ func (h *ContestHandler) UpdateContestGin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "结束时间不能早于开始时间"})
 		return
 	}
+	if !isValidContestVisibility(req.Visibility) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "visibility 仅支持 public/invite_only/private"})
+		return
+	}
 
 	if err := h.repo.UpdateContest(contestID, &req); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
@@ -132,6 +155,10 @@ func (h *ContestHandler) DeleteContestGin(c *gin.Context) {
 }
 
 func (h *ContestHandler) AddChallengeToContestGin(c *gin.Context) {
+	if ok := h.ensureCanEditContestProblems(c); !ok {
+		return
+	}
+
 	contestID := c.Param("id")
 	if contestID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少赛事ID"})
@@ -157,6 +184,10 @@ func (h *ContestHandler) AddChallengeToContestGin(c *gin.Context) {
 }
 
 func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
+	if ok := h.ensureCanEditContestProblems(c); !ok {
+		return
+	}
+
 	contestID := c.Param("id")
 	challengeIDStr := c.Param("challengeID")
 	challengeID, err := strconv.Atoi(challengeIDStr)
@@ -273,4 +304,154 @@ func (h *ContestHandler) GetContestScoreboardGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, items)
+}
+
+// ListContestAdminsGin 查询赛事管理员列表。
+func (h *ContestHandler) ListContestAdminsGin(c *gin.Context) {
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少赛事ID"})
+		return
+	}
+
+	items, err := h.contestAdminRepo.ListContestAdmins(contestID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, items)
+}
+
+// AddContestAdminGin 为赛事添加管理员。
+func (h *ContestHandler) AddContestAdminGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少赛事ID"})
+		return
+	}
+
+	var req models.AddContestAdminRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+	if strings.TrimSpace(req.UserID) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id 不能为空"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByID(strings.TrimSpace(req.UserID))
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	if models.NormalizeRole(targetUser.Role) == models.RoleRoot {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能将 root 加入 contest_admin"})
+		return
+	}
+
+	count, err := h.contestAdminRepo.CountContestAdmins(contestID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	if count >= 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "赛事管理员人数已达上限(10)"})
+		return
+	}
+
+	if err := h.contestAdminRepo.AddContestAdmin(req.UserID, contestID, req.Role, claims.UserID); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "赛事管理员添加成功"})
+}
+
+// RemoveContestAdminGin 移除赛事管理员。
+func (h *ContestHandler) RemoveContestAdminGin(c *gin.Context) {
+	contestID := strings.TrimSpace(c.Param("id"))
+	userID := strings.TrimSpace(c.Param("user_id"))
+	if contestID == "" || userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数不完整"})
+		return
+	}
+
+	if err := h.contestAdminRepo.RemoveContestAdmin(userID, contestID); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "赛事管理员移除成功"})
+}
+
+func isValidContestVisibility(visibility string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(visibility))
+	if normalized == "" {
+		return true
+	}
+
+	return normalized == "public" || normalized == "invite_only" || normalized == "private"
+}
+
+func (h *ContestHandler) ensureCanEditContestProblems(c *gin.Context) bool {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return false
+	}
+
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少赛事ID"})
+		return false
+	}
+
+	contest, err := h.repo.GetContestByID(contestID)
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return false
+	}
+
+	user, err := h.userRepo.GetUserByID(claims.UserID)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户状态异常，请重新登录"})
+		return false
+	}
+
+	allowed, err := authz.CanEditProblemInContest(user, contest, contestID, h.contestAdminRepo)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return false
+	}
+	if !allowed {
+		c.JSON(http.StatusForbidden, gin.H{"error": "赛事已结束或无权编辑赛事题目"})
+		return false
+	}
+
+	return true
+}
+
+func (h *ContestHandler) canAccessPrivateContest(c *gin.Context, contestID string) bool {
+	claims, err := middleware.GetClaims(c)
+	if err != nil {
+		return false
+	}
+
+	user, err := h.userRepo.GetUserByID(claims.UserID)
+	if err != nil {
+		return false
+	}
+
+	ok, err := authz.CanManageContest(user, contestID, h.contestAdminRepo)
+	if err != nil {
+		return false
+	}
+
+	return ok
 }

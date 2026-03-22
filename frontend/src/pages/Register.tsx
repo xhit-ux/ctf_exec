@@ -5,6 +5,26 @@ import { apiUrl } from '../utils/api'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 
+function resolveTurnstileErrorMessage(reason: string): string {
+    const host = window.location.hostname || 'unknown-host'
+    const normalized = reason.trim().toLowerCase()
+
+    if (!normalized) {
+        return '人机验证失败，请刷新页面后重试'
+    }
+
+    if (normalized === 'turnstile_script_load_failed') {
+        return '人机验证脚本加载失败，请检查网络是否可访问 challenges.cloudflare.com'
+    }
+
+    // 常见错误码：110200/110201 通常表示当前域名(含局域网IP)不在 Turnstile 允许列表。
+    if (normalized === '110200' || normalized === '110201') {
+        return `当前访问域名/IP(${host})未加入 Turnstile 允许列表，请在 Cloudflare Turnstile 控制台添加后重试`
+    }
+
+    return `人机验证失败(${reason})，请刷新页面后重试`
+}
+
 export default function Register() {
     const [username, setUsername] = useState('')
     const [email, setEmail] = useState('')
@@ -246,9 +266,15 @@ export default function Register() {
                                 }
                             }}
                             onExpire={() => setBotToken('')}
-                            onError={() => {
+                            onError={(reason) => {
                                 setBotToken('')
-                                setCaptchaError('验证码组件加载失败，请刷新页面重试')
+                                const message = resolveTurnstileErrorMessage(reason || '')
+                                setCaptchaError(message)
+                                console.error('[turnstile] verification widget error', {
+                                    reason,
+                                    host: window.location.hostname,
+                                    href: window.location.href,
+                                })
                             }}
                         />
                         ) : (

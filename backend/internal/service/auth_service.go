@@ -28,7 +28,7 @@ import (
 type AuthService interface {
 	SendRegisterCode(req *models.SendRegisterCodeRequest, clientIP string) error
 	Register(req *models.RegisterRequest, clientIP string) (*models.AuthResponse, error)
-	Login(req *models.LoginRequest) (*models.AuthResponse, error)
+	Login(req *models.LoginRequest, clientIP string) (*models.AuthResponse, error)
 }
 
 // AuthServiceImpl 认证服务实现
@@ -114,8 +114,6 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 
 // Register 处理用户注册
 func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string) (*models.AuthResponse, error) {
-	_ = clientIP
-
 	// 验证输入
 	if err := validateRegisterRequest(req); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
@@ -156,7 +154,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 	}
 
 	// 创建用户
-	user, err := s.userRepo.CreateUser(req, hashedPassword)
+	user, err := s.userRepo.CreateUser(req, hashedPassword, clientIP)
 	if err != nil {
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
@@ -174,7 +172,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 }
 
 // Login 处理用户登录
-func (s *AuthServiceImpl) Login(req *models.LoginRequest) (*models.AuthResponse, error) {
+func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*models.AuthResponse, error) {
 	// 验证输入
 	if err := validateLoginRequest(req); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
@@ -192,7 +190,7 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest) (*models.AuthResponse,
 	}
 
 	// 更新最后登陆时间
-	_ = s.userRepo.UpdateLastLogin(user.ID)
+	_ = s.userRepo.UpdateLastLogin(user.ID, clientIP)
 
 	// 生成 token
 	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)

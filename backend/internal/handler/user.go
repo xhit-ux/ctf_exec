@@ -85,7 +85,7 @@ func (h *UserHandler) PatchUserActiveGin(c *gin.Context) {
 		return
 	}
 
-	if err := h.userRepo.UpdateUserActiveStatus(claims.UserID, targetUserID, req.IsActive, req.Reason, c.ClientIP()); err != nil {
+	if err := h.userRepo.UpdateUserActiveStatus(claims.UserID, targetUserID, req.IsActive, req.Reason, realClientIP(c)); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
@@ -160,7 +160,7 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 		return
 	}
 
-	if err := h.userRepo.UpdateUserRole(claims.UserID, targetUserID, req.Role, req.Reason, c.ClientIP()); err != nil {
+	if err := h.userRepo.UpdateUserRole(claims.UserID, targetUserID, req.Role, req.Reason, realClientIP(c)); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}

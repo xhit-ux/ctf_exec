@@ -12,7 +12,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     envDir,
-    envPrefix: ['VITE_', 'SERVER_'],
+    envPrefix: ['VITE_'],
     plugins: [react()],
     server: {
       host: '0.0.0.0',

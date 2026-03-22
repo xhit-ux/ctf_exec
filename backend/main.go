@@ -44,6 +44,7 @@ func main() {
 	subRepo := repository.NewSubmissionRepository(sqlDB)
 	teamRepo := repository.NewTeamRepository(sqlDB)
 	contestRepo := repository.NewContestRepository(sqlDB)
+	contestAdminRepo := repository.NewContestAdminRepository(sqlDB)
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
 
 	// 初始化服务层
@@ -83,11 +84,14 @@ func main() {
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
-	contestHandler := handler.NewContestHandler(contestRepo, contestService)
+	contestHandler := handler.NewContestHandler(contestRepo, userRepo, contestAdminRepo, contestService)
 	siteConfigHandler := handler.NewSiteConfigHandler(siteConfigRepo)
 
 	// 创建 Gin 引擎
 	r := gin.Default()
+	if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		log.Fatalf("配置受信任代理失败: %v", err)
+	}
 
 	// 添加 CORS 中间件（使用 Gin 中间件）
 	r.Use(middleware.GinCORSMiddleware())
@@ -137,6 +141,7 @@ func main() {
 		// 赛事公开路由
 		contests := api.Group("/contests")
 		{
+			contests.Use(middleware.GinOptionalAuthMiddleware())
 			contests.GET("", contestHandler.ListContestsGin)
 			contests.GET(":id", contestHandler.GetContestDetailGin)
 			contests.GET(":id/scoreboard", contestHandler.GetContestScoreboardGin)
@@ -194,12 +199,16 @@ func main() {
 
 			adminContests := admin.Group("/contests")
 			{
-				adminContests.Use(middleware.RequireSiteAdminOrRoot(userRepo))
-				adminContests.POST("", contestHandler.CreateContestGin)
-				adminContests.PUT(":id", contestHandler.UpdateContestGin)
-				adminContests.DELETE(":id", contestHandler.DeleteContestGin)
-				adminContests.POST(":id/challenges", contestHandler.AddChallengeToContestGin)
-				adminContests.DELETE(":id/challenges/:challengeID", contestHandler.RemoveChallengeFromContestGin)
+				adminContests.POST("", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.CreateContestGin)
+				adminContests.DELETE(":id", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.DeleteContestGin)
+
+				adminContests.GET(":id/admins", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.ListContestAdminsGin)
+				adminContests.POST(":id/admins", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.AddContestAdminGin)
+				adminContests.DELETE(":id/admins/:user_id", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.RemoveContestAdminGin)
+
+				adminContests.PUT(":id", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.UpdateContestGin)
+				adminContests.POST(":id/challenges", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.AddChallengeToContestGin)
+				adminContests.DELETE(":id/challenges/:challengeID", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.RemoveChallengeFromContestGin)
 			}
 		}
 

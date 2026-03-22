@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -48,8 +49,9 @@ type RedisConfig struct {
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Port string
-	Host string
+	Port           string
+	Host           string
+	TrustedProxies []string
 }
 
 // JWTConfig JWT配置
@@ -222,11 +224,25 @@ func loadRedisConfig() (*RedisConfig, error) {
 func loadServerConfig() (*ServerConfig, error) {
 	port := getEnv("SERVER_PORT", "8080")
 	host := getEnv("SERVER_HOST", "0.0.0.0")
+	trustedProxies := parseCSV(getEnv("SERVER_TRUSTED_PROXIES", "127.0.0.1,::1"))
 
 	return &ServerConfig{
-		Port: port,
-		Host: host,
+		Port:           port,
+		Host:           host,
+		TrustedProxies: trustedProxies,
 	}, nil
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item := strings.TrimSpace(part)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 // loadJWTConfig 加载JWT配置
