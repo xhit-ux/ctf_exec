@@ -4,6 +4,7 @@ import ProblemCard from '../components/problem/ProblemCard'
 import { useAuth } from '../context/AuthContext'
 import { Problem } from '../types'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
@@ -23,9 +24,7 @@ export default function Problems() {
       return
     }
 
-    fetch(apiUrl('/api/problems'), {
-      headers: { Authorization: `Bearer ${token}` }
-    })
+    apiFetch(apiUrl('/api/problems'))
       .then(async res => {
         if (!res.ok) throw new Error(res.statusText)
         return res.json()

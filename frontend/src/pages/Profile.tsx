@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import AvatarUpload from '../components/upload/AvatarUpload'
 import SubmissionHeatmap from '../components/profile/SubmissionHeatmap'
 import { apiUrl, staticUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 
@@ -28,7 +29,7 @@ function getLevelInfo(score: number = 0) {
 
 export default function Profile() {
   const { username: urlUsername } = useParams<{ username?: string }>()
-  const { user: currentUser, token, refreshUser } = useAuth()
+  const { user: currentUser, refreshUser } = useAuth()
 
   const [targetUser, setTargetUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -57,12 +58,9 @@ export default function Profile() {
         setLoading(false)
       } else {
         try {
-          const headers: HeadersInit = {}
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`
-          }
-          const response = await fetch(apiUrl(`/api/users/public?username=${urlUsername}`), {
-            headers
+          const response = await apiFetch(apiUrl(`/api/users/public?username=${urlUsername}`), undefined, {
+            disableAuth: true,
+            disableRetry401: true,
           })
           if (response.ok) {
             const data = await response.json()
@@ -78,7 +76,7 @@ export default function Profile() {
       }
     }
     fetchUser()
-  }, [urlUsername, currentUser, isOwnProfile, token])
+  }, [urlUsername, currentUser, isOwnProfile])
 
   // 初始化表单数据
   useEffect(() => {
@@ -117,11 +115,10 @@ export default function Profile() {
     setMessage({ type: '', text: '' })
 
     try {
-      const response = await fetch(apiUrl('/api/users/profile'), {
+      const response = await apiFetch(apiUrl('/api/users/profile'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify(formData)
       })

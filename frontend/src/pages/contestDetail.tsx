@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl, staticUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import {
   MOCK_CONTESTS,
@@ -133,7 +134,7 @@ export default function ContestDetail() {
     setLoadingContest(true)
     setContestError('')
     try {
-      const res = await fetch(apiUrl(`/api/contests/${contestID}`))
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}`))
       if (!res.ok) {
         throw new Error('获取赛事详情失败')
       }
@@ -161,9 +162,7 @@ export default function ContestDetail() {
     if (!token) return
 
     try {
-      const res = await fetch(apiUrl('/api/teams/my'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await apiFetch(apiUrl('/api/teams/my'))
 
       if (!res.ok) {
         setTeam(null)
@@ -198,9 +197,7 @@ export default function ContestDetail() {
     setChallengeError('')
 
     try {
-      const res = await fetch(apiUrl(`/api/contests/${contestID}/challenges`), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}/challenges`))
 
       if (!res.ok) {
         setChallengeError(await readSafeErrorMessage(res, '获取赛事题目失败，请稍后重试'))
@@ -237,7 +234,7 @@ export default function ContestDetail() {
     setScoreError('')
 
     try {
-      const res = await fetch(apiUrl(`/api/contests/${contestID}/scoreboard?type=${kind}&limit=50`))
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}/scoreboard?type=${kind}&limit=50`))
       if (!res.ok) {
         setScoreError(await readSafeErrorMessage(res, '获取赛事榜单失败，请稍后重试'))
         if (kind === 'user') setUserScores([])
@@ -299,10 +296,9 @@ export default function ContestDetail() {
     const body = joinType === 'team' ? { team_id: team?.id || '' } : {}
 
     try {
-      const res = await fetch(apiUrl(`/api/contests/${contestID}/${mode}`), {
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}/${mode}`), {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(body),

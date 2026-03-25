@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
 import { apiUrl, staticUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 interface TeamMember {
@@ -37,11 +38,7 @@ export default function MyTeam() {
 
     const fetchTeam = async () => {
         try {
-            const response = await fetch(apiUrl('/api/teams/my'), {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
+            const response = await apiFetch(apiUrl('/api/teams/my'))
             if (response.ok) {
                 const data = await response.json()
                 setTeam(data)
@@ -68,11 +65,10 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch(apiUrl('/api/teams'), {
+            const response = await apiFetch(apiUrl('/api/teams'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ name: createName })
             })
@@ -97,11 +93,10 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch(apiUrl('/api/teams/join'), {
+            const response = await apiFetch(apiUrl('/api/teams/join'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ invite_code: inviteCode })
             })
@@ -129,11 +124,10 @@ export default function MyTeam() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch(apiUrl('/api/teams/update'), {
+            const response = await apiFetch(apiUrl('/api/teams/update'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ name: editName })
             })
@@ -158,11 +152,10 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch(apiUrl('/api/teams/kick'), {
+            const response = await apiFetch(apiUrl('/api/teams/kick'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ user_id: memberId })
             })
@@ -185,11 +178,8 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch(apiUrl('/api/teams/leave'), {
+            const response = await apiFetch(apiUrl('/api/teams/leave'), {
                 method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             })
 
             if (response.ok) {
@@ -210,11 +200,8 @@ export default function MyTeam() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch(apiUrl('/api/teams/dissolve'), {
+            const response = await apiFetch(apiUrl('/api/teams/dissolve'), {
                 method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
             })
 
             if (response.ok) {

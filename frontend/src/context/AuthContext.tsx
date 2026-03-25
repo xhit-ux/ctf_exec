@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react'
 import { apiUrl } from '../utils/api'
+import { AUTH_REFRESH_FAILED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens } from '../utils/authClient'
 
 export interface User {
   id: string
@@ -65,14 +66,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const [isLoading, setIsLoading] = useState(true)
 
+  const syncTokenStateFromStorage = () => {
+    setToken(localStorage.getItem('token'))
+    setRefreshToken(localStorage.getItem('refresh_token'))
+  }
+
   // 验证 token 有效性并刷新用户信息
   useEffect(() => {
     const initAuth = async () => {
       if (token) {
         await refreshUser()
       } else if (refreshToken) {
-        const refreshed = await refreshAccessToken(refreshToken)
+        const refreshed = await refreshAccessTokenWithLock()
         if (refreshed) {
+          syncTokenStateFromStorage()
           await refreshUser()
         }
       }
@@ -81,38 +88,29 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     initAuth()
   }, [])
 
+  useEffect(() => {
+    const onRefreshFailed = () => {
+      setToken(null)
+      setRefreshToken(null)
+      setUser(null)
+      clearAuthTokens()
+      localStorage.removeItem('user')
+      window.alert('登录已过期，请重新登录')
+      window.location.href = '/login'
+    }
+
+    window.addEventListener(AUTH_REFRESH_FAILED_EVENT, onRefreshFailed)
+    return () => {
+      window.removeEventListener(AUTH_REFRESH_FAILED_EVENT, onRefreshFailed)
+    }
+  }, [])
+
   const login = (newToken: string, newRefreshToken: string, newUser: User) => {
     setToken(newToken)
     setRefreshToken(newRefreshToken)
     setUser(newUser)
-    localStorage.setItem('token', newToken)
-    localStorage.setItem('refresh_token', newRefreshToken)
+    setAuthTokens(newToken, newRefreshToken)
     localStorage.setItem('user', JSON.stringify(newUser))
-  }
-
-  const refreshAccessToken = async (tokenForRefresh: string): Promise<boolean> => {
-    try {
-      const response = await fetch(apiUrl('/api/auth/refresh'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refresh_token: tokenForRefresh }),
-      })
-
-      if (!response.ok) return false
-
-      const data = await response.json()
-      if (!data?.token || !data?.refresh_token) return false
-
-      setToken(data.token)
-      setRefreshToken(data.refresh_token)
-      localStorage.setItem('token', data.token)
-      localStorage.setItem('refresh_token', data.refresh_token)
-      return true
-    } catch {
-      return false
-    }
   }
 
   const logout = () => {
@@ -121,71 +119,42 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setToken(null)
     setRefreshToken(null)
     setUser(null)
-    localStorage.removeItem('token')
-    localStorage.removeItem('refresh_token')
+    clearAuthTokens()
     localStorage.removeItem('user')
 
     if (tokenForRevoke) {
-      void fetch(apiUrl('/api/auth/logout'), {
+      void apiFetch(apiUrl('/api/auth/logout'), {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${tokenForRevoke}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ refresh_token: refreshTokenForRevoke || '' }),
+      }, {
+        disableAuth: true,
+        disableRetry401: true,
+        accessTokenOverride: tokenForRevoke,
       })
     }
   }
 
   const refreshUser = async () => {
-    if (!token) return
+    if (!token && !refreshToken) return
 
     try {
-      const response = await fetch(apiUrl('/api/auth/me'), {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
+      const response = await apiFetch(apiUrl('/api/auth/me'))
 
       if (response.ok) {
         const userData = await response.json()
         // /api/auth/me 直接返回用户对象，不是嵌套在 data.user 中
         setUser(userData)
+        syncTokenStateFromStorage()
         localStorage.setItem('user', JSON.stringify(userData))
       } else {
-        const currentRefresh = localStorage.getItem('refresh_token')
-        if (!currentRefresh) {
+        if (response.status === 401) {
           logout()
-          return
+        } else {
+          console.error('Failed to refresh user:', response.status)
         }
-
-        const refreshed = await refreshAccessToken(currentRefresh)
-        if (!refreshed) {
-          console.error('Token refresh failed, logging out')
-          logout()
-          return
-        }
-
-        const retriedToken = localStorage.getItem('token')
-        if (!retriedToken) {
-          logout()
-          return
-        }
-
-        const retryResponse = await fetch(apiUrl('/api/auth/me'), {
-          headers: {
-            'Authorization': `Bearer ${retriedToken}`,
-          },
-        })
-
-        if (!retryResponse.ok) {
-          logout()
-          return
-        }
-
-        const userData = await retryResponse.json()
-        setUser(userData)
-        localStorage.setItem('user', JSON.stringify(userData))
       }
     } catch (err) {
       console.error('Failed to refresh user:', err)

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 type AdminTab =
@@ -172,10 +173,8 @@ export default function Admin() {
       setError('')
       try {
         const [contestRes, problemRes] = await Promise.all([
-          fetch(apiUrl('/api/contests?limit=8')),
-          fetch(apiUrl('/api/problems'), {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
+          apiFetch(apiUrl('/api/contests?limit=8')),
+          apiFetch(apiUrl('/api/problems')),
         ])
 
         if (!contestRes.ok) {
@@ -221,9 +220,7 @@ export default function Admin() {
         const params = new URLSearchParams({ page: String(statusPage), page_size: '10' })
         if (statusKeyword.trim()) params.set('keyword', statusKeyword.trim())
 
-        const res = await fetch(apiUrl(`/api/admin/users?${params.toString()}`), {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(apiUrl(`/api/admin/users?${params.toString()}`))
 
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载用户列表失败'))
@@ -260,9 +257,7 @@ export default function Admin() {
         const params = new URLSearchParams({ page: String(rolePage), page_size: '10' })
         if (roleKeyword.trim()) params.set('keyword', roleKeyword.trim())
 
-        const res = await fetch(apiUrl(`/api/admin/users?${params.toString()}`), {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(apiUrl(`/api/admin/users?${params.toString()}`))
 
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载用户列表失败'))
@@ -305,9 +300,7 @@ export default function Admin() {
       setError('')
       try {
         const params = new URLSearchParams({ page: String(logsPage), page_size: '10' })
-        const res = await fetch(apiUrl(`/api/admin/users/role-change-logs?${params.toString()}`), {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(apiUrl(`/api/admin/users/role-change-logs?${params.toString()}`))
 
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载审计日志失败'))
@@ -341,9 +334,7 @@ export default function Admin() {
       setConfigLoading(true)
       setError('')
       try {
-        const res = await fetch(apiUrl('/api/admin/site-config'), {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        const res = await apiFetch(apiUrl('/api/admin/site-config'))
 
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载站点配置失败'))
@@ -389,11 +380,10 @@ export default function Admin() {
     setError('')
     setSuccessHint('')
     try {
-      const res = await fetch(apiUrl('/api/admin/problems'), {
+      const res = await apiFetch(apiUrl('/api/admin/problems'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           ...problemForm,
@@ -445,11 +435,10 @@ export default function Admin() {
     setError('')
     setSuccessHint('')
     try {
-      const res = await fetch(apiUrl('/api/admin/contests'), {
+      const res = await apiFetch(apiUrl('/api/admin/contests'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           ...contestForm,
@@ -491,11 +480,10 @@ export default function Admin() {
     setError('')
     setSuccessHint('')
     try {
-      const res = await fetch(apiUrl(`/api/admin/users/${target.id}/active`), {
+      const res = await apiFetch(apiUrl(`/api/admin/users/${target.id}/active`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ is_active: nextActive, reason }),
       })
@@ -534,11 +522,10 @@ export default function Admin() {
     setError('')
     setSuccessHint('')
     try {
-      const res = await fetch(apiUrl(`/api/admin/users/${target.id}/role`), {
+      const res = await apiFetch(apiUrl(`/api/admin/users/${target.id}/role`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ role: nextRole, reason }),
       })
@@ -565,11 +552,10 @@ export default function Admin() {
     setError('')
     setSuccessHint('')
     try {
-      const res = await fetch(apiUrl('/api/admin/site-config'), {
+      const res = await apiFetch(apiUrl('/api/admin/site-config'), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(siteConfig),
       })

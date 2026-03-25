@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import Pagination from '../components/common/Pagination'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
@@ -61,7 +62,7 @@ export default function Scoreboard() {
                 ? apiUrl(`/api/users/leaderboard?page=${userPage}&page_size=${userPageSize}`)
                 : apiUrl(`/api/teams/leaderboard?page=${teamPage}&page_size=${teamPageSize}`)
 
-            const res = await fetch(endpoint)
+            const res = await apiFetch(endpoint)
             if (!res.ok) {
                 throw new Error('获取排行榜失败')
             }
@@ -99,7 +100,7 @@ export default function Scoreboard() {
         setSearchLoading(true)
         setSearchError('')
         try {
-            const res = await fetch(apiUrl(`/api/users/leaderboard/search?username=${encodeURIComponent(username)}`))
+            const res = await apiFetch(apiUrl(`/api/users/leaderboard/search?username=${encodeURIComponent(username)}`))
             if (!res.ok) {
                 setPinnedUser(null)
                 setSearchError(await readSafeErrorMessage(res, '检索失败，请稍后重试'))

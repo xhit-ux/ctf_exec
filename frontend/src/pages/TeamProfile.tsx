@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ContestHistory from '../components/profile/ContestHistory'
 import { apiUrl, staticUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 interface TeamMember {
@@ -41,8 +42,8 @@ export default function TeamProfile() {
     const fetchTeam = async () => {
         setLoading(true)
         try {
-            const response = await fetch(apiUrl(`/api/teams/public?id=${teamId}`), {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            const response = await apiFetch(apiUrl(`/api/teams/public?id=${teamId}`), undefined, {
+                disableAuth: !token,
             })
             if (response.ok) {
                 const data = await response.json()
@@ -72,11 +73,10 @@ export default function TeamProfile() {
         setMessage({ type: '', text: '' })
 
         try {
-            const response = await fetch(apiUrl('/api/teams/update'), {
+            const response = await apiFetch(apiUrl('/api/teams/update'), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ name: editName })
             })
@@ -100,11 +100,10 @@ export default function TeamProfile() {
         setIsProcessing(true)
 
         try {
-            const response = await fetch(apiUrl('/api/teams/kick'), {
+            const response = await apiFetch(apiUrl('/api/teams/kick'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({ user_id: memberId })
             })

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import ImageCropper from './ImageCropper'
 import { apiUrl, staticUrl } from '../../utils/api'
+import { apiFetch } from '../../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../../utils/error'
 
 interface AvatarUploadProps {
@@ -75,12 +76,8 @@ export default function AvatarUpload({ currentAvatarUrl, onUploadSuccess }: Avat
       const formData = new FormData()
       formData.append('avatar', selectedFile)
 
-      const token = localStorage.getItem('token')
-      const response = await fetch(apiUrl('/api/upload/avatar'), {
+      const response = await apiFetch(apiUrl('/api/upload/avatar'), {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
         body: formData,
       })
 

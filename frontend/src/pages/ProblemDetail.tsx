@@ -3,6 +3,7 @@ import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Problem, Submission } from '../types'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { readSafeErrorMessage } from '../utils/error'
 
 export default function ProblemDetail() {
@@ -24,9 +25,7 @@ export default function ProblemDetail() {
     setFlag('')
 
     if (token) {
-      fetch(apiUrl(`/api/problems/detail?id=${pid}`), {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      apiFetch(apiUrl(`/api/problems/detail?id=${pid}`))
         .then(res => {
           if (res.ok) return res.json()
           throw new Error('Failed to fetch problem')
@@ -45,11 +44,10 @@ export default function ProblemDetail() {
     }
 
     try {
-      const response = await fetch(apiUrl('/api/submissions'), {
+      const response = await apiFetch(apiUrl('/api/submissions'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           problem_id: problem.id,

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiUrl, staticUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { MOCK_CONTESTS } from '../data/mockContests'
 
 type ContestItem = {
@@ -59,7 +60,7 @@ export default function Contests() {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(apiUrl('/api/contests?limit=50'))
+        const res = await apiFetch(apiUrl('/api/contests?limit=50'))
         if (!res.ok) {
           throw new Error('获取赛事列表失败')
         }

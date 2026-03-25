@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 
 export default function Login() {
@@ -18,12 +19,15 @@ export default function Login() {
         setLoading(true)
 
         try {
-            const response = await fetch(apiUrl('/api/auth/login'), {
+            const response = await apiFetch(apiUrl('/api/auth/login'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, password }),
+            }, {
+                disableAuth: true,
+                disableRetry401: true,
             })
 
             if (!response.ok) {

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react'
 import ImageCropper from './ImageCropper'
 import { apiUrl, staticUrl } from '../../utils/api'
+import { apiFetch } from '../../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../../utils/error'
 
 interface ContestCoverUploadProps {
@@ -71,12 +72,8 @@ export default function ContestCoverUpload({ currentCoverUrl, onUploadSuccess }:
             const formData = new FormData()
             formData.append('cover', selectedFile)
 
-            const token = localStorage.getItem('token')
-            const response = await fetch(apiUrl('/api/upload/contest-cover'), {
+            const response = await apiFetch(apiUrl('/api/upload/contest-cover'), {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
                 body: formData,
             })
 

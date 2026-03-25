@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 
@@ -73,12 +74,15 @@ export default function Register() {
         setSendingCode(true)
 
         try {
-            const response = await fetch(apiUrl('/api/auth/send-register-code'), {
+            const response = await apiFetch(apiUrl('/api/auth/send-register-code'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ email, bot_token: tokenToUse }),
+            }, {
+                disableAuth: true,
+                disableRetry401: true,
             })
 
             if (!response.ok) {
@@ -142,12 +146,15 @@ export default function Register() {
         setLoading(true)
 
         try {
-            const response = await fetch(apiUrl('/api/auth/register'), {
+            const response = await apiFetch(apiUrl('/api/auth/register'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ username, email, password, email_code: emailCode }),
+            }, {
+                disableAuth: true,
+                disableRetry401: true,
             })
 
             if (!response.ok) {

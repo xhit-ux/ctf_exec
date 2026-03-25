@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { Submission } from '../types'
 import { apiUrl } from '../utils/api'
+import { apiFetch } from '../utils/authClient'
 
 export default function MySubmissions() {
   const [subs, setSubs] = useState<Submission[]>([])
@@ -18,11 +19,7 @@ export default function MySubmissions() {
 
     const fetchSubmissions = async () => {
       try {
-        const res = await fetch(apiUrl('/api/submissions/me'), {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
+        const res = await apiFetch(apiUrl('/api/submissions/me'))
         if (res.ok) {
           const data = await res.json()
           // 后端返回的字段名可能与前端 Submission 类型不同，需要映射
