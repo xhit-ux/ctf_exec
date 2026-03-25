@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/db"
@@ -12,6 +13,7 @@ import (
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
+	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,6 +31,9 @@ func main() {
 	}
 	defer sqlDB.Close()
 	log.Println("✓ 数据库连接成功")
+
+	// 初始化 JWT 运行时配置缓存（启动后全局复用）。
+	utils.InitJWTConfig(cfg.JWT)
 
 	// 初始化Redis
 	redisClient, err := cache.InitRedis()
@@ -48,7 +53,8 @@ func main() {
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
 
 	// 初始化服务层
-	authService := service.NewAuthService(userRepo, redisClient.Client, cfg)
+	sessionStore := authsession.NewStore(redisClient.Client)
+	authService := service.NewAuthService(userRepo, redisClient.Client, sessionStore, cfg)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
 
@@ -79,7 +85,7 @@ func main() {
 
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService)
-	userHandler := handler.NewUserHandler(userRepo, leaderboardService)
+	userHandler := handler.NewUserHandler(userRepo, leaderboardService, authService)
 	probHandler := handler.NewProblemHandler(probRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
@@ -118,7 +124,9 @@ func main() {
 			auth.POST("/send-register-code", authHandler.SendRegisterCodeGin)
 			auth.POST("/register", authHandler.RegisterGin)
 			auth.POST("/login", authHandler.LoginGin)
-			auth.GET("/me", middleware.GinAuthMiddleware(), authHandler.GetCurrentUserGin)
+			auth.POST("/refresh", authHandler.RefreshGin)
+			auth.POST("/logout", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), authHandler.LogoutGin)
+			auth.GET("/me", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), authHandler.GetCurrentUserGin)
 		}
 
 		// 用户路由
@@ -126,14 +134,14 @@ func main() {
 		{
 			users.GET("/leaderboard", userHandler.GetLeaderboardGin)
 			users.GET("/leaderboard/search", userHandler.GetLeaderboardUserByUsernameGin)
-			users.PUT("/profile", middleware.GinAuthMiddleware(), userHandler.UpdateProfileGin)
-			users.GET("/public", middleware.GinOptionalAuthMiddleware(), userHandler.GetPublicProfileGin)
+			users.PUT("/profile", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.UpdateProfileGin)
+			users.GET("/public", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetPublicProfileGin)
 		}
 
 		// 题目路由
 		problems := api.Group("/problems")
 		{
-			problems.Use(middleware.GinAuthMiddleware())
+			problems.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			problems.GET("", probHandler.GetProblemsGin)
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
 		}
@@ -141,13 +149,13 @@ func main() {
 		// 赛事公开路由
 		contests := api.Group("/contests")
 		{
-			contests.Use(middleware.GinOptionalAuthMiddleware())
+			contests.Use(middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore))
 			contests.GET("", contestHandler.ListContestsGin)
 			contests.GET(":id", contestHandler.GetContestDetailGin)
 			contests.GET(":id/scoreboard", contestHandler.GetContestScoreboardGin)
 
 			contestAuth := contests.Group("")
-			contestAuth.Use(middleware.GinAuthMiddleware())
+			contestAuth.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			contestAuth.POST(":id/join", contestHandler.JoinContestGin)
 			contestAuth.POST(":id/leave", contestHandler.LeaveContestGin)
 			contestAuth.GET(":id/challenges", contestHandler.GetContestChallengesGin)
@@ -156,7 +164,7 @@ func main() {
 		// 提交路由
 		submissions := api.Group("/submissions")
 		{
-			submissions.Use(middleware.GinAuthMiddleware())
+			submissions.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			submissions.POST("", subHandler.SubmitFlagGin)
 			submissions.GET("/me", subHandler.GetMySubmissionsGin)
 		}
@@ -164,7 +172,7 @@ func main() {
 		// 文件上传路由
 		upload := api.Group("/upload")
 		{
-			upload.Use(middleware.GinAuthMiddleware())
+			upload.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			upload.POST("/avatar", uploadHandler.UploadAvatarGin)
 			upload.POST("/contest-cover", middleware.RequireSiteAdminOrRoot(userRepo), uploadHandler.UploadContestCoverGin)
 		}
@@ -172,7 +180,7 @@ func main() {
 		// 管理端路由
 		admin := api.Group("/admin")
 		{
-			admin.Use(middleware.GinAuthMiddleware())
+			admin.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 
 			adminUsers := admin.Group("/users")
 			{
@@ -216,7 +224,7 @@ func main() {
 		teams := api.Group("/teams")
 		{
 			// 需要认证的路由
-			teams.Use(middleware.GinAuthMiddleware())
+			teams.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			teams.POST("", teamHandler.CreateTeamGin)
 			teams.POST("/join", teamHandler.JoinTeamGin)
 			teams.GET("/my", teamHandler.GetMyTeamGin)
@@ -230,7 +238,7 @@ func main() {
 		teamsPublic := api.Group("/teams")
 		{
 			teamsPublic.GET("/leaderboard", teamHandler.GetTeamLeaderboardGin)
-			teamsPublic.GET("/public", middleware.GinOptionalAuthMiddleware(), teamHandler.GetTeamPublicGin)
+			teamsPublic.GET("/public", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), teamHandler.GetTeamPublicGin)
 		}
 	}
 

@@ -34,7 +34,7 @@ export default function Login() {
             const data = await response.json()
 
             // 使用 context 的 login 方法更新全局状态
-            login(data.token, data.user)
+            login(data.token, data.refresh_token, data.user)
 
             // 重定向到首页
             navigate('/')

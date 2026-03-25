@@ -36,6 +36,18 @@ const (
 
 	// 机器人验证限流
 	KeyBotVerifyRateLimitTemplate = "auth:bot_verify:ip:%s"
+
+	// JWT 会话: jti -> user_id
+	KeyJWTSessionByJTITemplate = "auth:jwt:session:jti:%s"
+
+	// 用户会话索引: user_id -> set(jti)
+	KeyJWTUserSessionSetTemplate = "auth:jwt:user_sessions:%s"
+
+	// Refresh 会话: jti -> user_id
+	KeyJWTRefreshSessionByJTITemplate = "auth:jwt:refresh:jti:%s"
+
+	// Refresh 用户会话索引: user_id -> set(jti)
+	KeyJWTRefreshUserSessionSetTemplate = "auth:jwt:refresh:user_sessions:%s"
 )
 
 // GetContestUserLeaderboardKey 获取赛事用户排行榜键
@@ -81,4 +93,24 @@ func GetEmailVerifyDailyLimitKey(email, day string) string {
 // GetBotVerifyRateLimitKey 获取机器人验证限流键
 func GetBotVerifyRateLimitKey(clientIP string) string {
 	return fmt.Sprintf(KeyBotVerifyRateLimitTemplate, clientIP)
+}
+
+// GetJWTSessionByJTIKey 获取 jti 会话键。
+func GetJWTSessionByJTIKey(jti string) string {
+	return fmt.Sprintf(KeyJWTSessionByJTITemplate, jti)
+}
+
+// GetJWTUserSessionSetKey 获取用户会话集合键。
+func GetJWTUserSessionSetKey(userID string) string {
+	return fmt.Sprintf(KeyJWTUserSessionSetTemplate, userID)
+}
+
+// GetJWTRefreshSessionByJTIKey 获取 refresh jti 会话键。
+func GetJWTRefreshSessionByJTIKey(jti string) string {
+	return fmt.Sprintf(KeyJWTRefreshSessionByJTITemplate, jti)
+}
+
+// GetJWTRefreshUserSessionSetKey 获取用户 refresh 会话集合键。
+func GetJWTRefreshUserSessionSetKey(userID string) string {
+	return fmt.Sprintf(KeyJWTRefreshUserSessionSetTemplate, userID)
 }

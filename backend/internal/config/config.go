@@ -56,7 +56,10 @@ type ServerConfig struct {
 
 // JWTConfig JWT配置
 type JWTConfig struct {
-	Secret     string
+	Secret            string
+	AccessExpiration  time.Duration
+	RefreshExpiration time.Duration
+	// Expiration 保留兼容字段，等同于 AccessExpiration。
 	Expiration time.Duration
 }
 
@@ -248,11 +251,22 @@ func parseCSV(value string) []string {
 // loadJWTConfig 加载JWT配置
 func loadJWTConfig() (*JWTConfig, error) {
 	secret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
-	expirationHours := getEnvInt("JWT_EXPIRATION_HOURS", 168) // 7天
+	legacyAccessHours := getEnvInt("JWT_EXPIRATION_HOURS", 0)
+	defaultAccessMinutes := 15
+	if legacyAccessHours > 0 {
+		defaultAccessMinutes = legacyAccessHours * 60
+	}
+	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", defaultAccessMinutes)
+	refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168) // 7天
+
+	accessExpiration := time.Duration(accessMinutes) * time.Minute
+	refreshExpiration := time.Duration(refreshHours) * time.Hour
 
 	return &JWTConfig{
-		Secret:     secret,
-		Expiration: time.Duration(expirationHours) * time.Hour,
+		Secret:            secret,
+		AccessExpiration:  accessExpiration,
+		RefreshExpiration: refreshExpiration,
+		Expiration:        accessExpiration,
 	}, nil
 }
 

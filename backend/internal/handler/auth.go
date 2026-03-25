@@ -73,6 +73,46 @@ func (h *AuthHandler) LoginGin(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// RefreshGin 使用 refresh token 轮换签发新 token 对。
+func (h *AuthHandler) RefreshGin(c *gin.Context) {
+	var req models.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		return
+	}
+
+	response, err := h.authService.Refresh(req.RefreshToken)
+	if err != nil {
+		writeError(c, err, http.StatusUnauthorized)
+		return
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// LogoutGin Gin 版本的用户登出处理。
+func (h *AuthHandler) LogoutGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	var req models.LogoutRequest
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+			return
+		}
+	}
+
+	if err := h.authService.Logout(claims.UserID, claims.ID, req.RefreshToken); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
+}
+
 // GetCurrentUserGin Gin 版本的获取当前用户信息处理
 func (h *AuthHandler) GetCurrentUserGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)

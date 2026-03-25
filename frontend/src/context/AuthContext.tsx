@@ -21,9 +21,10 @@ export interface User {
 export interface AuthContextType {
   user: User | null
   token: string | null
+  refreshToken: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (token: string, user: User) => void
+  login: (token: string, refreshToken: string, user: User) => void
   logout: () => void
   setUser: (user: User) => void
   refreshUser?: () => Promise<void>
@@ -32,6 +33,7 @@ export interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   token: null,
+  refreshToken: null,
   isAuthenticated: false,
   isLoading: true,
   login: () => { },
@@ -57,6 +59,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return localStorage.getItem('token')
   })
 
+  const [refreshToken, setRefreshToken] = useState<string | null>(() => {
+    return localStorage.getItem('refresh_token')
+  })
+
   const [isLoading, setIsLoading] = useState(true)
 
   // 验证 token 有效性并刷新用户信息
@@ -64,24 +70,71 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const initAuth = async () => {
       if (token) {
         await refreshUser()
+      } else if (refreshToken) {
+        const refreshed = await refreshAccessToken(refreshToken)
+        if (refreshed) {
+          await refreshUser()
+        }
       }
       setIsLoading(false)
     }
     initAuth()
   }, [])
 
-  const login = (newToken: string, newUser: User) => {
+  const login = (newToken: string, newRefreshToken: string, newUser: User) => {
     setToken(newToken)
+    setRefreshToken(newRefreshToken)
     setUser(newUser)
     localStorage.setItem('token', newToken)
+    localStorage.setItem('refresh_token', newRefreshToken)
     localStorage.setItem('user', JSON.stringify(newUser))
   }
 
+  const refreshAccessToken = async (tokenForRefresh: string): Promise<boolean> => {
+    try {
+      const response = await fetch(apiUrl('/api/auth/refresh'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: tokenForRefresh }),
+      })
+
+      if (!response.ok) return false
+
+      const data = await response.json()
+      if (!data?.token || !data?.refresh_token) return false
+
+      setToken(data.token)
+      setRefreshToken(data.refresh_token)
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('refresh_token', data.refresh_token)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const logout = () => {
+    const tokenForRevoke = token
+    const refreshTokenForRevoke = refreshToken
     setToken(null)
+    setRefreshToken(null)
     setUser(null)
     localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
     localStorage.removeItem('user')
+
+    if (tokenForRevoke) {
+      void fetch(apiUrl('/api/auth/logout'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${tokenForRevoke}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refresh_token: refreshTokenForRevoke || '' }),
+      })
+    }
   }
 
   const refreshUser = async () => {
@@ -100,9 +153,39 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(userData)
         localStorage.setItem('user', JSON.stringify(userData))
       } else {
-        // 如果 token 无效，清除登录状态
-        console.error('Token invalid, logging out')
-        logout()
+        const currentRefresh = localStorage.getItem('refresh_token')
+        if (!currentRefresh) {
+          logout()
+          return
+        }
+
+        const refreshed = await refreshAccessToken(currentRefresh)
+        if (!refreshed) {
+          console.error('Token refresh failed, logging out')
+          logout()
+          return
+        }
+
+        const retriedToken = localStorage.getItem('token')
+        if (!retriedToken) {
+          logout()
+          return
+        }
+
+        const retryResponse = await fetch(apiUrl('/api/auth/me'), {
+          headers: {
+            'Authorization': `Bearer ${retriedToken}`,
+          },
+        })
+
+        if (!retryResponse.ok) {
+          logout()
+          return
+        }
+
+        const userData = await retryResponse.json()
+        setUser(userData)
+        localStorage.setItem('user', JSON.stringify(userData))
       }
     } catch (err) {
       console.error('Failed to refresh user:', err)
@@ -112,6 +195,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const value: AuthContextType = {
     user,
     token,
+    refreshToken,
     isAuthenticated: !!token && !!user,
     isLoading,
     login,

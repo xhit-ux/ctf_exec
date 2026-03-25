@@ -45,8 +45,22 @@ type LoginRequest struct {
 
 // AuthResponse 认证响应
 type AuthResponse struct {
-	Token string `json:"token"`
-	User  *User  `json:"user"`
+	Token                string `json:"token"`
+	RefreshToken         string `json:"refresh_token"`
+	AccessExpiresInSecs  int64  `json:"access_expires_in_secs"`
+	RefreshExpiresInSecs int64  `json:"refresh_expires_in_secs"`
+	TokenType            string `json:"token_type"`
+	User                 *User  `json:"user"`
+}
+
+// RefreshTokenRequest 刷新 access token 请求。
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// LogoutRequest 登出请求（可选携带 refresh token 以撤销当前设备刷新会话）。
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 // UpdateProfileRequest 更新个人资料请求

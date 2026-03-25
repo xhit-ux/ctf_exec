@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
+	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/models"
@@ -29,26 +30,64 @@ type AuthService interface {
 	SendRegisterCode(req *models.SendRegisterCodeRequest, clientIP string) error
 	Register(req *models.RegisterRequest, clientIP string) (*models.AuthResponse, error)
 	Login(req *models.LoginRequest, clientIP string) (*models.AuthResponse, error)
+	Refresh(refreshToken string) (*models.AuthResponse, error)
+	Logout(userID, accessJTI, refreshToken string) error
+	RevokeUserSessions(userID string) error
 }
 
 // AuthServiceImpl 认证服务实现
 type AuthServiceImpl struct {
-	userRepo    *repository.UserRepository
-	redisClient *redis.Client
-	emailCfg    config.EmailConfig
-	botCfg      config.BotProtectionConfig
-	httpClient  *http.Client
+	userRepo     *repository.UserRepository
+	redisClient  *redis.Client
+	sessionStore *authsession.Store
+	jwtCfg       config.JWTConfig
+	emailCfg     config.EmailConfig
+	botCfg       config.BotProtectionConfig
+	httpClient   *http.Client
 }
 
 // NewAuthService 创建认证服务实例
-func NewAuthService(userRepo *repository.UserRepository, redisClient *redis.Client, cfg *config.Config) *AuthServiceImpl {
+func NewAuthService(userRepo *repository.UserRepository, redisClient *redis.Client, sessionStore *authsession.Store, cfg *config.Config) *AuthServiceImpl {
 	return &AuthServiceImpl{
-		userRepo:    userRepo,
-		redisClient: redisClient,
-		emailCfg:    cfg.Email,
-		botCfg:      cfg.Bot,
-		httpClient:  &http.Client{Timeout: 8 * time.Second},
+		userRepo:     userRepo,
+		redisClient:  redisClient,
+		sessionStore: sessionStore,
+		jwtCfg:       cfg.JWT,
+		emailCfg:     cfg.Email,
+		botCfg:       cfg.Bot,
+		httpClient:   &http.Client{Timeout: 8 * time.Second},
 	}
+}
+
+func (s *AuthServiceImpl) issueTokenPair(user *models.User) (*models.AuthResponse, error) {
+	accessToken, accessClaims, err := utils.GenerateAccessToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		return nil, fmt.Errorf("生成 access token 失败: %w", err)
+	}
+
+	refreshToken, refreshClaims, err := utils.GenerateRefreshToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		return nil, fmt.Errorf("生成 refresh token 失败: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := s.sessionStore.CreateSession(ctx, accessClaims); err != nil {
+		return nil, fmt.Errorf("创建 access 会话失败: %w", err)
+	}
+	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims); err != nil {
+		return nil, fmt.Errorf("创建 refresh 会话失败: %w", err)
+	}
+
+	return &models.AuthResponse{
+		Token:                accessToken,
+		RefreshToken:         refreshToken,
+		AccessExpiresInSecs:  int64(s.jwtCfg.AccessExpiration / time.Second),
+		RefreshExpiresInSecs: int64(s.jwtCfg.RefreshExpiration / time.Second),
+		TokenType:            "Bearer",
+		User:                 user,
+	}, nil
 }
 
 // SendRegisterCode 发送注册验证码
@@ -159,16 +198,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
 
-	// 生成 token
-	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
-	if err != nil {
-		return nil, fmt.Errorf("生成 token 失败: %w", err)
-	}
-
-	return &models.AuthResponse{
-		Token: token,
-		User:  user,
-	}, nil
+	return s.issueTokenPair(user)
 }
 
 // Login 处理用户登录
@@ -192,16 +222,82 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*mod
 	// 更新最后登陆时间
 	_ = s.userRepo.UpdateLastLogin(user.ID, clientIP)
 
-	// 生成 token
-	token, err := utils.GenerateToken(user.ID, user.Username, user.Role)
-	if err != nil {
-		return nil, fmt.Errorf("生成 token 失败: %w", err)
+	return s.issueTokenPair(user)
+}
+
+// Refresh 使用 refresh token 轮换签发新令牌对。
+func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, error) {
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken == "" {
+		return nil, apperr.New(apperr.ErrBadRequest, "缺少 refresh_token")
 	}
 
-	return &models.AuthResponse{
-		Token: token,
-		User:  user,
-	}, nil
+	refreshClaims, err := utils.VerifyTokenByType(refreshToken, utils.TokenTypeRefresh)
+	if err != nil {
+		return nil, apperr.New(apperr.ErrUnauthorized, "refresh token 无效")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	active, err := s.sessionStore.IsRefreshSessionActive(ctx, refreshClaims.UserID, refreshClaims.ID)
+	if err != nil {
+		return nil, fmt.Errorf("刷新会话校验失败: %w", err)
+	}
+	if !active {
+		return nil, apperr.New(apperr.ErrUnauthorized, "refresh token 已失效")
+	}
+
+	user, err := s.userRepo.GetUserByID(refreshClaims.UserID)
+	if err != nil {
+		return nil, apperr.New(apperr.ErrUnauthorized, "用户状态异常，请重新登录")
+	}
+
+	if err := s.sessionStore.RevokeRefreshSession(ctx, refreshClaims.UserID, refreshClaims.ID); err != nil {
+		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
+	}
+
+	return s.issueTokenPair(user)
+}
+
+// Logout 登出当前会话。
+func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
+	if userID == "" || accessJTI == "" {
+		return apperr.New(apperr.ErrBadRequest, "无效的会话标识")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.sessionStore.RevokeSession(ctx, userID, accessJTI); err != nil {
+		return fmt.Errorf("登出失败: %w", err)
+	}
+
+	refreshToken = strings.TrimSpace(refreshToken)
+	if refreshToken != "" {
+		refreshClaims, err := utils.VerifyTokenByType(refreshToken, utils.TokenTypeRefresh)
+		if err == nil && refreshClaims.UserID == userID {
+			if err := s.sessionStore.RevokeRefreshSession(ctx, userID, refreshClaims.ID); err != nil {
+				return fmt.Errorf("撤销 refresh 会话失败: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// RevokeUserSessions 撤销指定用户全部会话。
+func (s *AuthServiceImpl) RevokeUserSessions(userID string) error {
+	if userID == "" {
+		return apperr.New(apperr.ErrBadRequest, "缺少用户ID")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.sessionStore.RevokeAllUserSessions(ctx, userID); err != nil {
+		return fmt.Errorf("撤销用户会话失败: %w", err)
+	}
+
+	return nil
 }
 
 func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {

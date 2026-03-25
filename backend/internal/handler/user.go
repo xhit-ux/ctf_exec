@@ -17,6 +17,7 @@ import (
 type UserHandler struct {
 	userRepo           *repository.UserRepository
 	leaderboardService service.LeaderboardService
+	authService        service.AuthService
 }
 
 // ListAdminUsersGin root 查看用户列表。
@@ -86,6 +87,11 @@ func (h *UserHandler) PatchUserActiveGin(c *gin.Context) {
 	}
 
 	if err := h.userRepo.UpdateUserActiveStatus(claims.UserID, targetUserID, req.IsActive, req.Reason, realClientIP(c)); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.authService.RevokeUserSessions(targetUserID); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
@@ -165,13 +171,19 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 		return
 	}
 
+	if err := h.authService.RevokeUserSessions(targetUserID); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 }
 
-func NewUserHandler(userRepo *repository.UserRepository, leaderboardService service.LeaderboardService) *UserHandler {
+func NewUserHandler(userRepo *repository.UserRepository, leaderboardService service.LeaderboardService, authService service.AuthService) *UserHandler {
 	return &UserHandler{
 		userRepo:           userRepo,
 		leaderboardService: leaderboardService,
+		authService:        authService,
 	}
 }
 
