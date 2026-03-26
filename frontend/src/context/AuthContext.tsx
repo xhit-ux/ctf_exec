@@ -90,6 +90,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const onRefreshFailed = () => {
+      // 幂等处理：如果 token 对已经清空，避免重复弹窗与重复跳转。
+      if (!localStorage.getItem('token') && !localStorage.getItem('refresh_token')) return
+
       setToken(null)
       setRefreshToken(null)
       setUser(null)
@@ -151,7 +154,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('user', JSON.stringify(userData))
       } else {
         if (response.status === 401) {
-          logout()
+          // 交由 apiFetch 的 401 -> refresh -> refresh-failed 事件链路统一处理。
+          return
         } else {
           console.error('Failed to refresh user:', response.status)
         }

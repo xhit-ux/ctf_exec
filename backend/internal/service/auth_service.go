@@ -221,6 +221,7 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*mod
 
 	// 更新最后登陆时间
 	_ = s.userRepo.UpdateLastLogin(user.ID, clientIP)
+	_ = s.userRepo.LogLogin(user.ID, clientIP)
 
 	return s.issueTokenPair(user)
 }

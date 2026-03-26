@@ -16,7 +16,7 @@ export default function ProblemDetail() {
   const [flag, setFlag] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
-  const { token, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   useEffect(() => {
     // 每次进入页面清空提交记录显式（或者是从 backend 拉取）
@@ -24,16 +24,14 @@ export default function ProblemDetail() {
     setMsg(null)
     setFlag('')
 
-    if (token) {
-      apiFetch(apiUrl(`/api/problems/detail?id=${pid}`))
-        .then(res => {
-          if (res.ok) return res.json()
-          throw new Error('Failed to fetch problem')
-        })
-        .then(data => setProblem(data))
-        .catch(err => console.error(err))
-    }
-  }, [pid, token])
+    apiFetch(apiUrl(`/api/problems/detail?id=${pid}`))
+      .then(res => {
+        if (res.ok) return res.json()
+        throw new Error('Failed to fetch problem')
+      })
+      .then(data => setProblem(data))
+      .catch(err => console.error(err))
+  }, [pid])
 
   if (!problem) return <div className="p-10 text-center">题目加载中或未找到...</div>
 

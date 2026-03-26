@@ -25,11 +25,11 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 	now := time.Now()
 
 	query := `
-		INSERT INTO submissions (id, user_id, team_id, problem_id, contest_id, flag, is_correct, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO submissions (id, user_id, team_id, problem_id, contest_id, flag, is_correct, ip_address, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, now)
+	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
 	if err != nil {
 		return nil, fmt.Errorf("创建提交记录失败: %w", err)
 	}
@@ -42,6 +42,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		ProblemID: req.ProblemID,
 		Flag:      req.Flag,
 		IsCorrect: req.IsCorrect,
+		IPAddress: normalizeIPAddress(req.IPAddress),
 		CreatedAt: now,
 	}, nil
 }
@@ -50,7 +51,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.Submission, error) {
 	var submissions []*models.Submission
 	query := `
-		SELECT s.id, s.user_id, s.team_id, s.problem_id, s.contest_id, s.flag, s.is_correct, s.created_at, p.title
+		SELECT s.id, s.user_id, s.team_id, s.problem_id, s.contest_id, s.flag, s.is_correct, s.ip_address, s.created_at, p.title
 		FROM submissions s
 		LEFT JOIN problems p ON s.problem_id = p.id
 		WHERE s.user_id = ?
@@ -67,7 +68,8 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 		s := &models.Submission{}
 		var teamID sql.NullString
 		var contestID sql.NullString
-		err := rows.Scan(&s.ID, &s.UserID, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &s.CreatedAt, &s.ProblemTitle)
+		var ipAddress sql.NullString
+		err := rows.Scan(&s.ID, &s.UserID, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &ipAddress, &s.CreatedAt, &s.ProblemTitle)
 		if err != nil {
 			return nil, fmt.Errorf("扫描提交记录失败: %w", err)
 		}
@@ -78,6 +80,9 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 		if contestID.Valid {
 			v := contestID.String
 			s.ContestID = &v
+		}
+		if ipAddress.Valid {
+			s.IPAddress = ipAddress.String
 		}
 		submissions = append(submissions, s)
 	}
@@ -95,6 +100,21 @@ func (r *SubmissionRepository) HasCorrectSubmissionInContest(userID, contestID s
 	`, userID, contestID, problemID).Scan(&cnt)
 	if err != nil {
 		return false, fmt.Errorf("查询赛事解题记录失败: %w", err)
+	}
+
+	return cnt > 0, nil
+}
+
+// HasCorrectSubmissionByUserProblem 校验用户是否已正确解出该题（全局维度）。
+func (r *SubmissionRepository) HasCorrectSubmissionByUserProblem(userID string, problemID int) (bool, error) {
+	var cnt int
+	err := r.db.QueryRow(`
+		SELECT COUNT(1)
+		FROM submissions
+		WHERE user_id = ? AND problem_id = ? AND is_correct = 1
+	`, userID, problemID).Scan(&cnt)
+	if err != nil {
+		return false, fmt.Errorf("查询用户解题记录失败: %w", err)
 	}
 
 	return cnt > 0, nil

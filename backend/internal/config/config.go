@@ -52,6 +52,7 @@ type ServerConfig struct {
 	Port           string
 	Host           string
 	TrustedProxies []string
+	AllowedOrigins []string
 }
 
 // JWTConfig JWT配置
@@ -228,11 +229,13 @@ func loadServerConfig() (*ServerConfig, error) {
 	port := getEnv("SERVER_PORT", "8080")
 	host := getEnv("SERVER_HOST", "0.0.0.0")
 	trustedProxies := parseCSV(getEnv("SERVER_TRUSTED_PROXIES", "127.0.0.1,::1"))
+	allowedOrigins := parseCSV(getEnv("SERVER_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"))
 
 	return &ServerConfig{
 		Port:           port,
 		Host:           host,
 		TrustedProxies: trustedProxies,
+		AllowedOrigins: allowedOrigins,
 	}, nil
 }
 

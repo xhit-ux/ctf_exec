@@ -15,7 +15,7 @@ import (
 
 // SubmissionService 提交服务接口
 type SubmissionService interface {
-	SubmitFlag(userID string, problemID int, flag string, contestID *string) (*models.Submission, error)
+	SubmitFlag(userID string, problemID int, flag string, contestID *string, clientIP string) (*models.Submission, error)
 	GetMySubmissions(userID string) ([]*models.Submission, error)
 	CheckRateLimit(userID string) (bool, int64, error)
 }
@@ -24,6 +24,7 @@ type SubmissionService interface {
 type SubmissionServiceImpl struct {
 	submissionRepo *repository.SubmissionRepository
 	problemRepo    *repository.ProblemRepository
+	userRepo       *repository.UserRepository
 	leaderboardSvc LeaderboardService
 	contestSvc     ContestService
 	redisClient    *redis.Client
@@ -35,6 +36,7 @@ type SubmissionServiceImpl struct {
 func NewSubmissionService(
 	submissionRepo *repository.SubmissionRepository,
 	problemRepo *repository.ProblemRepository,
+	userRepo *repository.UserRepository,
 	leaderboardSvc LeaderboardService,
 	contestSvc ContestService,
 	redisClient *redis.Client,
@@ -44,6 +46,7 @@ func NewSubmissionService(
 	return &SubmissionServiceImpl{
 		submissionRepo: submissionRepo,
 		problemRepo:    problemRepo,
+		userRepo:       userRepo,
 		leaderboardSvc: leaderboardSvc,
 		contestSvc:     contestSvc,
 		redisClient:    redisClient,
@@ -53,7 +56,7 @@ func NewSubmissionService(
 }
 
 // SubmitFlag 提交 flag
-func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string, contestID *string) (*models.Submission, error) {
+func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string, contestID *string, clientIP string) (*models.Submission, error) {
 	// 检查提交频率限制
 	allowed, remaining, err := s.CheckRateLimit(userID)
 	if err != nil {
@@ -63,13 +66,17 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining))
 	}
 
-	// 获取题目信息
-	problem, err := s.problemRepo.GetProblemByID(problemID)
+	// 获取题目元数据并校验提交可见性策略。
+	problemMeta, err := s.problemRepo.GetProblemSubmissionMeta(problemID)
 	if err != nil {
 		if errors.Is(err, apperr.ErrNotFound) {
 			return nil, apperr.New(apperr.ErrBadRequest, "题目不存在")
 		}
 		return nil, fmt.Errorf("查询题目失败: %w", err)
+	}
+
+	if err := validateProblemSubmissionPolicy(problemMeta, contestID); err != nil {
+		return nil, err
 	}
 
 	// 获取题目的正确 flag hash
@@ -98,16 +105,14 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		contestScore = score
 	}
 
+	alreadySolved, err := s.submissionRepo.HasCorrectSubmissionByUserProblem(userID, problemID)
+	if err != nil {
+		return nil, fmt.Errorf("查询历史解题记录失败: %w", err)
+	}
+
 	// 非赛事场景：检查是否已经正确提交过该题目
-	if isCorrect && (contestID == nil || *contestID == "") {
-		submissions, err := s.submissionRepo.GetSubmissionsByUserID(userID)
-		if err == nil {
-			for _, sub := range submissions {
-				if sub.ProblemID == problemID && sub.IsCorrect {
-					return nil, apperr.New(apperr.ErrConflict, "你已经解决过这个题目了")
-				}
-			}
-		}
+	if isCorrect && alreadySolved && (contestID == nil || *contestID == "") {
+		return nil, apperr.New(apperr.ErrConflict, "你已经解决过这个题目了")
 	}
 
 	// 创建提交请求
@@ -117,6 +122,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		TeamID:    nil,
 		ContestID: contestID,
 		IsCorrect: isCorrect,
+		IPAddress: clientIP,
 	}
 	if contestScope != nil {
 		req.TeamID = contestScope.TeamID
@@ -130,6 +136,13 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 
 	// 更新排行榜（如果提交正确）
 	if isCorrect {
+		if !alreadySolved && s.userRepo != nil {
+			err = s.userRepo.IncreaseUserScoreAndSolvedCount(userID, problemMeta.Points)
+			if err != nil {
+				fmt.Printf("更新全站用户积分失败: %v\n", err)
+			}
+		}
+
 		if contestID != nil && *contestID != "" {
 			err = s.contestSvc.ApplyContestSolve(*contestID, contestScope, contestScore, time.Now())
 			if err != nil {
@@ -152,9 +165,55 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	}
 
 	// 设置提交标题
-	submission.ProblemTitle = problem.Title
+	submission.ProblemTitle = problemMeta.Title
 
 	return submission, nil
+}
+
+func validateProblemSubmissionPolicy(problem *models.ProblemSubmissionMeta, contestID *string) error {
+	if problem == nil {
+		return apperr.New(apperr.ErrBadRequest, "题目元数据为空")
+	}
+
+	if problem.Status != "published" {
+		return apperr.New(apperr.ErrForbidden, "题目当前不可提交")
+	}
+
+	now := time.Now()
+	hasContest := contestID != nil && *contestID != ""
+
+	if hasContest {
+		if problem.Scope == "contest" {
+			if problem.ContestID == nil || *problem.ContestID != *contestID {
+				return apperr.New(apperr.ErrForbidden, "题目不属于当前赛事")
+			}
+			return nil
+		}
+
+		if problem.Scope != "platform" {
+			return apperr.New(apperr.ErrForbidden, "题目类型不支持提交")
+		}
+
+		if problem.VisibleFrom != nil && now.Before(*problem.VisibleFrom) {
+			return apperr.New(apperr.ErrForbidden, "题目尚未开放")
+		}
+		if problem.VisibleTo != nil && now.After(*problem.VisibleTo) {
+			return apperr.New(apperr.ErrForbidden, "题目已关闭")
+		}
+		return nil
+	}
+
+	if problem.Scope != "platform" {
+		return apperr.New(apperr.ErrForbidden, "该题仅支持在赛事内提交")
+	}
+	if problem.VisibleFrom != nil && now.Before(*problem.VisibleFrom) {
+		return apperr.New(apperr.ErrForbidden, "题目尚未开放")
+	}
+	if problem.VisibleTo != nil && now.After(*problem.VisibleTo) {
+		return apperr.New(apperr.ErrForbidden, "题目已关闭")
+	}
+
+	return nil
 }
 
 // GetMySubmissions 获取用户的提交记录

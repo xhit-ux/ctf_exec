@@ -427,6 +427,20 @@ func (r *UserRepository) UpdateLastLogin(userID, lastLoginIP string) error {
 	return nil
 }
 
+// LogLogin 写入用户登录审计日志。
+func (r *UserRepository) LogLogin(userID, ipAddress string) error {
+	query := `
+		INSERT INTO user_activity_logs (id, user_id, action_type, target_id, details, ip_address, created_at)
+		VALUES (?, ?, 'login', NULL, NULL, ?, ?)
+	`
+	_, err := r.db.Exec(query, uuid.New().String(), userID, normalizeIPAddress(ipAddress), time.Now())
+	if err != nil {
+		return fmt.Errorf("写入登录审计日志失败: %w", err)
+	}
+
+	return nil
+}
+
 func normalizeIPAddress(raw string) string {
 	ip := strings.TrimSpace(raw)
 	if ip == "" {
@@ -439,6 +453,33 @@ func normalizeIPAddress(raw string) string {
 	}
 
 	return ip
+}
+
+// IncreaseUserScoreAndSolvedCount 增加用户全站积分与解题数。
+func (r *UserRepository) IncreaseUserScoreAndSolvedCount(userID string, deltaScore int) error {
+	if deltaScore <= 0 {
+		return nil
+	}
+
+	query := `
+		UPDATE users
+		SET score = score + ?, solved_count = solved_count + 1, updated_at = NOW()
+		WHERE id = ? AND is_active = 1
+	`
+	result, err := r.db.Exec(query, deltaScore, userID)
+	if err != nil {
+		return fmt.Errorf("更新用户积分失败: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("获取用户积分更新结果失败: %w", err)
+	}
+	if rows == 0 {
+		return apperr.New(apperr.ErrNotFound, "用户不存在")
+	}
+
+	return nil
 }
 
 // UserExistsByUsername 检查用户名是否存在

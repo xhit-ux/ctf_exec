@@ -2,19 +2,41 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 // GinCORSMiddleware Gin CORS 中间件。
-func GinCORSMiddleware() gin.HandlerFunc {
+func GinCORSMiddleware(allowedOrigins []string) gin.HandlerFunc {
+	allowedSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, origin := range allowedOrigins {
+		normalized := strings.TrimSpace(origin)
+		if normalized == "" {
+			continue
+		}
+		allowedSet[normalized] = struct{}{}
+	}
+
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		if origin != "" {
+			if _, ok := allowedSet[origin]; ok {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				c.Writer.Header().Set("Vary", "Origin")
+			}
+		}
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if c.Request.Method == http.MethodOptions {
-			c.AbortWithStatus(http.StatusOK)
+			if origin != "" {
+				if _, ok := allowedSet[origin]; !ok {
+					c.AbortWithStatus(http.StatusForbidden)
+					return
+				}
+			}
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 

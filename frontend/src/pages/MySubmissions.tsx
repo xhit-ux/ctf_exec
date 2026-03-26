@@ -1,22 +1,15 @@
 import React, { useEffect, useState } from 'react'
 
 
-import { useAuth } from '../context/AuthContext'
 import { Submission } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 
 export default function MySubmissions() {
   const [subs, setSubs] = useState<Submission[]>([])
-  const { token, isAuthenticated } = useAuth()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!isAuthenticated || !token) {
-      setLoading(false)
-      return
-    }
-
     const fetchSubmissions = async () => {
       try {
         const res = await apiFetch(apiUrl('/api/submissions/me'))
@@ -41,9 +34,8 @@ export default function MySubmissions() {
       }
     }
     fetchSubmissions()
-  }, [isAuthenticated, token])
+  }, [])
 
-  if (!isAuthenticated) return <div className="p-10 text-center font-medium text-gray-600 bg-white rounded-xl shadow-sm border border-gray-100 max-w-4xl mx-auto w-full">请先登录</div>
   if (loading) return <div className="p-10 text-center font-medium text-gray-600">加载中...</div>
 
   return (

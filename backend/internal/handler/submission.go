@@ -52,7 +52,8 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 	}
 
 	// 使用 Service 层提交（包含限流和排行榜更新）
-	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag, req.ContestID)
+	clientIP := realClientIP(c)
+	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag, req.ContestID, clientIP)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return

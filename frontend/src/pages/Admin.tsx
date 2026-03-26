@@ -96,7 +96,7 @@ function roleBadgeClass(role: string): string {
 }
 
 export default function Admin() {
-  const { token, user } = useAuth()
+  const { user } = useAuth()
   const isRoot = canAccessRootOnly(user?.role)
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview')
@@ -164,11 +164,6 @@ export default function Admin() {
     let canceled = false
 
     const loadSummaryData = async () => {
-      if (!token) {
-        setLoading(false)
-        return
-      }
-
       setLoading(true)
       setError('')
       try {
@@ -206,13 +201,13 @@ export default function Admin() {
     return () => {
       canceled = true
     }
-  }, [token])
+  }, [])
 
   useEffect(() => {
     let canceled = false
 
     const loadStatusUsers = async () => {
-      if (!token || activeTab !== 'user-status') return
+      if (activeTab !== 'user-status') return
 
       setStatusLoading(true)
       setError('')
@@ -243,13 +238,13 @@ export default function Admin() {
     return () => {
       canceled = true
     }
-  }, [activeTab, statusKeyword, statusPage, token])
+  }, [activeTab, statusKeyword, statusPage])
 
   useEffect(() => {
     let canceled = false
 
     const loadRoleUsers = async () => {
-      if (!token || !isRoot || activeTab !== 'root-users') return
+      if (!isRoot || activeTab !== 'root-users') return
 
       setRoleLoading(true)
       setError('')
@@ -288,13 +283,13 @@ export default function Admin() {
     return () => {
       canceled = true
     }
-  }, [activeTab, roleKeyword, rolePage, token, isRoot])
+  }, [activeTab, roleKeyword, rolePage, isRoot])
 
   useEffect(() => {
     let canceled = false
 
     const loadRoleLogs = async () => {
-      if (!token || !isRoot || activeTab !== 'root-audit') return
+      if (!isRoot || activeTab !== 'root-audit') return
 
       setLogsLoading(true)
       setError('')
@@ -323,13 +318,13 @@ export default function Admin() {
     return () => {
       canceled = true
     }
-  }, [activeTab, logsPage, token, isRoot])
+  }, [activeTab, logsPage, isRoot])
 
   useEffect(() => {
     let canceled = false
 
     const loadSiteConfig = async () => {
-      if (!token || !isRoot || activeTab !== 'root-site-config') return
+      if (!isRoot || activeTab !== 'root-site-config') return
 
       setConfigLoading(true)
       setError('')
@@ -362,7 +357,7 @@ export default function Admin() {
     return () => {
       canceled = true
     }
-  }, [activeTab, token, isRoot])
+  }, [activeTab, isRoot])
 
   const statCards = useMemo(() => {
     return [
@@ -374,7 +369,6 @@ export default function Admin() {
 
   const submitProblem = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!token) return
 
     setCreatingProblem(true)
     setError('')
@@ -418,7 +412,6 @@ export default function Admin() {
 
   const submitContest = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!token) return
 
     const startISO = toISODateTime(contestForm.start_time)
     const endISO = toISODateTime(contestForm.end_time)
@@ -472,8 +465,6 @@ export default function Admin() {
   }
 
   const updateUserActiveStatus = async (target: AdminUserListItem, nextActive: boolean) => {
-    if (!token) return
-
     const reason = (statusReasonDraft[target.id] || '').trim()
 
     setStatusUpdatingUserID(target.id)
@@ -503,8 +494,6 @@ export default function Admin() {
   }
 
   const updateUserRole = async (target: AdminUserListItem) => {
-    if (!token) return
-
     const nextRole = roleDraft[target.id] || target.role
     const reason = (roleReasonDraft[target.id] || '').trim()
 
@@ -546,7 +535,6 @@ export default function Admin() {
 
   const saveSiteConfig = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!token) return
 
     setConfigSaving(true)
     setError('')

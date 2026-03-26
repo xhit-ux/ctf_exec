@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
@@ -14,6 +15,63 @@ import (
 // ProblemRepository 题库数据访问层
 type ProblemRepository struct {
 	db *sql.DB
+}
+
+// GetProblemSubmissionMeta 获取提交校验所需的题目元数据。
+func (r *ProblemRepository) GetProblemSubmissionMeta(id int) (*models.ProblemSubmissionMeta, error) {
+	meta := &models.ProblemSubmissionMeta{}
+	query := `
+		SELECT id, title, points, scope, status, contest_id, visible_from, visible_to
+		FROM problems
+		WHERE id = ?
+	`
+
+	var contestID sql.NullString
+	var visibleFrom sql.NullTime
+	var visibleTo sql.NullTime
+	err := r.db.QueryRow(query, id).Scan(
+		&meta.ID,
+		&meta.Title,
+		&meta.Points,
+		&meta.Scope,
+		&meta.Status,
+		&contestID,
+		&visibleFrom,
+		&visibleTo,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperr.New(apperr.ErrNotFound, "题目不存在")
+		}
+		return nil, fmt.Errorf("查询题目元数据失败: %w", err)
+	}
+
+	if contestID.Valid {
+		value := strings.TrimSpace(contestID.String)
+		if value != "" {
+			meta.ContestID = &value
+		}
+	}
+	if visibleFrom.Valid {
+		value := visibleFrom.Time
+		meta.VisibleFrom = &value
+	}
+	if visibleTo.Valid {
+		value := visibleTo.Time
+		meta.VisibleTo = &value
+	}
+
+	return meta, nil
+}
+
+func isProblemVisible(now time.Time, from, to *time.Time) bool {
+	if from != nil && now.Before(*from) {
+		return false
+	}
+	if to != nil && now.After(*to) {
+		return false
+	}
+	return true
 }
 
 // NewProblemRepository 创建题库仓库实例

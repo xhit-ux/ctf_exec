@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/authsession"
@@ -73,6 +74,7 @@ func main() {
 	submissionService := service.NewSubmissionService(
 		subRepo,
 		probRepo,
+		userRepo,
 		leaderboardService,
 		contestService,
 		redisClient.Client,
@@ -95,12 +97,19 @@ func main() {
 
 	// 创建 Gin 引擎
 	r := gin.Default()
+	for _, proxy := range cfg.Server.TrustedProxies {
+		normalized := strings.TrimSpace(proxy)
+		switch normalized {
+		case "0.0.0.0", "0.0.0.0/0", "::", "::/0":
+			log.Fatalf("SECURITY: SERVER_TRUSTED_PROXIES 不应包含 %s，这会导致客户端 IP 伪造风险", normalized)
+		}
+	}
 	if err := r.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
 		log.Fatalf("配置受信任代理失败: %v", err)
 	}
 
-	// 添加 CORS 中间件（使用 Gin 中间件）
-	r.Use(middleware.GinCORSMiddleware())
+	// 添加 CORS 中间件（限制为显式允许的前端来源）
+	r.Use(middleware.GinCORSMiddleware(cfg.Server.AllowedOrigins))
 
 	// 健康检查（包含Redis健康检查）
 	r.GET("/health", func(c *gin.Context) {

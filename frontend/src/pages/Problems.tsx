@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import ProblemCard from '../components/problem/ProblemCard'
-import { useAuth } from '../context/AuthContext'
 import { Problem } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
@@ -16,14 +15,8 @@ export default function Problems() {
 
   const [problems, setProblems] = useState<Problem[]>([])
   const [loading, setLoading] = useState(true)
-  const { token, isAuthenticated } = useAuth()
 
   useEffect(() => {
-    if (!isAuthenticated || !token) {
-      setLoading(false)
-      return
-    }
-
     apiFetch(apiUrl('/api/problems'))
       .then(async res => {
         if (!res.ok) throw new Error(res.statusText)
@@ -42,7 +35,7 @@ export default function Problems() {
         console.error(err)
         setLoading(false)
       })
-  }, [isAuthenticated, token])
+  }, [])
 
   const allTags = useMemo(() => {
     const s = new Set<string>()
@@ -64,7 +57,6 @@ export default function Problems() {
     })
   }, [category, difficulty, query, selectedTag, problems])
 
-  if (!isAuthenticated) return <div className="p-10 text-center font-medium text-gray-600 bg-white rounded-xl shadow-sm border border-gray-100">请先登录查看题目</div>
   if (loading) return <div className="p-10 text-center font-medium text-gray-600">加载中...</div>
 
   return (

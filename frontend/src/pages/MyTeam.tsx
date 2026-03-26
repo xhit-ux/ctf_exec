@@ -26,7 +26,7 @@ interface Team {
 }
 
 export default function MyTeam() {
-    const { user, token } = useAuth()
+    const { user } = useAuth()
     const [team, setTeam] = useState<Team | null>(null)
     const [loading, setLoading] = useState(true)
     const [createName, setCreateName] = useState('')
@@ -53,10 +53,8 @@ export default function MyTeam() {
     }
 
     useEffect(() => {
-        if (token) {
-            fetchTeam()
-        }
-    }, [token])
+        fetchTeam()
+    }, [])
 
     const handleCreateTeam = async (e: React.FormEvent) => {
         e.preventDefault()

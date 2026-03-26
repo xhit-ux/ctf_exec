@@ -102,7 +102,7 @@ function asArray<T>(payload: unknown): T[] {
 export default function ContestDetail() {
   const { id } = useParams()
   const contestID = id || ''
-  const { token, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   const [contest, setContest] = useState<ContestDetailData | null>(null)
   const [loadingContest, setLoadingContest] = useState(true)
@@ -159,8 +159,6 @@ export default function ContestDetail() {
       return
     }
 
-    if (!token) return
-
     try {
       const res = await apiFetch(apiUrl('/api/teams/my'))
 
@@ -179,7 +177,7 @@ export default function ContestDetail() {
       console.error(err)
       setTeam(null)
     }
-  }, [token, usingMock])
+  }, [usingMock])
 
   const fetchChallenges = useCallback(async () => {
     if (!contestID) return
@@ -190,8 +188,6 @@ export default function ContestDetail() {
       setLoadingChallenges(false)
       return
     }
-
-    if (!token) return
 
     setLoadingChallenges(true)
     setChallengeError('')
@@ -214,7 +210,7 @@ export default function ContestDetail() {
     } finally {
       setLoadingChallenges(false)
     }
-  }, [contestID, token, usingMock])
+  }, [contestID, usingMock])
 
   const fetchScoreboard = useCallback(async (kind: 'user' | 'team') => {
     if (!contestID) return
@@ -263,14 +259,9 @@ export default function ContestDetail() {
   }, [fetchContest])
 
   useEffect(() => {
-    if (!usingMock && (!isAuthenticated || !token)) {
-      setChallenges([])
-      return
-    }
-
     fetchMyTeam()
     fetchChallenges()
-  }, [fetchMyTeam, fetchChallenges, isAuthenticated, token, usingMock])
+  }, [fetchMyTeam, fetchChallenges])
 
   useEffect(() => {
     fetchScoreboard(scoreType)
@@ -285,7 +276,7 @@ export default function ContestDetail() {
       return
     }
 
-    if (!isAuthenticated || !token) {
+    if (!isAuthenticated) {
       setActionMessage({ type: 'error', text: '请先登录后操作' })
       return
     }
@@ -317,7 +308,7 @@ export default function ContestDetail() {
         text: mode === 'join' ? '报名请求已提交' : '退赛请求已提交',
       })
 
-      if (isAuthenticated && token) {
+      if (isAuthenticated) {
         fetchChallenges()
       }
     } catch (err) {
