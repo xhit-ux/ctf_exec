@@ -54,6 +54,9 @@ export default function Profile() {
     const fetchUser = async () => {
       setLoading(true)
       if (isOwnProfile) {
+        if (!currentUser) {
+          return
+        }
         setTargetUser(currentUser)
         setLoading(false)
       } else {
@@ -129,6 +132,8 @@ export default function Profile() {
         }
         setIsEditing(false)
         setMessage({ type: 'success', text: '个人资料已更新' })
+      } else if (response.status === 401) {
+        return
       } else {
         setMessage({ type: 'error', text: await readSafeErrorMessage(response, '更新失败，请稍后重试') })
       }

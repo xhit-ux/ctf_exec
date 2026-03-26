@@ -25,7 +25,6 @@ type SubmissionServiceImpl struct {
 	submissionRepo *repository.SubmissionRepository
 	problemRepo    *repository.ProblemRepository
 	userRepo       *repository.UserRepository
-	leaderboardSvc LeaderboardService
 	contestSvc     ContestService
 	redisClient    *redis.Client
 	rateLimit      int
@@ -37,7 +36,6 @@ func NewSubmissionService(
 	submissionRepo *repository.SubmissionRepository,
 	problemRepo *repository.ProblemRepository,
 	userRepo *repository.UserRepository,
-	leaderboardSvc LeaderboardService,
 	contestSvc ContestService,
 	redisClient *redis.Client,
 	rateLimit int,
@@ -47,7 +45,6 @@ func NewSubmissionService(
 		submissionRepo: submissionRepo,
 		problemRepo:    problemRepo,
 		userRepo:       userRepo,
-		leaderboardSvc: leaderboardSvc,
 		contestSvc:     contestSvc,
 		redisClient:    redisClient,
 		rateLimit:      rateLimit,
@@ -134,9 +131,9 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		return nil, fmt.Errorf("保存提交记录失败: %w", err)
 	}
 
-	// 更新排行榜（如果提交正确）
+	// 正确提交后仅更新对应维度的分数。
 	if isCorrect {
-		if !alreadySolved && s.userRepo != nil {
+		if !alreadySolved && s.userRepo != nil && (contestID == nil || *contestID == "") {
 			err = s.userRepo.IncreaseUserScoreAndSolvedCount(userID, problemMeta.Points)
 			if err != nil {
 				fmt.Printf("更新全站用户积分失败: %v\n", err)
@@ -148,13 +145,6 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 			if err != nil {
 				fmt.Printf("更新赛事榜失败: %v\n", err)
 			}
-		}
-
-		// 更新用户分数到 Redis ZSET
-		err = s.updateLeaderboard(userID)
-		if err != nil {
-			// 仅记录错误，不影响主要功能
-			fmt.Printf("更新排行榜失败: %v\n", err)
 		}
 	}
 
@@ -285,19 +275,6 @@ func (s *SubmissionServiceImpl) recordSubmission(userID string) error {
 	err = s.redisClient.Expire(ctx, key, expireTime).Err()
 	if err != nil {
 		return fmt.Errorf("设置过期时间失败: %w", err)
-	}
-
-	return nil
-}
-
-// updateLeaderboard 更新排行榜
-func (s *SubmissionServiceImpl) updateLeaderboard(userID string) error {
-	// 从数据库同步用户最新分数到Redis排行榜
-	// 这会自动从数据库读取用户的真实分数（Score字段）
-	// 并更新到Global User Leaderboard中
-	err := s.leaderboardSvc.SyncUserScoreFromDB(userID)
-	if err != nil {
-		return fmt.Errorf("同步用户分数到排行榜失败: %w", err)
 	}
 
 	return nil

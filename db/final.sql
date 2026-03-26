@@ -22,6 +22,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 -- Drop tables (dependency order: children first)
 -- ----------------------------------------------------------
 DROP TABLE IF EXISTS role_change_logs;
+DROP TABLE IF EXISTS refresh_tokens;
 DROP TABLE IF EXISTS contest_admins;
 DROP TABLE IF EXISTS user_activity_logs;
 DROP TABLE IF EXISTS contest_leaderboards;
@@ -107,6 +108,9 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_score ON users(score DESC, last_login_at ASC);
 CREATE INDEX idx_users_role  ON users(role);
+-- 全站榜定时快照查询用：按 score 降序 + 创建时间升序
+CREATE INDEX idx_users_leaderboard ON users(score DESC, created_at ASC);
+
 
 -- ==========================================================
 -- 2. Global Leaderboard Snapshot
@@ -135,6 +139,8 @@ CREATE TABLE leaderboard_global (
 
     snapshot_at   DATETIME      NOT NULL,
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    is_current    TINYINT(1)   NOT NULL DEFAULT 1,  -- 1=当前有效快照, 0=历史快照
 
     PRIMARY KEY (id),
 
@@ -347,6 +353,42 @@ CREATE INDEX idx_sub_user_time     ON submissions(user_id, created_at);
 -- Contest submission dedup & scoreboard
 CREATE INDEX idx_sub_contest_user_problem_correct
     ON submissions(contest_id, user_id, problem_id, is_correct);
+-- 非赛事正确提交去重：WHERE user_id = ? AND problem_id = ? AND is_correct = 1 AND contest_id IS NULL
+CREATE INDEX idx_sub_user_problem_noc ON submissions(user_id, problem_id, is_correct, contest_id);
+
+
+-- ==========================================================
+-- 6.1 Refresh Tokens (Persistent, DB-backed)
+-- ==========================================================
+-- Refresh token 不走 Redis，持久化到 MySQL，避免 Redis 重启丢失。
+-- 存储 SHA256 哈希，不存明文。
+-- 每次 refresh rotation 旧 token 标记 revoked=1，插入新行。
+
+CREATE TABLE refresh_tokens (
+    id          CHAR(36)    NOT NULL,
+    user_id     CHAR(36)    NOT NULL,
+    token_hash  CHAR(64)    NOT NULL,       -- SHA256(refresh_token)
+    jti         CHAR(36)    NOT NULL,       -- 关联 access token 的 jti，用于登出时吊销 access
+    expires_at  DATETIME    NOT NULL,
+    revoked     TINYINT(1)  NOT NULL DEFAULT 0,
+    ip_address  VARCHAR(45) NULL,           -- 签发时的客户端 IP
+    user_agent  VARCHAR(512) NULL,          -- 签发时的 UA（可选，用于会话管理）
+    created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    -- 登录时快速校验 token 有效性
+    UNIQUE KEY uniq_rt_hash (token_hash),
+
+    -- 按用户查询活跃会话（"管理登录设备"功能）
+    INDEX idx_rt_user_active (user_id, revoked, expires_at),
+
+    -- 定时清理过期 token
+    INDEX idx_rt_expires (expires_at),
+
+    CONSTRAINT fk_rt_user FOREIGN KEY (user_id)
+        REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
 -- ==========================================================
 -- 7. Challenge Instances (Dynamic Challenges)
@@ -590,6 +632,8 @@ CREATE TABLE role_change_logs (
 
 CREATE INDEX idx_rcl_target   ON role_change_logs(target_id);
 CREATE INDEX idx_rcl_operator ON role_change_logs(operator_id);
+
+
 
 -- ==========================================================
 -- Demo Data

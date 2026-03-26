@@ -37,8 +37,14 @@ export default function MyTeam() {
     const [editName, setEditName] = useState('')
 
     const fetchTeam = async () => {
+        let keepLoading = false
+
         try {
             const response = await apiFetch(apiUrl('/api/teams/my'))
+            if (response.status === 401) {
+                keepLoading = true
+                return
+            }
             if (response.ok) {
                 const data = await response.json()
                 setTeam(data)
@@ -48,7 +54,9 @@ export default function MyTeam() {
         } catch (err) {
             console.error('Failed to fetch team:', err)
         } finally {
-            setLoading(false)
+            if (!keepLoading) {
+                setLoading(false)
+            }
         }
     }
 

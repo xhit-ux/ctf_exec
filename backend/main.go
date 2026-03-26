@@ -54,7 +54,7 @@ func main() {
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
 
 	// 初始化服务层
-	sessionStore := authsession.NewStore(redisClient.Client)
+	sessionStore := authsession.NewStore(redisClient.Client, sqlDB)
 	authService := service.NewAuthService(userRepo, redisClient.Client, sessionStore, cfg)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
@@ -75,7 +75,6 @@ func main() {
 		subRepo,
 		probRepo,
 		userRepo,
-		leaderboardService,
 		contestService,
 		redisClient.Client,
 		cfg.RateLimit.SubmissionLimit,
@@ -87,7 +86,7 @@ func main() {
 
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService)
-	userHandler := handler.NewUserHandler(userRepo, leaderboardService, authService)
+	userHandler := handler.NewUserHandler(userRepo, authService)
 	probHandler := handler.NewProblemHandler(probRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
@@ -253,15 +252,6 @@ func main() {
 
 	// 静态文件服务
 	r.Static("/static", "../static")
-
-	// 启动时同步排行榜数据
-	go func() {
-		if err := leaderboardService.SyncAllScoresFromDB(); err != nil {
-			log.Printf("初始化同步排行榜数据失败: %v", err)
-		} else {
-			log.Println("✓ 排行榜数据同步完成")
-		}
-	}()
 
 	// 全站榜单采用延迟快照模式：每 5 分钟定时刷新一次。
 	leaderboardService.StartSnapshotScheduler(5 * time.Minute)

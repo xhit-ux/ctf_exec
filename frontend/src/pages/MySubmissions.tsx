@@ -11,8 +11,14 @@ export default function MySubmissions() {
 
   useEffect(() => {
     const fetchSubmissions = async () => {
+      let keepLoading = false
+
       try {
         const res = await apiFetch(apiUrl('/api/submissions/me'))
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
         if (res.ok) {
           const data = await res.json()
           // 后端返回的字段名可能与前端 Submission 类型不同，需要映射
@@ -30,7 +36,9 @@ export default function MySubmissions() {
       } catch (err) {
         console.error('Failed to fetch submissions', err)
       } finally {
-        setLoading(false)
+        if (!keepLoading) {
+          setLoading(false)
+        }
       }
     }
     fetchSubmissions()

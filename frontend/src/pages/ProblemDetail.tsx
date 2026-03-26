@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 import { Problem, Submission } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
@@ -16,7 +15,6 @@ export default function ProblemDetail() {
   const [flag, setFlag] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
-  const { isAuthenticated } = useAuth()
 
   useEffect(() => {
     // 每次进入页面清空提交记录显式（或者是从 backend 拉取）
@@ -36,11 +34,6 @@ export default function ProblemDetail() {
   if (!problem) return <div className="p-10 text-center">题目加载中或未找到...</div>
 
   const submit = async () => {
-    if (!isAuthenticated) {
-      setMsg('请先登录')
-      return
-    }
-
     try {
       const response = await apiFetch(apiUrl('/api/submissions'), {
         method: 'POST',
@@ -68,6 +61,8 @@ export default function ProblemDetail() {
 
         setSubmissions((s) => [record, ...s])
         setMsg(isCorrect ? '提交成功，Flag 正确！' : '提交已记录，Flag 错误')
+      } else if (response.status === 401) {
+        return
       } else {
         const userFriendlyMsg = await readSafeErrorMessage(response, '提交失败，请稍后重试')
         setMsg(`提交失败: ${userFriendlyMsg}`)

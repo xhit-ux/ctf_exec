@@ -4,12 +4,6 @@ import "fmt"
 
 // Redis键常量定义
 const (
-	// 全站用户排行榜
-	KeyGlobalUserLeaderboard = "leaderboard:global:user"
-
-	// 全站团队排行榜
-	KeyGlobalTeamLeaderboard = "leaderboard:global:team"
-
 	// 赛事用户排行榜模板
 	KeyContestUserLeaderboardTemplate = "leaderboard:contest:%s:user"
 
@@ -42,12 +36,6 @@ const (
 
 	// 用户会话索引: user_id -> set(jti)
 	KeyJWTUserSessionSetTemplate = "auth:jwt:user_sessions:%s"
-
-	// Refresh 会话: jti -> user_id
-	KeyJWTRefreshSessionByJTITemplate = "auth:jwt:refresh:jti:%s"
-
-	// Refresh 用户会话索引: user_id -> set(jti)
-	KeyJWTRefreshUserSessionSetTemplate = "auth:jwt:refresh:user_sessions:%s"
 )
 
 // GetContestUserLeaderboardKey 获取赛事用户排行榜键
@@ -103,14 +91,4 @@ func GetJWTSessionByJTIKey(jti string) string {
 // GetJWTUserSessionSetKey 获取用户会话集合键。
 func GetJWTUserSessionSetKey(userID string) string {
 	return fmt.Sprintf(KeyJWTUserSessionSetTemplate, userID)
-}
-
-// GetJWTRefreshSessionByJTIKey 获取 refresh jti 会话键。
-func GetJWTRefreshSessionByJTIKey(jti string) string {
-	return fmt.Sprintf(KeyJWTRefreshSessionByJTITemplate, jti)
-}
-
-// GetJWTRefreshUserSessionSetKey 获取用户 refresh 会话集合键。
-func GetJWTRefreshUserSessionSetKey(userID string) string {
-	return fmt.Sprintf(KeyJWTRefreshUserSessionSetTemplate, userID)
 }

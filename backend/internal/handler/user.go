@@ -15,9 +15,8 @@ import (
 )
 
 type UserHandler struct {
-	userRepo           *repository.UserRepository
-	leaderboardService service.LeaderboardService
-	authService        service.AuthService
+	userRepo    *repository.UserRepository
+	authService service.AuthService
 }
 
 // ListAdminUsersGin root 查看用户列表。
@@ -179,11 +178,10 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 }
 
-func NewUserHandler(userRepo *repository.UserRepository, leaderboardService service.LeaderboardService, authService service.AuthService) *UserHandler {
+func NewUserHandler(userRepo *repository.UserRepository, authService service.AuthService) *UserHandler {
 	return &UserHandler{
-		userRepo:           userRepo,
-		leaderboardService: leaderboardService,
-		authService:        authService,
+		userRepo:    userRepo,
+		authService: authService,
 	}
 }
 

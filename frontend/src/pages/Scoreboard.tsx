@@ -62,7 +62,10 @@ export default function Scoreboard() {
                 ? apiUrl(`/api/users/leaderboard?page=${userPage}&page_size=${userPageSize}`)
                 : apiUrl(`/api/teams/leaderboard?page=${teamPage}&page_size=${teamPageSize}`)
 
-            const res = await apiFetch(endpoint)
+            const res = await apiFetch(endpoint, undefined, {
+                disableAuth: true,
+                disableRetry401: true,
+            })
             if (!res.ok) {
                 throw new Error('获取排行榜失败')
             }
@@ -100,7 +103,10 @@ export default function Scoreboard() {
         setSearchLoading(true)
         setSearchError('')
         try {
-            const res = await apiFetch(apiUrl(`/api/users/leaderboard/search?username=${encodeURIComponent(username)}`))
+            const res = await apiFetch(apiUrl(`/api/users/leaderboard/search?username=${encodeURIComponent(username)}`), undefined, {
+                disableAuth: true,
+                disableRetry401: true,
+            })
             if (!res.ok) {
                 setPinnedUser(null)
                 setSearchError(await readSafeErrorMessage(res, '检索失败，请稍后重试'))

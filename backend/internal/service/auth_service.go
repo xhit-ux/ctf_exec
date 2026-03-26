@@ -76,7 +76,7 @@ func (s *AuthServiceImpl) issueTokenPair(user *models.User) (*models.AuthRespons
 	if err := s.sessionStore.CreateSession(ctx, accessClaims); err != nil {
 		return nil, fmt.Errorf("创建 access 会话失败: %w", err)
 	}
-	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims); err != nil {
+	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims, refreshToken); err != nil {
 		return nil, fmt.Errorf("创建 refresh 会话失败: %w", err)
 	}
 
@@ -241,7 +241,7 @@ func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, er
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	active, err := s.sessionStore.IsRefreshSessionActive(ctx, refreshClaims.UserID, refreshClaims.ID)
+	active, err := s.sessionStore.IsRefreshSessionActive(ctx, refreshToken, refreshClaims.UserID, refreshClaims.ID)
 	if err != nil {
 		return nil, fmt.Errorf("刷新会话校验失败: %w", err)
 	}
@@ -254,7 +254,7 @@ func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, er
 		return nil, apperr.New(apperr.ErrUnauthorized, "用户状态异常，请重新登录")
 	}
 
-	if err := s.sessionStore.RevokeRefreshSession(ctx, refreshClaims.UserID, refreshClaims.ID); err != nil {
+	if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, refreshClaims.UserID, refreshClaims.ID); err != nil {
 		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
 	}
 
@@ -277,7 +277,7 @@ func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
 	if refreshToken != "" {
 		refreshClaims, err := utils.VerifyTokenByType(refreshToken, utils.TokenTypeRefresh)
 		if err == nil && refreshClaims.UserID == userID {
-			if err := s.sessionStore.RevokeRefreshSession(ctx, userID, refreshClaims.ID); err != nil {
+			if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, userID, refreshClaims.ID); err != nil {
 				return fmt.Errorf("撤销 refresh 会话失败: %w", err)
 			}
 		}

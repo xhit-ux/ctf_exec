@@ -57,10 +57,13 @@ export default function Contests() {
     let canceled = false
 
     const load = async () => {
-      setLoading(true)
-      setError('')
+        setLoading(true)
+        setError('')
       try {
-        const res = await apiFetch(apiUrl('/api/contests?limit=50'))
+        const res = await apiFetch(apiUrl('/api/contests?limit=50'), undefined, {
+          disableAuth: true,
+          disableRetry401: true,
+        })
         if (!res.ok) {
           throw new Error('获取赛事列表失败')
         }

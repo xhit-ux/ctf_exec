@@ -164,14 +164,23 @@ export default function Admin() {
     let canceled = false
 
     const loadSummaryData = async () => {
+      let keepLoading = false
+
       setLoading(true)
       setError('')
       try {
         const [contestRes, problemRes] = await Promise.all([
-          apiFetch(apiUrl('/api/contests?limit=8')),
+          apiFetch(apiUrl('/api/contests?limit=8'), undefined, {
+            disableAuth: true,
+            disableRetry401: true,
+          }),
           apiFetch(apiUrl('/api/problems')),
         ])
 
+        if (contestRes.status === 401 || problemRes.status === 401) {
+          keepLoading = true
+          return
+        }
         if (!contestRes.ok) {
           throw new Error('获取赛事数据失败')
         }
@@ -191,7 +200,7 @@ export default function Admin() {
           setError(fromUnknownError(err, '管理页加载失败，请稍后重试'))
         }
       } finally {
-        if (!canceled) {
+        if (!canceled && !keepLoading) {
           setLoading(false)
         }
       }
@@ -209,6 +218,7 @@ export default function Admin() {
     const loadStatusUsers = async () => {
       if (activeTab !== 'user-status') return
 
+      let keepLoading = false
       setStatusLoading(true)
       setError('')
       try {
@@ -217,6 +227,10 @@ export default function Admin() {
 
         const res = await apiFetch(apiUrl(`/api/admin/users?${params.toString()}`))
 
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载用户列表失败'))
           return
@@ -230,7 +244,7 @@ export default function Admin() {
       } catch (err) {
         if (!canceled) setError(fromUnknownError(err, '加载用户列表失败'))
       } finally {
-        if (!canceled) setStatusLoading(false)
+        if (!canceled && !keepLoading) setStatusLoading(false)
       }
     }
 
@@ -246,6 +260,7 @@ export default function Admin() {
     const loadRoleUsers = async () => {
       if (!isRoot || activeTab !== 'root-users') return
 
+      let keepLoading = false
       setRoleLoading(true)
       setError('')
       try {
@@ -254,6 +269,10 @@ export default function Admin() {
 
         const res = await apiFetch(apiUrl(`/api/admin/users?${params.toString()}`))
 
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载用户列表失败'))
           return
@@ -275,7 +294,7 @@ export default function Admin() {
       } catch (err) {
         if (!canceled) setError(fromUnknownError(err, '加载 root 用户列表失败'))
       } finally {
-        if (!canceled) setRoleLoading(false)
+        if (!canceled && !keepLoading) setRoleLoading(false)
       }
     }
 
@@ -291,12 +310,17 @@ export default function Admin() {
     const loadRoleLogs = async () => {
       if (!isRoot || activeTab !== 'root-audit') return
 
+      let keepLoading = false
       setLogsLoading(true)
       setError('')
       try {
         const params = new URLSearchParams({ page: String(logsPage), page_size: '10' })
         const res = await apiFetch(apiUrl(`/api/admin/users/role-change-logs?${params.toString()}`))
 
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载审计日志失败'))
           return
@@ -310,7 +334,7 @@ export default function Admin() {
       } catch (err) {
         if (!canceled) setError(fromUnknownError(err, '加载审计日志失败'))
       } finally {
-        if (!canceled) setLogsLoading(false)
+        if (!canceled && !keepLoading) setLogsLoading(false)
       }
     }
 
@@ -326,11 +350,16 @@ export default function Admin() {
     const loadSiteConfig = async () => {
       if (!isRoot || activeTab !== 'root-site-config') return
 
+      let keepLoading = false
       setConfigLoading(true)
       setError('')
       try {
         const res = await apiFetch(apiUrl('/api/admin/site-config'))
 
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
         if (!res.ok) {
           setError(await readSafeErrorMessage(res, '加载站点配置失败'))
           return
@@ -349,7 +378,7 @@ export default function Admin() {
       } catch (err) {
         if (!canceled) setError(fromUnknownError(err, '加载站点配置失败'))
       } finally {
-        if (!canceled) setConfigLoading(false)
+        if (!canceled && !keepLoading) setConfigLoading(false)
       }
     }
 

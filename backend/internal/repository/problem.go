@@ -151,11 +151,20 @@ func (r *ProblemRepository) GetProblemByID(id int) (*models.Problem, error) {
 // GetFlagHashByProblemID 获取题目的 Flag Hash (用于验证)
 func (r *ProblemRepository) GetFlagHashByProblemID(id int) (string, error) {
 	var flagHash string
-	query := `SELECT flag_hash FROM problems WHERE id = ?`
+	query := `
+		SELECT flag_hash
+		FROM problems
+		WHERE id = ?
+		  AND status = 'published'
+		  AND (
+			(scope = 'platform' AND (visible_from IS NULL OR visible_from <= NOW()) AND (visible_to IS NULL OR visible_to >= NOW()))
+			OR scope = 'contest'
+		  )
+	`
 	err := r.db.QueryRow(query, id).Scan(&flagHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", apperr.New(apperr.ErrNotFound, "题目不存在")
+			return "", apperr.New(apperr.ErrNotFound, "题目不存在或当前不可提交")
 		}
 		return "", fmt.Errorf("查询 Flag Hash 失败: %w", err)
 	}

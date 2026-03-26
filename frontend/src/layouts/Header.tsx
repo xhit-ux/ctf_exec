@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { staticUrl } from '../utils/api'
 
@@ -18,13 +18,11 @@ function canAccessSiteAdmin(role?: string) {
 
 export default function Header() {
   const { user, isAuthenticated, logout } = useAuth()
-  const navigate = useNavigate()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
-    navigate('/')
     setMenuOpen(false)
   }
 

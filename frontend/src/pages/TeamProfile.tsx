@@ -29,7 +29,7 @@ interface Team {
 
 export default function TeamProfile() {
     const { id: teamId } = useParams<{ id: string }>()
-    const { user, token } = useAuth()
+    const { user } = useAuth()
     const navigate = useNavigate()
 
     const [team, setTeam] = useState<Team | null>(null)
@@ -43,7 +43,8 @@ export default function TeamProfile() {
         setLoading(true)
         try {
             const response = await apiFetch(apiUrl(`/api/teams/public?id=${teamId}`), undefined, {
-                disableAuth: !token,
+                disableAuth: true,
+                disableRetry401: true,
             })
             if (response.ok) {
                 const data = await response.json()
@@ -61,7 +62,7 @@ export default function TeamProfile() {
 
     useEffect(() => {
         fetchTeam()
-    }, [teamId, token])
+    }, [teamId])
 
     const handleUpdateName = async (e: React.FormEvent) => {
         e.preventDefault()

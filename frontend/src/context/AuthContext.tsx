@@ -98,8 +98,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(null)
       clearAuthTokens()
       localStorage.removeItem('user')
-      window.alert('登录已过期，请重新登录')
-      window.location.href = '/login'
+      window.location.replace('/login')
     }
 
     window.addEventListener(AUTH_REFRESH_FAILED_EVENT, onRefreshFailed)
@@ -119,11 +118,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = () => {
     const tokenForRevoke = token
     const refreshTokenForRevoke = refreshToken
-    setToken(null)
-    setRefreshToken(null)
-    setUser(null)
-    clearAuthTokens()
-    localStorage.removeItem('user')
 
     if (tokenForRevoke) {
       void apiFetch(apiUrl('/api/auth/logout'), {
@@ -138,6 +132,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         accessTokenOverride: tokenForRevoke,
       })
     }
+
+    setToken(null)
+    setRefreshToken(null)
+    setUser(null)
+    clearAuthTokens()
+    localStorage.removeItem('user')
+    window.location.replace('/login')
   }
 
   const refreshUser = async () => {

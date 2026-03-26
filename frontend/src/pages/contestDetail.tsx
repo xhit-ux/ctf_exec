@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext'
 import { apiUrl, staticUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
@@ -102,7 +101,7 @@ function asArray<T>(payload: unknown): T[] {
 export default function ContestDetail() {
   const { id } = useParams()
   const contestID = id || ''
-  const { isAuthenticated } = useAuth()
+  const hasStoredAuth = Boolean(localStorage.getItem('token') || localStorage.getItem('refresh_token'))
 
   const [contest, setContest] = useState<ContestDetailData | null>(null)
   const [loadingContest, setLoadingContest] = useState(true)
@@ -134,7 +133,10 @@ export default function ContestDetail() {
     setLoadingContest(true)
     setContestError('')
     try {
-      const res = await apiFetch(apiUrl(`/api/contests/${contestID}`))
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}`), undefined, {
+        disableAuth: true,
+        disableRetry401: true,
+      })
       if (!res.ok) {
         throw new Error('获取赛事详情失败')
       }
@@ -159,9 +161,17 @@ export default function ContestDetail() {
       return
     }
 
+    if (!hasStoredAuth) {
+      setTeam(null)
+      return
+    }
+
     try {
       const res = await apiFetch(apiUrl('/api/teams/my'))
 
+      if (res.status === 401) {
+        return
+      }
       if (!res.ok) {
         setTeam(null)
         return
@@ -177,7 +187,7 @@ export default function ContestDetail() {
       console.error(err)
       setTeam(null)
     }
-  }, [usingMock])
+  }, [hasStoredAuth, usingMock])
 
   const fetchChallenges = useCallback(async () => {
     if (!contestID) return
@@ -189,12 +199,22 @@ export default function ContestDetail() {
       return
     }
 
+    if (!hasStoredAuth) {
+      setChallenges([])
+      setChallengeError('')
+      setLoadingChallenges(false)
+      return
+    }
+
     setLoadingChallenges(true)
     setChallengeError('')
 
     try {
       const res = await apiFetch(apiUrl(`/api/contests/${contestID}/challenges`))
 
+      if (res.status === 401) {
+        return
+      }
       if (!res.ok) {
         setChallengeError(await readSafeErrorMessage(res, '获取赛事题目失败，请稍后重试'))
         setChallenges([])
@@ -210,7 +230,7 @@ export default function ContestDetail() {
     } finally {
       setLoadingChallenges(false)
     }
-  }, [contestID, usingMock])
+  }, [contestID, hasStoredAuth, usingMock])
 
   const fetchScoreboard = useCallback(async (kind: 'user' | 'team') => {
     if (!contestID) return
@@ -230,7 +250,10 @@ export default function ContestDetail() {
     setScoreError('')
 
     try {
-      const res = await apiFetch(apiUrl(`/api/contests/${contestID}/scoreboard?type=${kind}&limit=50`))
+      const res = await apiFetch(apiUrl(`/api/contests/${contestID}/scoreboard?type=${kind}&limit=50`), undefined, {
+        disableAuth: true,
+        disableRetry401: true,
+      })
       if (!res.ok) {
         setScoreError(await readSafeErrorMessage(res, '获取赛事榜单失败，请稍后重试'))
         if (kind === 'user') setUserScores([])
@@ -276,11 +299,6 @@ export default function ContestDetail() {
       return
     }
 
-    if (!isAuthenticated) {
-      setActionMessage({ type: 'error', text: '请先登录后操作' })
-      return
-    }
-
     setActionLoading(true)
     setActionMessage(null)
 
@@ -295,6 +313,9 @@ export default function ContestDetail() {
         body: JSON.stringify(body),
       })
 
+      if (res.status === 401) {
+        return
+      }
       if (!res.ok) {
         setActionMessage({
           type: 'error',
@@ -308,9 +329,7 @@ export default function ContestDetail() {
         text: mode === 'join' ? '报名请求已提交' : '退赛请求已提交',
       })
 
-      if (isAuthenticated) {
-        fetchChallenges()
-      }
+      fetchChallenges()
     } catch (err) {
       setActionMessage({
         type: 'error',
@@ -421,7 +440,7 @@ export default function ContestDetail() {
               >
                 退赛
               </button>
-              {!isAuthenticated && <span className="text-xs text-gray-500">报名/退赛需要登录</span>}
+              {!hasStoredAuth && <span className="text-xs text-gray-500">报名/退赛需要登录</span>}
             </div>
 
             {actionMessage && (
@@ -438,14 +457,14 @@ export default function ContestDetail() {
           <h2 className="text-xl font-bold text-gray-900">赛事题目</h2>
           <button
             onClick={fetchChallenges}
-            disabled={!isAuthenticated || loadingChallenges}
+            disabled={loadingChallenges}
             className="px-3 py-1.5 rounded-md text-sm border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
           >
             刷新
           </button>
         </div>
 
-        {!usingMock && !isAuthenticated ? (
+        {!usingMock && !hasStoredAuth ? (
           <div className="text-sm text-gray-500">登录并报名后可查看赛事题目。</div>
         ) : loadingChallenges ? (
           <div className="text-sm text-gray-500">题目加载中...</div>

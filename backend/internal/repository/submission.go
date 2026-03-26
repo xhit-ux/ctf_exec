@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -29,7 +31,10 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
+	flagDigest := sha256.Sum256([]byte(req.Flag))
+	storedFlag := hex.EncodeToString(flagDigest[:])
+
+	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, storedFlag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
 	if err != nil {
 		return nil, fmt.Errorf("创建提交记录失败: %w", err)
 	}
@@ -40,7 +45,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		TeamID:    req.TeamID,
 		ContestID: req.ContestID,
 		ProblemID: req.ProblemID,
-		Flag:      req.Flag,
+		Flag:      storedFlag,
 		IsCorrect: req.IsCorrect,
 		IPAddress: normalizeIPAddress(req.IPAddress),
 		CreatedAt: now,
