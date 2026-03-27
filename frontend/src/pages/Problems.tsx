@@ -4,10 +4,12 @@ import ProblemCard from '../components/problem/ProblemCard'
 import { Problem } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
+import { useAuth } from '../context/AuthContext'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
 export default function Problems() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth()
   const [category, setCategory] = useState<typeof categories[number]>('all')
   const [difficulty, setDifficulty] = useState<'all' | '简单' | '中等' | '困难'>('all')
   const [query, setQuery] = useState('')
@@ -17,6 +19,15 @@ export default function Problems() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (authLoading) return
+
+    if (!isAuthenticated) {
+      setProblems([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
     apiFetch(apiUrl('/api/problems'))
       .then(async res => {
         if (!res.ok) throw new Error(res.statusText)
@@ -35,7 +46,7 @@ export default function Problems() {
         console.error(err)
         setLoading(false)
       })
-  }, [])
+  }, [isAuthenticated, authLoading])
 
   const allTags = useMemo(() => {
     const s = new Set<string>()
@@ -57,7 +68,7 @@ export default function Problems() {
     })
   }, [category, difficulty, query, selectedTag, problems])
 
-  if (loading) return <div className="p-10 text-center font-medium text-gray-600">加载中...</div>
+  if (authLoading || loading) return <div className="p-10 text-center font-medium text-gray-600">加载中...</div>
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 w-full max-w-7xl mx-auto">
@@ -111,7 +122,26 @@ export default function Problems() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {!isAuthenticated ? (
+          <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            <div className="text-gray-300 mb-3">
+              <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 11c.828 0 1.5-.895 1.5-2s-.672-2-1.5-2-1.5.895-1.5 2 .672 2 1.5 2zm0 1.5c-1.657 0-3 1.12-3 2.5V17h6v-2c0-1.38-1.343-2.5-3-2.5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 7a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2h-4" />
+              </svg>
+            </div>
+            <p className="text-gray-700 text-lg font-semibold">请先登录后查看题目</p>
+            <p className="mt-2 text-gray-500 text-sm">登录后即可浏览题目、查看详情并提交 Flag。</p>
+            <div className="mt-6">
+              <Link
+                to="/login"
+                className="inline-flex items-center px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+              >
+                前往登录
+              </Link>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 shadow-sm">
             <div className="text-gray-300 mb-3">
               <svg className="w-16 h-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">

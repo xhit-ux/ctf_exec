@@ -71,6 +71,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setRefreshToken(localStorage.getItem('refresh_token'))
   }
 
+  // Single cleanup entrypoint for all auth-related client state.
+  const clearAuthState = () => {
+    setToken(null)
+    setRefreshToken(null)
+    setUser(null)
+    clearAuthTokens()
+    localStorage.removeItem('user')
+  }
+
   // 验证 token 有效性并刷新用户信息
   useEffect(() => {
     const initAuth = async () => {
@@ -93,11 +102,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // 幂等处理：如果 token 对已经清空，避免重复弹窗与重复跳转。
       if (!localStorage.getItem('token') && !localStorage.getItem('refresh_token')) return
 
-      setToken(null)
-      setRefreshToken(null)
-      setUser(null)
-      clearAuthTokens()
-      localStorage.removeItem('user')
+      clearAuthState()
       window.location.replace('/login')
     }
 
@@ -115,29 +120,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     localStorage.setItem('user', JSON.stringify(newUser))
   }
 
-  const logout = () => {
+  const logout = async () => {
     const tokenForRevoke = token
     const refreshTokenForRevoke = refreshToken
 
+    // 先清空本地状态，防止用户在等待期间继续操作
+    clearAuthState()
+
     if (tokenForRevoke) {
-      void apiFetch(apiUrl('/api/auth/logout'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refresh_token: refreshTokenForRevoke || '' }),
-      }, {
-        disableAuth: true,
-        disableRetry401: true,
-        accessTokenOverride: tokenForRevoke,
-      })
+      try {
+        await apiFetch(apiUrl('/api/auth/logout'), {  // ← await，等待请求完成
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshTokenForRevoke || '' }),
+        }, {
+          disableAuth: true,
+          disableRetry401: true,
+          accessTokenOverride: tokenForRevoke,
+        })
+      } catch {
+      }
     }
 
-    setToken(null)
-    setRefreshToken(null)
-    setUser(null)
-    clearAuthTokens()
-    localStorage.removeItem('user')
     window.location.replace('/login')
   }
 
@@ -155,7 +159,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         localStorage.setItem('user', JSON.stringify(userData))
       } else {
         if (response.status === 401) {
-          // 交由 apiFetch 的 401 -> refresh -> refresh-failed 事件链路统一处理。
+          // 主动清理 auth 状态，避免依赖事件派发时序。
+          clearAuthState()
           return
         } else {
           console.error('Failed to refresh user:', response.status)
