@@ -61,11 +61,9 @@ CREATE TABLE users (
     avatar_url            VARCHAR(1024) NULL,
     bio                   TEXT          NULL,
     website_url           VARCHAR(512)  NULL,
-    github_username       VARCHAR(100)  NULL,
-    twitter_username      VARCHAR(100)  NULL,
+    
+    third_user_info       JSON          NULL,   -- For storing extra info from external auth providers
 
-    real_name             VARCHAR(100)  NULL,
-    student_id            VARCHAR(50)   NULL,
     organization          VARCHAR(100)  NULL,
     country               CHAR(2)       NULL,
 
