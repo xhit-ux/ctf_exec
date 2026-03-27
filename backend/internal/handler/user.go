@@ -1,22 +1,74 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
+	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
+
+type userPreferences struct {
+	EmailPublic bool                `json:"email_public"`
+	GithubURL   string              `json:"github_url"`
+	SocialLinks []models.SocialLink `json:"social_links"`
+}
+
+func parseUserPreferences(raw string) userPreferences {
+	pref := userPreferences{}
+	if strings.TrimSpace(raw) == "" {
+		return pref
+	}
+	_ = json.Unmarshal([]byte(raw), &pref)
+	return pref
+}
+
+func parsePageParams(c *gin.Context, defaultSize, maxSize int) (int, int) {
+	page := 1
+	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
+		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
+			page = parsed
+		}
+	}
+
+	pageSize := defaultSize
+	if pageSizeStr := c.DefaultQuery("page_size", strconv.Itoa(defaultSize)); pageSizeStr != "" {
+		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 {
+			if parsed > maxSize {
+				pageSize = maxSize
+			} else {
+				pageSize = parsed
+			}
+		}
+	}
+
+	return page, pageSize
+}
+
+func viewerUserID(c *gin.Context) string {
+	claims, err := middleware.GetClaims(c)
+	if err != nil {
+		return ""
+	}
+	return claims.UserID
+}
 
 type UserHandler struct {
 	userRepo    *repository.UserRepository
 	authService service.AuthService
+	redisClient *redis.Client
 }
 
 // ListAdminUsersGin root 查看用户列表。
@@ -178,11 +230,76 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 }
 
-func NewUserHandler(userRepo *repository.UserRepository, authService service.AuthService) *UserHandler {
+func NewUserHandler(userRepo *repository.UserRepository, authService service.AuthService, redisClient *redis.Client) *UserHandler {
 	return &UserHandler{
 		userRepo:    userRepo,
 		authService: authService,
+		redisClient: redisClient,
 	}
+}
+
+func (h *UserHandler) checkRateLimit(key string, limit int64, windowSeconds int) error {
+	if h.redisClient == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	pipe := h.redisClient.TxPipeline()
+	incrCmd := pipe.Incr(ctx, key)
+	pipe.Expire(ctx, key, time.Duration(windowSeconds)*time.Second)
+	if _, err := pipe.Exec(ctx); err != nil {
+		return err
+	}
+
+	if incrCmd.Val() > limit {
+		return apperr.New(apperr.ErrTooManyRequests, "操作过于频繁，请稍后再试")
+	}
+
+	return nil
+}
+
+func (h *UserHandler) setFollowCountsCache(userID string, followersCount int, followingCount int) {
+	if h.redisClient == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	pipe := h.redisClient.TxPipeline()
+	pipe.Set(ctx, cache.GetUserFollowersCountKey(userID), followersCount, 5*time.Minute)
+	pipe.Set(ctx, cache.GetUserFollowingCountKey(userID), followingCount, 5*time.Minute)
+	_, _ = pipe.Exec(ctx)
+}
+
+func (h *UserHandler) getFollowCounts(userID string) (int, int, error) {
+	if h.redisClient != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+
+		followerRes, followerErr := h.redisClient.Get(ctx, cache.GetUserFollowersCountKey(userID)).Int()
+		followingRes, followingErr := h.redisClient.Get(ctx, cache.GetUserFollowingCountKey(userID)).Int()
+		if followerErr == nil && followingErr == nil {
+			return followerRes, followingRes, nil
+		}
+
+		if followerErr != nil && !errors.Is(followerErr, redis.Nil) {
+			return 0, 0, followerErr
+		}
+		if followingErr != nil && !errors.Is(followingErr, redis.Nil) {
+			return 0, 0, followingErr
+		}
+	}
+
+	followersCount, followingCount, err := h.userRepo.GetFollowCounts(userID)
+	if err != nil {
+		return 0, 0, err
+	}
+	h.setFollowCountsCache(userID, followersCount, followingCount)
+
+	return followersCount, followingCount, nil
 }
 
 // GetLeaderboardGin Gin 版本的获取排行榜
@@ -276,10 +393,94 @@ func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
 	})
 }
 
+// GetProfileGin 获取用户完整 profile（支持可选认证）。
+func (h *UserHandler) GetProfileGin(c *gin.Context) {
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	user, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	viewerID := viewerUserID(c)
+	isOwnProfile := viewerID != "" && viewerID == user.ID
+	isOnline := models.IsUserOnline(user.LastLoginAt, time.Now())
+
+	followersCount, followingCount, err := h.getFollowCounts(user.ID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	contestsParticipated, err := h.userRepo.GetContestsParticipatedCount(user.ID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	rankNum := user.RankNum
+	if _, rank, rankErr := h.userRepo.GetLeaderboardUserByUsername(user.Username); rankErr == nil && rank > 0 {
+		rankVal := rank
+		rankNum = &rankVal
+	}
+	user.RankNum = rankNum
+
+	prefs := parseUserPreferences(user.Preferences)
+	if !isOwnProfile {
+		if viewerID == "" || !prefs.EmailPublic {
+			user.Email = ""
+		}
+		user.LastLoginAt = nil
+	}
+
+	var isFollowing *bool
+	var isFollowedBy *bool
+	if viewerID != "" && !isOwnProfile {
+		fwd, followErr := h.userRepo.IsFollowing(viewerID, user.ID)
+		if followErr != nil {
+			writeError(c, followErr, http.StatusInternalServerError)
+			return
+		}
+		rev, reverseErr := h.userRepo.IsFollowing(user.ID, viewerID)
+		if reverseErr != nil {
+			writeError(c, reverseErr, http.StatusInternalServerError)
+			return
+		}
+		isFollowing = &fwd
+		isFollowedBy = &rev
+	}
+
+	resp := models.UserProfileResponse{
+		User: *user,
+		Stats: models.ProfileStats{
+			FollowersCount:       followersCount,
+			FollowingCount:       followingCount,
+			ContestsParticipated: contestsParticipated,
+			RankNum:              rankNum,
+		},
+		IsOwnProfile: isOwnProfile,
+		IsFollowing:  isFollowing,
+		IsFollowedBy: isFollowedBy,
+		IsOnline:     isOnline,
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // UpdateProfileGin Gin 版本的更新当前用户信息
 func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
+		return
+	}
+
+	if err := h.checkRateLimit(cache.GetProfileEditRateLimitKey(claims.UserID), 5, 60); err != nil {
+		writeError(c, err, http.StatusTooManyRequests)
 		return
 	}
 
@@ -293,6 +494,10 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	// 简单验证
 	if req.DisplayName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能为空"})
+		return
+	}
+	if len(req.DisplayName) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能超过 64 字符"})
 		return
 	}
 
@@ -321,9 +526,231 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "更新成功"})
 }
 
+// FollowUserGin 关注用户。
+func (h *UserHandler) FollowUserGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	if err := h.checkRateLimit(cache.GetFollowRateLimitKey(claims.UserID), 30, 60); err != nil {
+		writeError(c, err, http.StatusTooManyRequests)
+		return
+	}
+
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	if targetUser.ID == claims.UserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能关注自己"})
+		return
+	}
+
+	if err = h.userRepo.FollowUser(claims.UserID, targetUser.ID); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	followersCount, targetFollowingCount, countErr := h.userRepo.GetFollowCounts(targetUser.ID)
+	if countErr != nil {
+		writeError(c, countErr, http.StatusInternalServerError)
+		return
+	}
+	h.setFollowCountsCache(targetUser.ID, followersCount, targetFollowingCount)
+
+	_, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
+	if actorCountErr == nil {
+		h.setFollowCountsCache(claims.UserID, 0, actorFollowingCount)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "关注成功",
+		"followers_count": followersCount,
+		"is_following":    true,
+	})
+}
+
+// UnfollowUserGin 取消关注用户。
+func (h *UserHandler) UnfollowUserGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	if err := h.checkRateLimit(cache.GetFollowRateLimitKey(claims.UserID), 30, 60); err != nil {
+		writeError(c, err, http.StatusTooManyRequests)
+		return
+	}
+
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	if err = h.userRepo.UnfollowUser(claims.UserID, targetUser.ID); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	followersCount, targetFollowingCount, countErr := h.userRepo.GetFollowCounts(targetUser.ID)
+	if countErr != nil {
+		writeError(c, countErr, http.StatusInternalServerError)
+		return
+	}
+	h.setFollowCountsCache(targetUser.ID, followersCount, targetFollowingCount)
+
+	_, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
+	if actorCountErr == nil {
+		h.setFollowCountsCache(claims.UserID, 0, actorFollowingCount)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "取消关注成功",
+		"followers_count": followersCount,
+		"is_following":    false,
+	})
+}
+
+// GetFollowersGin 获取用户粉丝列表。
+func (h *UserHandler) GetFollowersGin(c *gin.Context) {
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	page, pageSize := parsePageParams(c, 20, 50)
+	offset := (page - 1) * pageSize
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	viewerID := viewerUserID(c)
+
+	items, total, listErr := h.userRepo.GetFollowers(targetUser.ID, viewerID, offset, pageSize, keyword)
+	if listErr != nil {
+		writeError(c, listErr, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// GetFollowingGin 获取用户关注列表。
+func (h *UserHandler) GetFollowingGin(c *gin.Context) {
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	page, pageSize := parsePageParams(c, 20, 50)
+	offset := (page - 1) * pageSize
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	viewerID := viewerUserID(c)
+
+	items, total, listErr := h.userRepo.GetFollowing(targetUser.ID, viewerID, offset, pageSize, keyword)
+	if listErr != nil {
+		writeError(c, listErr, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// GetMutualFollowingGin 获取共同关注列表（登录后可用）。
+func (h *UserHandler) GetMutualFollowingGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	username := strings.TrimSpace(c.Param("username"))
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		return
+	}
+
+	targetUser, err := h.userRepo.GetUserByUsername(username)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	page, pageSize := parsePageParams(c, 20, 50)
+	offset := (page - 1) * pageSize
+	keyword := strings.TrimSpace(c.Query("keyword"))
+
+	items, total, listErr := h.userRepo.GetMutualFollowing(targetUser.ID, claims.UserID, offset, pageSize, keyword)
+	if listErr != nil {
+		writeError(c, listErr, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
 // GetPublicProfileGin Gin 版本的获取公开个人资料
 func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
-	username := c.Query("username")
+	username := strings.TrimSpace(c.Query("username"))
 	if username == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
 		return
@@ -335,15 +762,7 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 		return
 	}
 
-	// 解析用户偏好设置
-	type UserPreferences struct {
-		EmailPublic bool `json:"email_public"`
-	}
-	var preferences UserPreferences
-	if user.Preferences != "" {
-		// 忽略解析错误，默认为 false
-		json.Unmarshal([]byte(user.Preferences), &preferences)
-	}
+	prefs := parseUserPreferences(user.Preferences)
 
 	// 公开个人资料结构
 	type PublicUser struct {
@@ -381,7 +800,7 @@ func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 			}
 		} else {
 			// 查看其他用户的个人资料：根据隐私设置决定
-			if preferences.EmailPublic && user.Email != "" {
+			if prefs.EmailPublic && user.Email != "" {
 				publicUser.Email = user.Email
 				publicUser.IsVerified = user.IsVerified
 			}

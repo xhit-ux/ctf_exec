@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react'
 import { apiUrl } from '../utils/api'
-import { AUTH_REFRESH_FAILED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens } from '../utils/authClient'
+import { AUTH_REFRESH_FAILED_EVENT, AUTH_USER_UPDATED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens } from '../utils/authClient'
 
 export interface User {
   id: string
@@ -14,6 +14,7 @@ export interface User {
   solved_count: number
   is_active: boolean
   is_verified: boolean
+  last_login_at?: string
   created_at: string
   updated_at: string
   preferences?: string  // JSON 字符串存储用户偏好
@@ -109,6 +110,19 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     window.addEventListener(AUTH_REFRESH_FAILED_EVENT, onRefreshFailed)
     return () => {
       window.removeEventListener(AUTH_REFRESH_FAILED_EVENT, onRefreshFailed)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onUserUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ user?: User }>
+      if (!customEvent.detail?.user) return
+      setUser(customEvent.detail.user)
+    }
+
+    window.addEventListener(AUTH_USER_UPDATED_EVENT, onUserUpdated as EventListener)
+    return () => {
+      window.removeEventListener(AUTH_USER_UPDATED_EVENT, onUserUpdated as EventListener)
     }
   }, [])
 

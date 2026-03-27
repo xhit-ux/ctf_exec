@@ -2,6 +2,16 @@ package models
 
 import "time"
 
+const userOnlineWindow = 20 * time.Minute
+
+func IsUserOnline(lastLoginAt *time.Time, now time.Time) bool {
+	if lastLoginAt == nil {
+		return false
+	}
+
+	return !lastLoginAt.Before(now.Add(-userOnlineWindow))
+}
+
 // User 用户模型
 type User struct {
 	ID           string     `json:"id"`
@@ -12,8 +22,12 @@ type User struct {
 	DisplayName  string     `json:"display_name"`
 	AvatarURL    string     `json:"avatar_url"`
 	Bio          string     `json:"bio"`
+	WebsiteURL   string     `json:"website_url"`
+	Organization string     `json:"organization"`
+	Country      string     `json:"country"`
 	Score        int        `json:"score"`
 	SolvedCount  int        `json:"solved_count"`
+	RankNum      *int       `json:"rank_num"`
 	IsActive     bool       `json:"is_active"`
 	IsVerified   bool       `json:"is_verified"`
 	LastLoginAt  *time.Time `json:"last_login_at"`
@@ -65,10 +79,46 @@ type LogoutRequest struct {
 
 // UpdateProfileRequest 更新个人资料请求
 type UpdateProfileRequest struct {
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	Bio         string `json:"bio"`
-	EmailPublic bool   `json:"email_public"` // 是否公开邮箱
+	DisplayName  string       `json:"display_name"`
+	Email        string       `json:"email"`
+	Bio          string       `json:"bio"`
+	WebsiteURL   string       `json:"website_url"`
+	Organization string       `json:"organization"`
+	Country      string       `json:"country"`
+	EmailPublic  bool         `json:"email_public"` // 是否公开邮箱
+	GithubURL    string       `json:"github_url"`
+	SocialLinks  []SocialLink `json:"social_links"`
+}
+
+type SocialLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
+type ProfileStats struct {
+	FollowersCount       int  `json:"followers_count"`
+	FollowingCount       int  `json:"following_count"`
+	ContestsParticipated int  `json:"contests_participated"`
+	RankNum              *int `json:"rank_num"`
+}
+
+type UserProfileResponse struct {
+	User
+	Stats        ProfileStats `json:"stats"`
+	IsOwnProfile bool         `json:"is_own_profile"`
+	IsFollowing  *bool        `json:"is_following"`
+	IsFollowedBy *bool        `json:"is_followed_by"`
+	IsOnline     bool         `json:"is_online"`
+}
+
+type FollowUser struct {
+	ID           string `json:"id"`
+	Username     string `json:"username"`
+	DisplayName  string `json:"display_name"`
+	AvatarURL    string `json:"avatar_url"`
+	Bio          string `json:"bio"`
+	IsFollowing  *bool  `json:"is_following"`
+	IsFollowedBy *bool  `json:"is_followed_by"`
 }
 
 // UpdateUserRoleRequest root 修改用户角色请求

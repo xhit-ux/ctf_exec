@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useRef } from 'react'
 
 type DayActivity = {
   date: Date
@@ -13,6 +13,7 @@ type GridCell = {
 }
 
 export default function SubmissionHeatmap() {
+  const scrollRef = useRef<HTMLDivElement | null>(null)
   const weeks = 53
   const daysPerWeek = 7
   const cellSize = 14
@@ -121,6 +122,24 @@ export default function SubmissionHeatmap() {
 
   const gridPixelWidth = Math.max(oneYearGrid.cells.length * columnWidth - cellGap, 0)
   const flatCells = useMemo(() => oneYearGrid.cells.flat(), [oneYearGrid.cells])
+  const summary = useMemo(() => {
+    const validDays = flatCells
+      .map((cell) => cell.day)
+      .filter((day): day is DayActivity => Boolean(day))
+
+    const totalSubmissions = validDays.reduce((sum, day) => sum + day.count, 0)
+    const activeDays = validDays.filter((day) => day.count > 0).length
+    const bestDay = validDays.reduce<DayActivity | null>((best, current) => {
+      if (!best || current.count > best.count) return current
+      return best
+    }, null)
+
+    return {
+      totalSubmissions,
+      activeDays,
+      bestDay,
+    }
+  }, [flatCells])
 
   const getColorClass = (level: number) => {
     switch (level) {
@@ -151,92 +170,130 @@ export default function SubmissionHeatmap() {
     return `${month}月${date}日 ${getWeekday(day.date)}，无提交`
   }
 
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+
+    const scrollToRight = () => {
+      container.scrollLeft = Math.max(container.scrollWidth - container.clientWidth, 0)
+    }
+
+    scrollToRight()
+    const rafId = window.requestAnimationFrame(scrollToRight)
+    return () => window.cancelAnimationFrame(rafId)
+  }, [])
+
   return (
-    <div className="w-full min-w-0">
-      <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-        <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-        </svg>
-        活跃度 (最近一年)
-      </h3>
-
-      <div className="bg-[#f6f8fa] border border-[#d0d7de] p-3 sm:p-5 rounded-lg overflow-x-auto">
-        <div className="min-w-max pb-2">
-          <div className="mb-2 pl-10">
-            <div className="relative h-5" style={{ width: `${gridPixelWidth}px` }}>
-              {monthMarkers.map((marker) => (
-                <span
-                  key={`${marker.label}-${marker.index}`}
-                  className="absolute top-0 text-[11px] leading-none text-gray-500 whitespace-nowrap"
-                  style={{ left: `${marker.index * columnWidth}px` }}
-                >
-                  {marker.label}
-                </span>
-              ))}
-            </div>
+    <div className="w-full min-w-0 overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]">
+      <div className="border-b border-slate-100 px-5 py-5 sm:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="flex items-center gap-2 text-lg font-semibold tracking-tight text-slate-950">
+              <svg className="w-5 h-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+              提交热力图
+            </h3>
           </div>
 
-          <div className="flex items-start gap-2">
-            <div className="flex w-8 flex-col gap-[3px] text-xs text-gray-500">
-              {['Mon', '', 'Wed', '', 'Fri', '', ''].map((label, idx) => (
-                <div key={`${label}-${idx}`} className="h-[14px] leading-[14px]">
-                  {label}
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">活跃天数</div>
+              <div className="mt-1 text-xl font-semibold text-slate-950">{summary.activeDays}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">提交次数</div>
+              <div className="mt-1 text-xl font-semibold text-slate-950">{summary.totalSubmissions}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 px-4 py-3">
+              <div className="text-xs uppercase tracking-[0.22em] text-slate-400">峰值</div>
+              <div className="mt-1 text-xl font-semibold text-slate-950">{summary.bestDay?.count ?? 0}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 py-5 sm:px-6 sm:py-6">
+        <div className="rounded-[24px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#f1f5f9_100%)] p-3 sm:p-5">
+          <div ref={scrollRef} className="show-scrollbar overflow-x-auto overflow-y-hidden pb-3">
+            <div className="min-w-max">
+              <div className="mb-2 pl-10">
+                <div className="relative h-5" style={{ width: `${gridPixelWidth}px` }}>
+                  {monthMarkers.map((marker) => (
+                    <span
+                      key={`${marker.label}-${marker.index}`}
+                      className="absolute top-0 text-[11px] leading-none text-slate-500 whitespace-nowrap"
+                      style={{ left: `${marker.index * columnWidth}px` }}
+                    >
+                      {marker.label}
+                    </span>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              <div className="flex items-start gap-2">
+                <div className="flex w-8 flex-col gap-[3px] text-xs text-slate-500">
+                  {['一', '', '三', '', '五', '', ''].map((label, idx) => (
+                    <div key={`${label}-${idx}`} className="h-[14px] leading-[14px]">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+
+                <div
+                  className="grid"
+                  style={{
+                    gridTemplateRows: `repeat(${daysPerWeek}, ${cellSize}px)`,
+                    gridTemplateColumns: `repeat(${oneYearGrid.cells.length}, ${cellSize}px)`,
+                    rowGap: `${cellGap}px`,
+                    columnGap: `${cellGap}px`
+                  }}
+                >
+                  {flatCells.map((cell) => {
+                    if (!cell.day) {
+                      return (
+                        <div
+                          key={`${cell.column}-${cell.row}`}
+                          className="w-[14px] h-[14px]"
+                          style={{
+                            gridColumnStart: cell.column + 1,
+                            gridRowStart: cell.row + 1
+                          }}
+                        ></div>
+                      )
+                    }
+
+                    const day = cell.day
+
+                    return (
+                      <div
+                        key={`${cell.column}-${cell.row}`}
+                        className={`w-[14px] h-[14px] rounded-[3px] ${getColorClass(day.level)} ${
+                          day.level > 0
+                            ? 'cursor-pointer hover:ring-2 hover:ring-slate-400 hover:ring-offset-1 hover:ring-offset-slate-50'
+                            : 'cursor-default'
+                        } transition-all`}
+                        style={{
+                          gridColumnStart: cell.column + 1,
+                          gridRowStart: cell.row + 1
+                        }}
+                        title={formatTooltip(day)}
+                      ></div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-start gap-2 pl-10 text-xs text-slate-600">
+                <span>少</span>
+                <div className={`w-3 h-3 rounded-[2px] ${getColorClass(0)}`}></div>
+                <div className={`w-3 h-3 rounded-[2px] ${getColorClass(1)}`}></div>
+                <div className={`w-3 h-3 rounded-[2px] ${getColorClass(2)}`}></div>
+                <div className={`w-3 h-3 rounded-[2px] ${getColorClass(3)}`}></div>
+                <div className={`w-3 h-3 rounded-[2px] ${getColorClass(4)}`}></div>
+                <span>多</span>
+              </div>
             </div>
-
-            <div
-              className="grid"
-              style={{
-                gridTemplateRows: `repeat(${daysPerWeek}, ${cellSize}px)`,
-                gridTemplateColumns: `repeat(${oneYearGrid.cells.length}, ${cellSize}px)`,
-                rowGap: `${cellGap}px`,
-                columnGap: `${cellGap}px`
-              }}
-            >
-              {flatCells.map((cell) => {
-                if (!cell.day) {
-                  return (
-                    <div
-                      key={`${cell.column}-${cell.row}`}
-                      className="w-[14px] h-[14px]"
-                      style={{
-                        gridColumnStart: cell.column + 1,
-                        gridRowStart: cell.row + 1
-                      }}
-                    ></div>
-                  )
-                }
-
-                const day = cell.day
-
-                return (
-                  <div
-                    key={`${cell.column}-${cell.row}`}
-                    className={`w-[14px] h-[14px] rounded-[2px] ${getColorClass(day.level)} ${
-                      day.level > 0
-                        ? 'cursor-pointer hover:ring-2 hover:ring-gray-400 hover:ring-offset-1 hover:ring-offset-[#f6f8fa]'
-                        : 'cursor-default'
-                    } transition-all`}
-                    style={{
-                      gridColumnStart: cell.column + 1,
-                      gridRowStart: cell.row + 1
-                    }}
-                    title={day.count > 0 ? formatTooltip(day) : undefined}
-                  ></div>
-                )
-              })}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-start gap-2 mt-4 text-xs text-gray-600 pl-10">
-            <span>少</span>
-            <div className={`w-3 h-3 rounded-[2px] ${getColorClass(0)}`}></div>
-            <div className={`w-3 h-3 rounded-[2px] ${getColorClass(1)}`}></div>
-            <div className={`w-3 h-3 rounded-[2px] ${getColorClass(2)}`}></div>
-            <div className={`w-3 h-3 rounded-[2px] ${getColorClass(3)}`}></div>
-            <div className={`w-3 h-3 rounded-[2px] ${getColorClass(4)}`}></div>
-            <span>多</span>
           </div>
         </div>
       </div>

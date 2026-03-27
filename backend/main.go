@@ -86,7 +86,7 @@ func main() {
 
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService)
-	userHandler := handler.NewUserHandler(userRepo, authService)
+	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client)
 	probHandler := handler.NewProblemHandler(probRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
@@ -143,6 +143,12 @@ func main() {
 			users.GET("/leaderboard", userHandler.GetLeaderboardGin)
 			users.GET("/leaderboard/search", userHandler.GetLeaderboardUserByUsernameGin)
 			users.PUT("/profile", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.UpdateProfileGin)
+			users.GET("/profile/:username", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetProfileGin)
+			users.POST("/:username/follow", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.FollowUserGin)
+			users.DELETE("/:username/follow", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.UnfollowUserGin)
+			users.GET("/:username/followers", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetFollowersGin)
+			users.GET("/:username/following", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetFollowingGin)
+			users.GET("/:username/mutual", middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetMutualFollowingGin)
 			users.GET("/public", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), userHandler.GetPublicProfileGin)
 		}
 

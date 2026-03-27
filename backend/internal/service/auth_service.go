@@ -198,6 +198,11 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
 
+	now := time.Now()
+	if updateErr := s.userRepo.UpdateLastLogin(user.ID, clientIP); updateErr == nil {
+		user.LastLoginAt = &now
+	}
+
 	return s.issueTokenPair(user)
 }
 
@@ -220,7 +225,10 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*mod
 	}
 
 	// 更新最后登陆时间
-	_ = s.userRepo.UpdateLastLogin(user.ID, clientIP)
+	now := time.Now()
+	if updateErr := s.userRepo.UpdateLastLogin(user.ID, clientIP); updateErr == nil {
+		user.LastLoginAt = &now
+	}
 	_ = s.userRepo.LogLogin(user.ID, clientIP)
 
 	return s.issueTokenPair(user)
@@ -256,6 +264,11 @@ func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, er
 
 	if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, refreshClaims.UserID, refreshClaims.ID); err != nil {
 		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
+	}
+
+	now := time.Now()
+	if updateErr := s.userRepo.UpdateLastLogin(user.ID, ""); updateErr == nil {
+		user.LastLoginAt = &now
 	}
 
 	return s.issueTokenPair(user)

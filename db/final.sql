@@ -37,6 +37,7 @@ DROP TABLE IF EXISTS challenge_instances;
 DROP TABLE IF EXISTS challenge_tags;
 DROP TABLE IF EXISTS submissions;
 DROP TABLE IF EXISTS problems;
+DROP TABLE IF EXISTS user_follows;
 DROP TABLE IF EXISTS team_members;
 DROP TABLE IF EXISTS teams;
 DROP TABLE IF EXISTS users;
@@ -631,6 +632,35 @@ CREATE TABLE role_change_logs (
 CREATE INDEX idx_rcl_target   ON role_change_logs(target_id);
 CREATE INDEX idx_rcl_operator ON role_change_logs(operator_id);
 
+-- ==========================================================
+-- 17. User Follows (Social)
+-- ==========================================================
+-- 单向关注模型（follow），非双向好友。
+-- follower_id 关注了 followee_id。
+
+CREATE TABLE user_follows (
+    id          CHAR(36)    NOT NULL,
+    follower_id CHAR(36)    NOT NULL,  -- 关注者
+    followee_id CHAR(36)    NOT NULL,  -- 被关注者
+    created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    -- 不能重复关注
+    UNIQUE KEY uniq_follow (follower_id, followee_id),
+    -- 不能关注自己
+    CONSTRAINT chk_no_self_follow CHECK (follower_id <> followee_id),
+
+    -- 查"某人的粉丝列表"：WHERE followee_id = ? ORDER BY created_at
+    INDEX idx_followee (followee_id, created_at),
+    -- 查"某人关注了谁"：WHERE follower_id = ? ORDER BY created_at
+    INDEX idx_follower (follower_id, created_at),
+
+    CONSTRAINT fk_follow_follower FOREIGN KEY (follower_id)
+        REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_follow_followee FOREIGN KEY (followee_id)
+        REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 
 
 -- ==========================================================
@@ -644,50 +674,50 @@ CREATE INDEX idx_rcl_operator ON role_change_logs(operator_id);
 
 INSERT INTO users
     (id, username, email, password_hash, role,
-     display_name, bio, real_name, organization, country,
+     display_name, bio, organization, country,
      is_active, is_verified)
 VALUES
     ('00000000-0000-0000-0000-000000000001',
      'root', 'root@ctf.local',
      '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
      'root', 'Root', 'Default root account',
-     'System Root', 'CTF Platform', 'CN', 1, 1),
+     'CTF Platform', 'CN', 1, 1),
 
     ('11111111-1111-1111-1111-111111111111',
      'alice', 'alice@example.com',
      '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
      'site_admin', 'Alice', 'Demo site_admin Alice',
-     'Alice L', 'University A', 'CN', 1, 1),
+     'University A', 'CN', 1, 1),
 
     ('22222222-2222-2222-2222-222222222222',
      'bob', 'bob@example.com',
      '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
      'user', 'Bob', 'Demo user Bob',
-     'Bob K', 'University B', 'US', 1, 1);
+     'University B', 'US', 1, 1);
 
 INSERT INTO users
     (id, username, email, password_hash, role,
-     display_name, bio, real_name, organization, country,
+     display_name, bio, organization, country,
      is_active, is_verified)
 VALUES
-    ('30000000-0000-0000-0000-000000000003', 'user03', 'user03@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User03', 'Demo user 03', 'User 03', 'University C', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000004', 'user04', 'user04@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User04', 'Demo user 04', 'User 04', 'University C', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000005', 'user05', 'user05@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User05', 'Demo user 05', 'User 05', 'University D', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000006', 'user06', 'user06@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User06', 'Demo user 06', 'User 06', 'University D', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000007', 'user07', 'user07@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User07', 'Demo user 07', 'User 07', 'University E', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000008', 'user08', 'user08@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User08', 'Demo user 08', 'User 08', 'University E', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000009', 'user09', 'user09@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User09', 'Demo user 09', 'User 09', 'University F', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000010', 'user10', 'user10@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User10', 'Demo user 10', 'User 10', 'University F', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000011', 'user11', 'user11@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User11', 'Demo user 11', 'User 11', 'University G', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000012', 'user12', 'user12@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User12', 'Demo user 12', 'User 12', 'University G', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000013', 'user13', 'user13@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User13', 'Demo user 13', 'User 13', 'University H', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000014', 'user14', 'user14@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User14', 'Demo user 14', 'User 14', 'University H', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000015', 'user15', 'user15@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User15', 'Demo user 15', 'User 15', 'University I', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000016', 'user16', 'user16@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User16', 'Demo user 16', 'User 16', 'University I', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000017', 'user17', 'user17@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User17', 'Demo user 17', 'User 17', 'University J', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000018', 'user18', 'user18@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User18', 'Demo user 18', 'User 18', 'University J', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000019', 'user19', 'user19@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User19', 'Demo user 19', 'User 19', 'University K', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000020', 'user20', 'user20@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User20', 'Demo user 20', 'User 20', 'University K', 'CN', 1, 1);
+    ('30000000-0000-0000-0000-000000000003', 'user03', 'user03@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User03', 'Demo user 03', 'University C', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000004', 'user04', 'user04@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User04', 'Demo user 04', 'University C', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000005', 'user05', 'user05@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User05', 'Demo user 05', 'University D', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000006', 'user06', 'user06@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User06', 'Demo user 06', 'University D', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000007', 'user07', 'user07@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User07', 'Demo user 07', 'University E', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000008', 'user08', 'user08@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User08', 'Demo user 08', 'University E', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000009', 'user09', 'user09@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User09', 'Demo user 09', 'University F', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000010', 'user10', 'user10@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User10', 'Demo user 10', 'University F', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000011', 'user11', 'user11@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User11', 'Demo user 11', 'University G', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000012', 'user12', 'user12@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User12', 'Demo user 12', 'University G', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000013', 'user13', 'user13@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User13', 'Demo user 13', 'University H', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000014', 'user14', 'user14@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User14', 'Demo user 14', 'University H', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000015', 'user15', 'user15@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User15', 'Demo user 15', 'University I', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000016', 'user16', 'user16@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User16', 'Demo user 16', 'University I', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000017', 'user17', 'user17@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User17', 'Demo user 17', 'University J', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000018', 'user18', 'user18@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User18', 'Demo user 18', 'University J', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000019', 'user19', 'user19@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User19', 'Demo user 19', 'University K', 'CN', 1, 1),
+    ('30000000-0000-0000-0000-000000000020', 'user20', 'user20@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User20', 'Demo user 20', 'University K', 'CN', 1, 1);
 
 -- ----------------------------------------------------------
 -- Teams

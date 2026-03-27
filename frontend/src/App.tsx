@@ -20,6 +20,9 @@ import Admin from './pages/Admin'
 import MyTeam from './pages/MyTeam'
 import TeamProfile from './pages/TeamProfile'
 
+import EditProfile from './pages/EditProfile'
+import FollowList from './pages/FollowList'
+
 export default function App() {
   return (
     <AuthProvider>
@@ -74,6 +77,16 @@ export default function App() {
               }
             />
             <Route path="profile/:username" element={<Profile />} />
+            <Route 
+              path="profile/:username/edit" 
+              element={
+                <ProtectedRoute>
+                  <EditProfile />
+                </ProtectedRoute>
+              } 
+            />
+            <Route path="profile/:username/followers" element={<FollowList type="followers" />} />
+            <Route path="profile/:username/following" element={<FollowList type="following" />} />
             <Route
               path="team"
               element={

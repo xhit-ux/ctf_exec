@@ -2,7 +2,9 @@ import { apiUrl } from './api'
 
 const ACCESS_TOKEN_KEY = 'token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
+const USER_KEY = 'user'
 export const AUTH_REFRESH_FAILED_EVENT = 'auth:refresh-failed'
+export const AUTH_USER_UPDATED_EVENT = 'auth:user-updated'
 
 let refreshInFlight: Promise<string | null> | null = null
 let refreshFailureBroadcasted = false
@@ -34,6 +36,14 @@ function writeTokenPair(accessToken: string, refreshToken: string) {
   refreshFailureBroadcasted = false
 }
 
+function writeStoredUser(user: unknown) {
+  if (!user) return
+  localStorage.setItem(USER_KEY, JSON.stringify(user))
+  window.dispatchEvent(new CustomEvent(AUTH_USER_UPDATED_EVENT, {
+    detail: { user },
+  }))
+}
+
 function clearTokenPair() {
   localStorage.removeItem(ACCESS_TOKEN_KEY)
   localStorage.removeItem(REFRESH_TOKEN_KEY)
@@ -60,6 +70,9 @@ async function performRefresh(refreshToken: string): Promise<string | null> {
   }
 
   writeTokenPair(data.token, data.refresh_token)
+  if (data.user) {
+    writeStoredUser(data.user)
+  }
   return data.token
 }
 

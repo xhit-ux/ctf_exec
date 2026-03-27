@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -211,7 +212,9 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 	user := &models.User{}
 	query := `
 		SELECT id, username, email, password_hash, role, display_name, 
-		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
+		       COALESCE(avatar_url, ''), COALESCE(bio, ''),
+		       COALESCE(website_url, ''), COALESCE(organization, ''), COALESCE(country, ''),
+		       score, solved_count, is_active, is_verified, rank_num,
 		       last_login_at, created_at, updated_at,
 		       COALESCE(preferences, '{}')
 		FROM users WHERE username = ? AND is_active = 1
@@ -220,8 +223,9 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 	err := r.db.QueryRow(query, username).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
 		&user.Role, &user.DisplayName, &user.AvatarURL, &user.Bio,
+		&user.WebsiteURL, &user.Organization, &user.Country,
 		&user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
-		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.RankNum, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
 		&user.Preferences,
 	)
 
@@ -240,7 +244,9 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	user := &models.User{}
 	query := `
 		SELECT id, username, email, password_hash, role, display_name, 
-		       COALESCE(avatar_url, ''), COALESCE(bio, ''), score, solved_count, is_active, is_verified, 
+		       COALESCE(avatar_url, ''), COALESCE(bio, ''),
+		       COALESCE(website_url, ''), COALESCE(organization, ''), COALESCE(country, ''),
+		       score, solved_count, is_active, is_verified, rank_num,
 		       last_login_at, created_at, updated_at,
 		       COALESCE(preferences, '{}')
 		FROM users WHERE id = ? AND is_active = 1
@@ -249,8 +255,9 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	err := r.db.QueryRow(query, id).Scan(
 		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
 		&user.Role, &user.DisplayName, &user.AvatarURL, &user.Bio,
+		&user.WebsiteURL, &user.Organization, &user.Country,
 		&user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
-		&user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.RankNum, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
 		&user.Preferences,
 	)
 
@@ -526,6 +533,50 @@ func (r *UserRepository) UpdateAvatarURL(userID, avatarURL string) error {
 
 // UpdateProfile 更新用户信息
 func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileRequest) error {
+	websiteURL := strings.TrimSpace(req.WebsiteURL)
+	if websiteURL != "" {
+		if _, err := url.ParseRequestURI(websiteURL); err != nil {
+			return apperr.New(apperr.ErrBadRequest, "个人网站 URL 格式不正确")
+		}
+	}
+
+	githubURL := strings.TrimSpace(req.GithubURL)
+	if githubURL != "" {
+		if _, err := url.ParseRequestURI(githubURL); err != nil {
+			return apperr.New(apperr.ErrBadRequest, "GitHub URL 格式不正确")
+		}
+	}
+
+	if len(req.Bio) > 500 {
+		return apperr.New(apperr.ErrBadRequest, "个人简介不能超过 500 字符")
+	}
+
+	if len(req.Organization) > 100 {
+		return apperr.New(apperr.ErrBadRequest, "组织/学校不能超过 100 字符")
+	}
+
+	if country := strings.TrimSpace(req.Country); len(country) > 2 {
+		return apperr.New(apperr.ErrBadRequest, "国家/地区应为 2 位国家代码")
+	}
+
+	if len(req.SocialLinks) > 5 {
+		return apperr.New(apperr.ErrBadRequest, "社交链接最多 5 项")
+	}
+
+	for _, link := range req.SocialLinks {
+		if strings.TrimSpace(link.Label) == "" || strings.TrimSpace(link.URL) == "" {
+			return apperr.New(apperr.ErrBadRequest, "社交链接的标签和 URL 不能为空")
+		}
+		if _, err := url.ParseRequestURI(strings.TrimSpace(link.URL)); err != nil {
+			return apperr.New(apperr.ErrBadRequest, "社交链接 URL 格式不正确")
+		}
+	}
+
+	socialLinksJSON, err := json.Marshal(req.SocialLinks)
+	if err != nil {
+		return fmt.Errorf("序列化社交链接失败: %w", err)
+	}
+
 	// 使用 JSON_SET 来设置 email_public 字段
 	// 使用 CAST(? AS JSON) 确保布尔值被正确存储为 JSON 布尔值
 	// Go的bool类型在MySQL中可能被转换为整数1/0，所以需要转换为字符串'true'/'false'
@@ -538,15 +589,28 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 
 	query := `
 		UPDATE users 
-		SET display_name = ?, email = ?, bio = ?, 
+		SET display_name = ?, email = ?, bio = ?, website_url = ?, organization = ?, country = ?,
 			preferences = JSON_SET(
 				COALESCE(preferences, '{}'),
-				'$.email_public', CAST(? AS JSON)
+				'$.email_public', CAST(? AS JSON),
+				'$.github_url', ?,
+				'$.social_links', CAST(? AS JSON)
 			),
 			updated_at = NOW() 
 		WHERE id = ? AND is_active = 1
 	`
-	params := []interface{}{req.DisplayName, req.Email, req.Bio, emailPublicStr, userID}
+	params := []interface{}{
+		req.DisplayName,
+		req.Email,
+		req.Bio,
+		websiteURL,
+		strings.TrimSpace(req.Organization),
+		strings.ToUpper(strings.TrimSpace(req.Country)),
+		emailPublicStr,
+		githubURL,
+		string(socialLinksJSON),
+		userID,
+	}
 
 	result, err := r.db.Exec(query, params...)
 	if err != nil {
@@ -563,6 +627,324 @@ func (r *UserRepository) UpdateProfile(userID string, req *models.UpdateProfileR
 	}
 
 	return nil
+}
+
+// FollowUser 创建关注关系。
+func (r *UserRepository) FollowUser(followerID, followeeID string) error {
+	if followerID == followeeID {
+		return apperr.New(apperr.ErrBadRequest, "不能关注自己")
+	}
+
+	query := `INSERT INTO user_follows (id, follower_id, followee_id, created_at) VALUES (?, ?, ?, ?)`
+	_, err := r.db.Exec(query, uuid.New().String(), followerID, followeeID, time.Now())
+	if err != nil {
+		var mysqlErr *mysql.MySQLError
+		if errors.As(err, &mysqlErr) {
+			if mysqlErr.Number == 1062 {
+				return apperr.New(apperr.ErrConflict, "已关注该用户")
+			}
+			if mysqlErr.Number == 1452 {
+				return apperr.New(apperr.ErrNotFound, "目标用户不存在")
+			}
+		}
+		return fmt.Errorf("创建关注关系失败: %w", err)
+	}
+
+	return nil
+}
+
+// UnfollowUser 删除关注关系。
+func (r *UserRepository) UnfollowUser(followerID, followeeID string) error {
+	query := `DELETE FROM user_follows WHERE follower_id = ? AND followee_id = ?`
+	result, err := r.db.Exec(query, followerID, followeeID)
+	if err != nil {
+		return fmt.Errorf("取消关注失败: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("获取取消关注结果失败: %w", err)
+	}
+	if rows == 0 {
+		return apperr.New(apperr.ErrNotFound, "尚未关注该用户")
+	}
+
+	return nil
+}
+
+// IsFollowing 判断 follower 是否关注了 followee。
+func (r *UserRepository) IsFollowing(followerID, followeeID string) (bool, error) {
+	var count int
+	query := `SELECT COUNT(*) FROM user_follows WHERE follower_id = ? AND followee_id = ?`
+	if err := r.db.QueryRow(query, followerID, followeeID).Scan(&count); err != nil {
+		return false, fmt.Errorf("查询关注状态失败: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// GetFollowCounts 获取用户粉丝数和关注数。
+func (r *UserRepository) GetFollowCounts(userID string) (followersCount int, followingCount int, err error) {
+	if err = r.db.QueryRow(`SELECT COUNT(*) FROM user_follows WHERE followee_id = ?`, userID).Scan(&followersCount); err != nil {
+		return 0, 0, fmt.Errorf("查询粉丝数失败: %w", err)
+	}
+
+	if err = r.db.QueryRow(`SELECT COUNT(*) FROM user_follows WHERE follower_id = ?`, userID).Scan(&followingCount); err != nil {
+		return 0, 0, fmt.Errorf("查询关注数失败: %w", err)
+	}
+
+	return followersCount, followingCount, nil
+}
+
+// GetContestsParticipatedCount 获取用户参与赛事数量。
+func (r *UserRepository) GetContestsParticipatedCount(userID string) (int, error) {
+	var count int
+	query := `
+		SELECT COUNT(DISTINCT cp.contest_id)
+		FROM contest_participants cp
+		WHERE cp.user_id = ?
+			OR cp.team_id IN (
+				SELECT tm.team_id
+				FROM team_members tm
+				WHERE tm.user_id = ?
+			)
+	`
+	if err := r.db.QueryRow(query, userID, userID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("查询参与赛事数量失败: %w", err)
+	}
+	return count, nil
+}
+
+func boolPtr(v bool) *bool {
+	b := v
+	return &b
+}
+
+// GetFollowers 获取某用户粉丝列表。
+func (r *UserRepository) GetFollowers(targetUserID string, viewerUserID string, offset int, limit int, keyword string) ([]*models.FollowUser, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	trimmed := strings.TrimSpace(keyword)
+	likeKeyword := "%" + trimmed + "%"
+
+	var total int
+	countQuery := `
+		SELECT COUNT(*)
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.follower_id AND u.is_active = 1
+		WHERE uf.followee_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+	`
+	if err := r.db.QueryRow(countQuery, targetUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计粉丝总数失败: %w", err)
+	}
+
+	query := `
+		SELECT
+			u.id,
+			u.username,
+			COALESCE(u.display_name, ''),
+			COALESCE(u.avatar_url, ''),
+			COALESCE(u.bio, '')
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.follower_id AND u.is_active = 1
+		WHERE uf.followee_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+		ORDER BY uf.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, targetUserID, trimmed, likeKeyword, likeKeyword, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询粉丝列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.FollowUser, 0)
+	for rows.Next() {
+		item := &models.FollowUser{}
+		if scanErr := rows.Scan(&item.ID, &item.Username, &item.DisplayName, &item.AvatarURL, &item.Bio); scanErr != nil {
+			return nil, 0, fmt.Errorf("扫描粉丝列表失败: %w", scanErr)
+		}
+
+		if viewerUserID != "" {
+			isFollowing, followErr := r.IsFollowing(viewerUserID, item.ID)
+			if followErr != nil {
+				return nil, 0, followErr
+			}
+			isFollowedBy, followedErr := r.IsFollowing(item.ID, viewerUserID)
+			if followedErr != nil {
+				return nil, 0, followedErr
+			}
+			item.IsFollowing = boolPtr(isFollowing)
+			item.IsFollowedBy = boolPtr(isFollowedBy)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("遍历粉丝列表失败: %w", err)
+	}
+
+	return items, total, nil
+}
+
+// GetFollowing 获取某用户关注列表。
+func (r *UserRepository) GetFollowing(targetUserID string, viewerUserID string, offset int, limit int, keyword string) ([]*models.FollowUser, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	trimmed := strings.TrimSpace(keyword)
+	likeKeyword := "%" + trimmed + "%"
+
+	var total int
+	countQuery := `
+		SELECT COUNT(*)
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.followee_id AND u.is_active = 1
+		WHERE uf.follower_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+	`
+	if err := r.db.QueryRow(countQuery, targetUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计关注总数失败: %w", err)
+	}
+
+	query := `
+		SELECT
+			u.id,
+			u.username,
+			COALESCE(u.display_name, ''),
+			COALESCE(u.avatar_url, ''),
+			COALESCE(u.bio, '')
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.followee_id AND u.is_active = 1
+		WHERE uf.follower_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+		ORDER BY uf.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, targetUserID, trimmed, likeKeyword, likeKeyword, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询关注列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.FollowUser, 0)
+	for rows.Next() {
+		item := &models.FollowUser{}
+		if scanErr := rows.Scan(&item.ID, &item.Username, &item.DisplayName, &item.AvatarURL, &item.Bio); scanErr != nil {
+			return nil, 0, fmt.Errorf("扫描关注列表失败: %w", scanErr)
+		}
+
+		if viewerUserID != "" {
+			isFollowing, followErr := r.IsFollowing(viewerUserID, item.ID)
+			if followErr != nil {
+				return nil, 0, followErr
+			}
+			isFollowedBy, followedErr := r.IsFollowing(item.ID, viewerUserID)
+			if followedErr != nil {
+				return nil, 0, followedErr
+			}
+			item.IsFollowing = boolPtr(isFollowing)
+			item.IsFollowedBy = boolPtr(isFollowedBy)
+		}
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("遍历关注列表失败: %w", err)
+	}
+
+	return items, total, nil
+}
+
+// GetMutualFollowing 获取 viewer 与 target 的共同关注列表。
+func (r *UserRepository) GetMutualFollowing(targetUserID, viewerUserID string, offset int, limit int, keyword string) ([]*models.FollowUser, int, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	trimmed := strings.TrimSpace(keyword)
+	likeKeyword := "%" + trimmed + "%"
+
+	var total int
+	countQuery := `
+		SELECT COUNT(*)
+		FROM user_follows f1
+		JOIN user_follows f2 ON f1.followee_id = f2.followee_id
+		JOIN users u ON u.id = f1.followee_id AND u.is_active = 1
+		WHERE f1.follower_id = ?
+			AND f2.follower_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+	`
+	if err := r.db.QueryRow(countQuery, targetUserID, viewerUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计共同关注总数失败: %w", err)
+	}
+
+	query := `
+		SELECT
+			u.id,
+			u.username,
+			COALESCE(u.display_name, ''),
+			COALESCE(u.avatar_url, ''),
+			COALESCE(u.bio, '')
+		FROM user_follows f1
+		JOIN user_follows f2 ON f1.followee_id = f2.followee_id
+		JOIN users u ON u.id = f1.followee_id AND u.is_active = 1
+		WHERE f1.follower_id = ?
+			AND f2.follower_id = ?
+			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+		ORDER BY u.username ASC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, targetUserID, viewerUserID, trimmed, likeKeyword, likeKeyword, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询共同关注列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.FollowUser, 0)
+	for rows.Next() {
+		item := &models.FollowUser{}
+		if scanErr := rows.Scan(&item.ID, &item.Username, &item.DisplayName, &item.AvatarURL, &item.Bio); scanErr != nil {
+			return nil, 0, fmt.Errorf("扫描共同关注列表失败: %w", scanErr)
+		}
+
+		isFollowing, followErr := r.IsFollowing(viewerUserID, item.ID)
+		if followErr != nil {
+			return nil, 0, followErr
+		}
+		isFollowedBy, followedErr := r.IsFollowing(item.ID, viewerUserID)
+		if followedErr != nil {
+			return nil, 0, followedErr
+		}
+		item.IsFollowing = boolPtr(isFollowing)
+		item.IsFollowedBy = boolPtr(isFollowedBy)
+
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("遍历共同关注列表失败: %w", err)
+	}
+
+	return items, total, nil
 }
 
 // GetAllUsers 获取所有用户（用于排行榜同步）

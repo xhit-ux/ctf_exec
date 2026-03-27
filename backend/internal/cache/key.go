@@ -13,6 +13,18 @@ const (
 	// 用户提交频率限制
 	KeySubmissionRateLimitTemplate = "submission:rate_limit:%s"
 
+	// 用户关注操作频率限制
+	KeyFollowRateLimitTemplate = "user:follow:rate_limit:%s"
+
+	// 用户资料编辑频率限制
+	KeyProfileEditRateLimitTemplate = "user:profile:edit:rate_limit:%s"
+
+	// 用户粉丝计数缓存
+	KeyUserFollowersCountTemplate = "user:follow:followers_count:%s"
+
+	// 用户关注计数缓存
+	KeyUserFollowingCountTemplate = "user:follow:following_count:%s"
+
 	// 用户最近提交时间集合
 	KeyUserRecentSubmissionsTemplate = "user:recent_submissions:%s"
 
@@ -51,6 +63,26 @@ func GetContestTeamLeaderboardKey(contestID string) string {
 // GetSubmissionRateLimitKey 获取用户提交频率限制键
 func GetSubmissionRateLimitKey(userID string) string {
 	return fmt.Sprintf(KeySubmissionRateLimitTemplate, userID)
+}
+
+// GetFollowRateLimitKey 获取用户关注操作频率限制键
+func GetFollowRateLimitKey(userID string) string {
+	return fmt.Sprintf(KeyFollowRateLimitTemplate, userID)
+}
+
+// GetProfileEditRateLimitKey 获取用户资料编辑频率限制键
+func GetProfileEditRateLimitKey(userID string) string {
+	return fmt.Sprintf(KeyProfileEditRateLimitTemplate, userID)
+}
+
+// GetUserFollowersCountKey 获取用户粉丝数缓存键
+func GetUserFollowersCountKey(userID string) string {
+	return fmt.Sprintf(KeyUserFollowersCountTemplate, userID)
+}
+
+// GetUserFollowingCountKey 获取用户关注数缓存键
+func GetUserFollowingCountKey(userID string) string {
+	return fmt.Sprintf(KeyUserFollowingCountTemplate, userID)
 }
 
 // GetUserRecentSubmissionsKey 获取用户最近提交键
