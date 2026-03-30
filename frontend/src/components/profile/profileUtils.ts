@@ -83,10 +83,10 @@ export function formatRelativeTime(date?: string): string {
   const hours = totalHours
   const minutes = totalMinutes % 60
 
-  if (hours === 0 && minutes === 0) return '刚刚'
-  if (hours === 0) return `${minutes}分钟之前`
-  if (minutes === 0) return `${hours}小时之前`
-  return `${hours}小时${minutes}分钟之前`
+  if (hours === 0 && minutes <= 15) return '在线'
+  if (hours === 0) return `${minutes}分钟内`
+  if (minutes === 0) return `${hours}小时内`
+  return `${hours}小时内`
 }
 
 export function normalizeLink(url: string): string {
@@ -94,7 +94,7 @@ export function normalizeLink(url: string): string {
   return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
 }
 
-export function isRecentlyActive(lastLoginAt?: string, windowMinutes = 20): boolean {
+export function isRecentlyActive(lastLoginAt?: string, windowMinutes = 15): boolean {
   if (!lastLoginAt) return false
 
   const parsed = new Date(lastLoginAt)

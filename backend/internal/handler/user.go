@@ -566,9 +566,9 @@ func (h *UserHandler) FollowUserGin(c *gin.Context) {
 	}
 	h.setFollowCountsCache(targetUser.ID, followersCount, targetFollowingCount)
 
-	_, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
+	actorFollowersCount, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
 	if actorCountErr == nil {
-		h.setFollowCountsCache(claims.UserID, 0, actorFollowingCount)
+		h.setFollowCountsCache(claims.UserID, actorFollowersCount, actorFollowingCount)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -614,9 +614,9 @@ func (h *UserHandler) UnfollowUserGin(c *gin.Context) {
 	}
 	h.setFollowCountsCache(targetUser.ID, followersCount, targetFollowingCount)
 
-	_, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
+	actorFollowersCount, actorFollowingCount, actorCountErr := h.userRepo.GetFollowCounts(claims.UserID)
 	if actorCountErr == nil {
-		h.setFollowCountsCache(claims.UserID, 0, actorFollowingCount)
+		h.setFollowCountsCache(claims.UserID, actorFollowersCount, actorFollowingCount)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

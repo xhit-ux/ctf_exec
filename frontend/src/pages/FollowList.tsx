@@ -119,7 +119,13 @@ export const FollowList: React.FC<FollowListProps> = ({ type }) => {
   const handleUserFollowChange = (target: FollowUser, isFollowing: boolean) => {
     setUsers((current) => {
       const next = current.map((item) =>
-        item.username === target.username ? { ...item, is_following: isFollowing } : item
+        item.username === target.username 
+          ? { 
+              ...item, 
+              is_following: isFollowing,
+              is_followed_by: isFollowing ? true : item.is_followed_by
+            } 
+          : item
       )
 
       if (type === 'following' && user?.username === username && !isFollowing) {
@@ -228,7 +234,7 @@ export const FollowList: React.FC<FollowListProps> = ({ type }) => {
                           </Link>
                           {item.is_following && item.is_followed_by && (
                             <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-                              Mutual
+                              friend
                             </span>
                           )}
                         </div>

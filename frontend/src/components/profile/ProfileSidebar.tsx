@@ -42,8 +42,8 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
   const avatarUrl = getProfileAvatarUrl(profile)
   const preferences = parseProfilePreferences(profile.preferences)
   const displayName = profile.display_name || profile.username
-  const effectiveLastLoginAt = profile.is_own_profile ? (user?.last_login_at || profile.last_login_at) : profile.last_login_at
-  const isOnline = profile.is_own_profile ? isRecentlyActive(effectiveLastLoginAt, 20) : profile.is_online
+  const effectiveLastLoginAt = (user?.last_login_at || profile.last_login_at)
+  const isOnline = isRecentlyActive(effectiveLastLoginAt, 20)
   const socialLinks = [
     profile.website_url
       ? { label: '个人网站', value: profile.website_url, href: normalizeLink(profile.website_url) }
@@ -79,9 +79,9 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                 aria-label={isOnline ? '在线' : '离线'}
               >
                 {isOnline ? (
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                  </svg>
+                  <span className="flex h-4 w-4 items-center justify-center">
+                    <span className="h-3 w-3 rounded-full bg-emerald-300" />
+                  </span>
                 ) : (
                   <span className="block h-4 w-4 rounded-full bg-white/80" />
                 )}

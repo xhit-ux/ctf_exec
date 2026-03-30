@@ -35,9 +35,7 @@ export async function unfollowUser(username: string): Promise<{ followers_count:
 export async function fetchFollowers(username: string, page = 1, pageSize = 20, keyword = ''): Promise<FollowListResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (keyword) params.set('keyword', keyword)
-  const res = await apiFetch(apiUrl(`/api/users/${username}/followers?${params}`), undefined, {
-    disableAuth: true,
-  })
+  const res = await apiFetch(apiUrl(`/api/users/${username}/followers?${params}`))
   if (!res.ok) throw new Error('获取粉丝列表失败')
   return res.json()
 }
@@ -45,9 +43,7 @@ export async function fetchFollowers(username: string, page = 1, pageSize = 20, 
 export async function fetchFollowing(username: string, page = 1, pageSize = 20, keyword = ''): Promise<FollowListResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
   if (keyword) params.set('keyword', keyword)
-  const res = await apiFetch(apiUrl(`/api/users/${username}/following?${params}`), undefined, {
-    disableAuth: true,
-  })
+  const res = await apiFetch(apiUrl(`/api/users/${username}/following?${params}`))
   if (!res.ok) throw new Error('获取关注列表失败')
   return res.json()
 }

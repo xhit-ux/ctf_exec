@@ -685,11 +685,21 @@ func (r *UserRepository) IsFollowing(followerID, followeeID string) (bool, error
 
 // GetFollowCounts 获取用户粉丝数和关注数。
 func (r *UserRepository) GetFollowCounts(userID string) (followersCount int, followingCount int, err error) {
-	if err = r.db.QueryRow(`SELECT COUNT(*) FROM user_follows WHERE followee_id = ?`, userID).Scan(&followersCount); err != nil {
+	// 粉丝数
+	if err = r.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.follower_id AND u.is_active = 1
+		WHERE uf.followee_id = ?`, userID).Scan(&followersCount); err != nil {
 		return 0, 0, fmt.Errorf("查询粉丝数失败: %w", err)
 	}
 
-	if err = r.db.QueryRow(`SELECT COUNT(*) FROM user_follows WHERE follower_id = ?`, userID).Scan(&followingCount); err != nil {
+	// 关注数
+	if err = r.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM user_follows uf
+		JOIN users u ON u.id = uf.followee_id AND u.is_active = 1
+		WHERE uf.follower_id = ?`, userID).Scan(&followingCount); err != nil {
 		return 0, 0, fmt.Errorf("查询关注数失败: %w", err)
 	}
 

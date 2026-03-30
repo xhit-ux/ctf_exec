@@ -64,6 +64,7 @@ export const Profile: React.FC = () => {
       return {
         ...current,
         is_following: isFollowing,
+        is_followed_by: isFollowing ? true : current.is_followed_by,
         stats: {
           ...current.stats,
           followers_count:
