@@ -417,7 +417,7 @@ func (h *UserHandler) GetProfileGin(c *gin.Context) {
 
 	isOnline := false
 	if lastActiveAt != nil {
-		isOnline = time.Since(*lastActiveAt) < 20*time.Minute
+		isOnline = time.Since(*lastActiveAt) < 15*time.Minute
 	}
 
 	followersCount, followingCount, err := h.getFollowCounts(user.ID)

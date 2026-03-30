@@ -188,7 +188,7 @@ func main() {
 		{
 			upload.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			upload.POST("/avatar", uploadHandler.UploadAvatarGin)
-			upload.POST("/contest-cover", middleware.RequireSiteAdminOrRoot(userRepo), uploadHandler.UploadContestCoverGin)
+			upload.POST("/contest-cover", middleware.RequireSiteAdminOrRoot(), uploadHandler.UploadContestCoverGin)
 		}
 
 		// 管理端路由
@@ -198,22 +198,22 @@ func main() {
 
 			adminUsers := admin.Group("/users")
 			{
-				adminUsers.GET("", middleware.RequireSiteAdminOrRoot(userRepo), userHandler.ListAdminUsersGin)
-				adminUsers.GET("/role-change-logs", middleware.RequireRoot(userRepo), userHandler.ListRoleChangeLogsGin)
-				adminUsers.PATCH(":id/active", middleware.RequireSiteAdminOrRoot(userRepo), userHandler.PatchUserActiveGin)
-				adminUsers.PATCH(":id/role", middleware.RequireRoot(userRepo), userHandler.PatchUserRoleGin)
+				adminUsers.GET("", middleware.RequireSiteAdminOrRoot(), userHandler.ListAdminUsersGin)
+				adminUsers.GET("/role-change-logs", middleware.RequireRoot(), userHandler.ListRoleChangeLogsGin)
+				adminUsers.PATCH(":id/active", middleware.RequireSiteAdminOrRoot(), userHandler.PatchUserActiveGin)
+				adminUsers.PATCH(":id/role", middleware.RequireRoot(), userHandler.PatchUserRoleGin)
 			}
 
 			adminSiteConfig := admin.Group("/site-config")
 			{
-				adminSiteConfig.Use(middleware.RequireRoot(userRepo))
+				adminSiteConfig.Use(middleware.RequireRoot())
 				adminSiteConfig.GET("", siteConfigHandler.GetSiteConfigGin)
 				adminSiteConfig.PUT("", siteConfigHandler.UpdateSiteConfigGin)
 			}
 
 			adminProblems := admin.Group("/problems")
 			{
-				adminProblems.Use(middleware.RequireSiteAdminOrRoot(userRepo))
+				adminProblems.Use(middleware.RequireSiteAdminOrRoot())
 				adminProblems.POST("", probHandler.CreateProblemGin)
 				adminProblems.PUT(":id", probHandler.UpdateProblemGin)
 				adminProblems.DELETE(":id", probHandler.DeleteProblemGin)
@@ -221,12 +221,12 @@ func main() {
 
 			adminContests := admin.Group("/contests")
 			{
-				adminContests.POST("", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.CreateContestGin)
-				adminContests.DELETE(":id", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.DeleteContestGin)
+				adminContests.POST("", middleware.RequireSiteAdminOrRoot(), contestHandler.CreateContestGin)
+				adminContests.DELETE(":id", middleware.RequireSiteAdminOrRoot(), contestHandler.DeleteContestGin)
 
 				adminContests.GET(":id/admins", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.ListContestAdminsGin)
-				adminContests.POST(":id/admins", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.AddContestAdminGin)
-				adminContests.DELETE(":id/admins/:user_id", middleware.RequireSiteAdminOrRoot(userRepo), contestHandler.RemoveContestAdminGin)
+				adminContests.POST(":id/admins", middleware.RequireSiteAdminOrRoot(), contestHandler.AddContestAdminGin)
+				adminContests.DELETE(":id/admins/:user_id", middleware.RequireSiteAdminOrRoot(), contestHandler.RemoveContestAdminGin)
 
 				adminContests.PUT(":id", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.UpdateContestGin)
 				adminContests.POST(":id/challenges", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.AddChallengeToContestGin)

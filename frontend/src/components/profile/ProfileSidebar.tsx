@@ -180,10 +180,6 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
             <span className="mt-0.5 text-slate-400">最近登录</span>
             <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(fallbackLastLoginAt)}</span>
           </li>
-          <li className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3">
-            <span className="mt-0.5 text-slate-400">最近活跃</span>
-            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(profile.last_active_at)}</span>
-          </li>
         </ul>
       </div>
 
