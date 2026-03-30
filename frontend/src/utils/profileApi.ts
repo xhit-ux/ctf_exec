@@ -3,9 +3,7 @@ import { apiUrl } from './api'
 import { UserProfile, UpdateProfileRequest, FollowListResponse } from '../types/profile'
 
 export async function fetchUserProfile(username: string): Promise<UserProfile> {
-  const res = await apiFetch(apiUrl(`/api/users/profile/${username}`), undefined, {
-    disableAuth: true,
-  })
+  const res = await apiFetch(apiUrl(`/api/users/profile/${username}`))
   if (!res.ok) throw new Error('获取用户资料失败')
   return res.json()
 }

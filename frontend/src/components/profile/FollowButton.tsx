@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
-import { followUser } from '../../utils/profileApi'
+import { followUser, unfollowUser } from '../../utils/profileApi'
 
 interface FollowButtonProps {
   username: string
@@ -25,31 +25,27 @@ export const FollowButton: React.FC<FollowButtonProps> = ({
     setIsFollowing(Boolean(initialIsFollowing))
   }, [initialIsFollowing, username])
 
-  // If viewing own profile or not logged in, don't render or render as disabled
+  // If viewing own profile or not logged in, don't render
   if (!user || user.username === username) {
     return null
   }
 
   const isMutual = isFollowing && isFollowedBy
 
-  if (isFollowing) {
-    return (
-      <span
-        className={`inline-flex min-w-[5.75rem] items-center justify-center gap-1 rounded-full px-4 py-2 text-sm font-medium ${
-          isMutual ? 'border border-sky-200 bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600'
-        } ${className}`}
-      >
-        {isMutual ? '已互关' : '已关注'}
-      </span>
-    )
-  }
-
-  const handleToggleEvent = async () => {
+  const handleToggle = async () => {
     setLoading(true)
     try {
-      const res = await followUser(username)
-      setIsFollowing(true)
-      onFollowChange?.(true, res.followers_count)
+      if (isFollowing) {
+        // 取消关注
+        const res = await unfollowUser(username)
+        setIsFollowing(false)
+        onFollowChange?.(false, res.followers_count)
+      } else {
+        // 关注
+        const res = await followUser(username)
+        setIsFollowing(true)
+        onFollowChange?.(true, res.followers_count)
+      }
     } catch (err: any) {
       console.error(err.message || '操作失败')
     } finally {
@@ -57,16 +53,35 @@ export const FollowButton: React.FC<FollowButtonProps> = ({
     }
   }
 
+  // 按钮文字
+  let buttonText: string
+  if (isFollowing) {
+    buttonText = isMutual ? '已互关' : '取消关注'
+  } else {
+    buttonText = '关注'
+  }
+
+  // 按钮样式
   let btnClass =
     'inline-flex min-w-[5.75rem] items-center justify-center gap-1 rounded-full px-4 py-2 text-sm font-medium transition-all duration-200 '
-  let text = '关注'
 
-  btnClass += 'border border-slate-300 bg-white text-slate-900 hover:border-slate-400 hover:bg-slate-50'
+  if (isFollowing) {
+    if (isMutual) {
+      // 已互关：绿色
+      btnClass += 'border border-green-200 bg-green-50 text-green-600 hover:border-red-300 hover:bg-red-50 hover:text-red-600'
+    } else {
+      // 单向已关注：红色
+      btnClass += 'border border-red-200 bg-red-50 text-red-600 hover:border-red-300 hover:bg-red-100'
+    }
+  } else {
+    // 未关注：蓝色
+    btnClass += 'border border-blue-300 bg-white text-blue-600 hover:border-blue-400 hover:bg-blue-50'
+  }
 
   return (
     <button
       type="button"
-      onClick={handleToggleEvent}
+      onClick={handleToggle}
       disabled={loading}
       className={`${btnClass} ${className} disabled:cursor-not-allowed disabled:opacity-70`}
     >
@@ -76,15 +91,9 @@ export const FollowButton: React.FC<FollowButtonProps> = ({
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
       ) : (
-        <>
-          {isMutual && (
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-          )}
-          <span>{text}</span>
-        </>
+        <span>{buttonText}</span>
       )}
     </button>
   )
 }
+

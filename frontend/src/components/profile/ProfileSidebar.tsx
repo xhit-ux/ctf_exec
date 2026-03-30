@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { UserProfile } from '../../types/profile'
 import { FollowButton } from './FollowButton'
-import { formatProfileDate, getProfileAvatarUrl, isRecentlyActive, normalizeLink, parseProfilePreferences } from './profileUtils'
+import { formatProfileDate, formatRelativeTime, getProfileAvatarUrl, isRecentlyActive, normalizeLink, parseProfilePreferences } from './profileUtils'
 
 interface ProfileSidebarProps {
   profile: UserProfile | null
@@ -178,7 +178,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
           </li>
           <li className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <span className="mt-0.5 text-slate-400">最近登录</span>
-            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatProfileDate(profile.last_login_at)}</span>
+            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(profile.last_login_at)}</span>
           </li>
         </ul>
       </div>

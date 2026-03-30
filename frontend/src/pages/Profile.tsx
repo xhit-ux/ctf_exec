@@ -7,7 +7,7 @@ import SubmissionHeatmap from '../components/profile/SubmissionHeatmap'
 import ContestHistory from '../components/profile/ContestHistory'
 import { UserProfile } from '../types/profile'
 import { fetchUserProfile } from '../utils/profileApi'
-import { normalizeLink, parseProfilePreferences } from '../components/profile/profileUtils'
+import { formatRelativeTime, normalizeLink, parseProfilePreferences } from '../components/profile/profileUtils'
 
 const statCardClass =
   'rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]'
@@ -164,7 +164,7 @@ export const Profile: React.FC = () => {
                     <div className="rounded-2xl bg-slate-50 px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.22em] text-slate-400">最近登录</div>
                       <div className="mt-2 text-base font-semibold text-slate-950">
-                        {profile?.last_login_at ? new Date(profile.last_login_at).toLocaleDateString('zh-CN') : '暂无记录'}
+                        {formatRelativeTime(profile?.last_login_at)}
                       </div>
                     </div>
                   </div>

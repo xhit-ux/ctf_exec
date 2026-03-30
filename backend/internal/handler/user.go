@@ -435,7 +435,6 @@ func (h *UserHandler) GetProfileGin(c *gin.Context) {
 		if viewerID == "" || !prefs.EmailPublic {
 			user.Email = ""
 		}
-		user.LastLoginAt = nil
 	}
 
 	var isFollowing *bool
