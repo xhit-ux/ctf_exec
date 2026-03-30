@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { UserProfile } from '../../types/profile'
 import { FollowButton } from './FollowButton'
-import { formatProfileDate, formatRelativeTime, getProfileAvatarUrl, isRecentlyActive, normalizeLink, parseProfilePreferences } from './profileUtils'
+import { formatProfileDate, formatRelativeTime, getProfileAvatarUrl, normalizeLink, parseProfilePreferences } from './profileUtils'
 
 interface ProfileSidebarProps {
   profile: UserProfile | null
@@ -42,8 +42,8 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
   const avatarUrl = getProfileAvatarUrl(profile)
   const preferences = parseProfilePreferences(profile.preferences)
   const displayName = profile.display_name || profile.username
-  const effectiveLastLoginAt = (user?.last_login_at || profile.last_login_at)
-  const isOnline = isRecentlyActive(effectiveLastLoginAt, 20)
+  const fallbackLastLoginAt = profile.is_own_profile ? (user?.last_login_at || profile.last_login_at) : profile.last_login_at
+  const isOnline = profile.is_online
   const socialLinks = [
     profile.website_url
       ? { label: '个人网站', value: profile.website_url, href: normalizeLink(profile.website_url) }
@@ -178,7 +178,11 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
           </li>
           <li className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3">
             <span className="mt-0.5 text-slate-400">最近登录</span>
-            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(profile.last_login_at)}</span>
+            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(fallbackLastLoginAt)}</span>
+          </li>
+          <li className="flex items-start gap-3 rounded-2xl bg-slate-50 px-4 py-3">
+            <span className="mt-0.5 text-slate-400">最近活跃</span>
+            <span className="min-w-0 flex-1 font-medium text-slate-900">{formatRelativeTime(profile.last_active_at)}</span>
           </li>
         </ul>
       </div>

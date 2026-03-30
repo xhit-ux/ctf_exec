@@ -28,9 +28,9 @@ import (
 // AuthService 认证服务接口
 type AuthService interface {
 	SendRegisterCode(req *models.SendRegisterCodeRequest, clientIP string) error
-	Register(req *models.RegisterRequest, clientIP string) (*models.AuthResponse, error)
-	Login(req *models.LoginRequest, clientIP string) (*models.AuthResponse, error)
-	Refresh(refreshToken string) (*models.AuthResponse, error)
+	Register(req *models.RegisterRequest, clientIP, userAgent string) (*models.AuthResponse, error)
+	Login(req *models.LoginRequest, clientIP, userAgent string) (*models.AuthResponse, error)
+	Refresh(refreshToken, clientIP, userAgent string) (*models.AuthResponse, error)
 	Logout(userID, accessJTI, refreshToken string) error
 	RevokeUserSessions(userID string) error
 }
@@ -59,7 +59,7 @@ func NewAuthService(userRepo *repository.UserRepository, redisClient *redis.Clie
 	}
 }
 
-func (s *AuthServiceImpl) issueTokenPair(user *models.User) (*models.AuthResponse, error) {
+func (s *AuthServiceImpl) issueTokenPair(user *models.User, clientIP, userAgent string) (*models.AuthResponse, error) {
 	accessToken, accessClaims, err := utils.GenerateAccessToken(user.ID, user.Username, user.Role)
 	if err != nil {
 		return nil, fmt.Errorf("生成 access token 失败: %w", err)
@@ -76,7 +76,7 @@ func (s *AuthServiceImpl) issueTokenPair(user *models.User) (*models.AuthRespons
 	if err := s.sessionStore.CreateSession(ctx, accessClaims); err != nil {
 		return nil, fmt.Errorf("创建 access 会话失败: %w", err)
 	}
-	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims, refreshToken); err != nil {
+	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims, refreshToken, clientIP, userAgent); err != nil {
 		return nil, fmt.Errorf("创建 refresh 会话失败: %w", err)
 	}
 
@@ -152,7 +152,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 }
 
 // Register 处理用户注册
-func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string) (*models.AuthResponse, error) {
+func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAgent string) (*models.AuthResponse, error) {
 	// 验证输入
 	if err := validateRegisterRequest(req); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
@@ -202,12 +202,13 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP string)
 	if updateErr := s.userRepo.UpdateLastLogin(user.ID, clientIP); updateErr == nil {
 		user.LastLoginAt = &now
 	}
+	_ = s.userRepo.LogActivity(user.ID, "login", clientIP)
 
-	return s.issueTokenPair(user)
+	return s.issueTokenPair(user, clientIP, userAgent)
 }
 
 // Login 处理用户登录
-func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*models.AuthResponse, error) {
+func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP, userAgent string) (*models.AuthResponse, error) {
 	// 验证输入
 	if err := validateLoginRequest(req); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
@@ -231,11 +232,11 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP string) (*mod
 	}
 	_ = s.userRepo.LogLogin(user.ID, clientIP)
 
-	return s.issueTokenPair(user)
+	return s.issueTokenPair(user, clientIP, userAgent)
 }
 
 // Refresh 使用 refresh token 轮换签发新令牌对。
-func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, error) {
+func (s *AuthServiceImpl) Refresh(refreshToken, clientIP, userAgent string) (*models.AuthResponse, error) {
 	refreshToken = strings.TrimSpace(refreshToken)
 	if refreshToken == "" {
 		return nil, apperr.New(apperr.ErrBadRequest, "缺少 refresh_token")
@@ -266,12 +267,10 @@ func (s *AuthServiceImpl) Refresh(refreshToken string) (*models.AuthResponse, er
 		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
 	}
 
-	now := time.Now()
-	if updateErr := s.userRepo.UpdateLastLogin(user.ID, ""); updateErr == nil {
-		user.LastLoginAt = &now
-	}
+	_ = s.userRepo.UpdateLastActive(user.ID, clientIP)
+	_ = s.userRepo.LogActivity(user.ID, "online", clientIP)
 
-	return s.issueTokenPair(user)
+	return s.issueTokenPair(user, clientIP, userAgent)
 }
 
 // Logout 登出当前会话。
@@ -295,6 +294,8 @@ func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
 			}
 		}
 	}
+
+	_ = s.userRepo.LogActivity(userID, "logout", "")
 
 	return nil
 }

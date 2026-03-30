@@ -434,6 +434,17 @@ func (r *UserRepository) UpdateLastLogin(userID, lastLoginIP string) error {
 	return nil
 }
 
+// UpdateLastActive 更新用户活跃时间，不影响登录时间语义字段。
+func (r *UserRepository) UpdateLastActive(userID, ipAddress string) error {
+	query := `UPDATE users SET updated_at = NOW() WHERE id = ?`
+	_, err := r.db.Exec(query, userID)
+	if err != nil {
+		return fmt.Errorf("更新活跃时间失败: %w", err)
+	}
+	_ = ipAddress
+	return nil
+}
+
 // LogLogin 写入用户登录审计日志。
 func (r *UserRepository) LogLogin(userID, ipAddress string) error {
 	query := `
@@ -446,6 +457,41 @@ func (r *UserRepository) LogLogin(userID, ipAddress string) error {
 	}
 
 	return nil
+}
+
+// LogActivity 写入用户活跃审计日志。
+func (r *UserRepository) LogActivity(userID, actionType, ipAddress string) error {
+	query := `
+		INSERT INTO user_activity_logs (id, user_id, action_type, target_id, details, ip_address, created_at)
+		VALUES (?, ?, ?, NULL, NULL, ?, ?)
+	`
+	_, err := r.db.Exec(query, uuid.New().String(), userID, actionType, normalizeIPAddress(ipAddress), time.Now())
+	if err != nil {
+		return fmt.Errorf("写入活跃日志失败: %w", err)
+	}
+
+	return nil
+}
+
+// GetLastActiveAt 返回用户最近一次活跃时间，没有记录时返回 nil。
+func (r *UserRepository) GetLastActiveAt(userID string) (*time.Time, error) {
+	query := `
+		SELECT created_at
+		FROM user_activity_logs
+		WHERE user_id = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`
+	var t time.Time
+	err := r.db.QueryRow(query, userID).Scan(&t)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查询最近活跃时间失败: %w", err)
+	}
+
+	return &t, nil
 }
 
 func normalizeIPAddress(raw string) string {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/cache"
@@ -60,7 +61,7 @@ func hashRefreshToken(token string) string {
 }
 
 // CreateRefreshSession 注册 refresh token 会话到持久化存储。
-func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, rawToken string) error {
+func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, rawToken, clientIP, userAgent string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("session store unavailable")
 	}
@@ -74,14 +75,43 @@ func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, 
 	}
 
 	query := `
-		INSERT INTO refresh_tokens (id, user_id, token_hash, jti, expires_at, revoked, created_at)
-		VALUES (?, ?, ?, ?, ?, 0, NOW())
+		INSERT INTO refresh_tokens (id, user_id, token_hash, jti, expires_at, revoked, ip_address, user_agent, created_at)
+		VALUES (?, ?, ?, ?, ?, 0, ?, ?, NOW())
 	`
-	if _, err := s.db.ExecContext(ctx, query, uuid.New().String(), claims.UserID, hashRefreshToken(rawToken), claims.ID, expiresAt); err != nil {
+	if _, err := s.db.ExecContext(
+		ctx,
+		query,
+		uuid.New().String(),
+		claims.UserID,
+		hashRefreshToken(rawToken),
+		claims.ID,
+		expiresAt,
+		normalizeIP(clientIP),
+		truncateUserAgent(userAgent),
+	); err != nil {
 		return fmt.Errorf("create refresh session failed: %w", err)
 	}
 
 	return nil
+}
+
+func normalizeIP(raw string) string {
+	ip := strings.TrimSpace(raw)
+	if ip == "" {
+		return ""
+	}
+	if len(ip) > 45 {
+		return ip[:45]
+	}
+	return ip
+}
+
+func truncateUserAgent(ua string) string {
+	ua = strings.TrimSpace(ua)
+	if len(ua) > 512 {
+		return ua[:512]
+	}
+	return ua
 }
 
 // IsSessionActive 校验 jti 会话是否仍有效且归属于当前用户。

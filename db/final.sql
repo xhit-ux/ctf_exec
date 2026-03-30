@@ -607,6 +607,8 @@ CREATE TABLE user_activity_logs (
 
 CREATE INDEX idx_ual_action_time ON user_activity_logs(action_type, created_at);
 CREATE INDEX idx_ual_user        ON user_activity_logs(user_id);
+-- 添加覆盖索引，加速 "某用户最近活跃时间" 查询
+CREATE INDEX idx_ual_user_time   ON user_activity_logs(user_id, created_at DESC);
 
 -- ==========================================================
 -- 16. Role Change Logs (Structured Audit)

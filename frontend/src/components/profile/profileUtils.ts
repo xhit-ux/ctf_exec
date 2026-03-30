@@ -94,10 +94,10 @@ export function normalizeLink(url: string): string {
   return url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`
 }
 
-export function isRecentlyActive(lastLoginAt?: string, windowMinutes = 15): boolean {
-  if (!lastLoginAt) return false
+export function isRecentlyActive(lastActiveAt?: string, windowMinutes = 15): boolean {
+  if (!lastActiveAt) return false
 
-  const parsed = new Date(lastLoginAt)
+  const parsed = new Date(lastActiveAt)
   if (Number.isNaN(parsed.getTime())) return false
 
   return Date.now() - parsed.getTime() < windowMinutes * 60 * 1000

@@ -254,12 +254,8 @@ func parseCSV(value string) []string {
 // loadJWTConfig 加载JWT配置
 func loadJWTConfig() (*JWTConfig, error) {
 	secret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
-	legacyAccessHours := getEnvInt("JWT_EXPIRATION_HOURS", 0)
-	defaultAccessMinutes := 15
-	if legacyAccessHours > 0 {
-		defaultAccessMinutes = legacyAccessHours * 60
-	}
-	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", defaultAccessMinutes)
+	
+	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", 15) // 15分钟
 	refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168) // 7天
 
 	accessExpiration := time.Duration(accessMinutes) * time.Minute

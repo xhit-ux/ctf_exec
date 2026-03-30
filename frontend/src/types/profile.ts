@@ -35,6 +35,7 @@ export interface UserProfile {
   created_at: string
   updated_at: string
   last_login_at?: string
+  last_active_at?: string
   preferences?: string
 
   stats: UserStats

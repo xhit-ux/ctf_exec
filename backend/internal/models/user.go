@@ -2,16 +2,6 @@ package models
 
 import "time"
 
-const userOnlineWindow = 20 * time.Minute
-
-func IsUserOnline(lastLoginAt *time.Time, now time.Time) bool {
-	if lastLoginAt == nil {
-		return false
-	}
-
-	return !lastLoginAt.Before(now.Add(-userOnlineWindow))
-}
-
 // User 用户模型
 type User struct {
 	ID           string     `json:"id"`
@@ -109,6 +99,7 @@ type UserProfileResponse struct {
 	IsFollowing  *bool        `json:"is_following"`
 	IsFollowedBy *bool        `json:"is_followed_by"`
 	IsOnline     bool         `json:"is_online"`
+	LastActiveAt *time.Time   `json:"last_active_at"`
 }
 
 type FollowUser struct {

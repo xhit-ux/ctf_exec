@@ -409,7 +409,16 @@ func (h *UserHandler) GetProfileGin(c *gin.Context) {
 
 	viewerID := viewerUserID(c)
 	isOwnProfile := viewerID != "" && viewerID == user.ID
-	isOnline := models.IsUserOnline(user.LastLoginAt, time.Now())
+	lastActiveAt, lastActiveErr := h.userRepo.GetLastActiveAt(user.ID)
+	if lastActiveErr != nil {
+		writeError(c, lastActiveErr, http.StatusInternalServerError)
+		return
+	}
+
+	isOnline := false
+	if lastActiveAt != nil {
+		isOnline = time.Since(*lastActiveAt) < 20*time.Minute
+	}
 
 	followersCount, followingCount, err := h.getFollowCounts(user.ID)
 	if err != nil {
@@ -466,6 +475,7 @@ func (h *UserHandler) GetProfileGin(c *gin.Context) {
 		IsFollowing:  isFollowing,
 		IsFollowedBy: isFollowedBy,
 		IsOnline:     isOnline,
+		LastActiveAt: lastActiveAt,
 	}
 
 	c.JSON(http.StatusOK, resp)
