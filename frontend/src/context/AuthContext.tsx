@@ -17,6 +17,7 @@ export interface User {
   is_active: boolean
   is_verified: boolean
   last_login_at?: string
+  last_active_at?: string
   created_at: string
   updated_at: string
   preferences?: string  // JSON 字符串存储用户偏好

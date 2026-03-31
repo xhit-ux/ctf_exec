@@ -42,7 +42,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
   const avatarUrl = getProfileAvatarUrl(profile)
   const preferences = parseProfilePreferences(profile.preferences)
   const displayName = profile.display_name || profile.username
-  const fallbackLastLoginAt = profile.is_own_profile ? (user?.last_login_at || profile.last_login_at) : profile.last_login_at
+  const fallbackLastLoginAt = profile.is_own_profile ? (user?.last_active_at || profile.last_active_at) : profile.last_active_at
   const isOnline = profile.is_online
   const socialLinks = [
     profile.website_url
