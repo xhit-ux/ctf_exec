@@ -1,10 +1,11 @@
 package repository
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
@@ -24,12 +25,15 @@ func NewTeamRepository(db *sql.DB) *TeamRepository {
 // GenerateInviteCode 生成随机邀请码
 func (r *TeamRepository) GenerateInviteCode() string {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	seed := rand.NewSource(time.Now().UnixNano())
-	random := rand.New(seed)
+	max := big.NewInt(int64(len(charset)))
 
 	code := make([]byte, 8)
 	for i := range code {
-		code[i] = charset[random.Intn(len(charset))]
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			return uuid.NewString()[:8]
+		}
+		code[i] = charset[n.Int64()]
 	}
 	return string(code)
 }

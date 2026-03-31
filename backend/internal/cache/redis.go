@@ -15,14 +15,7 @@ type RedisClient struct {
 }
 
 // InitRedis 初始化Redis连接
-func InitRedis() (*RedisClient, error) {
-	// 加载配置
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载配置失败: %w", err)
-	}
-
-	redisCfg := cfg.Redis
+func InitRedis(redisCfg config.RedisConfig) (*RedisClient, error) {
 
 	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", redisCfg.Host, redisCfg.Port),

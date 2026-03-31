@@ -42,7 +42,7 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 	defer file.Close()
 
 	// 验证图片文件
-	if err := utils.ValidateImageFile(header, utils.MaxAvatarSize); err != nil {
+	if err := utils.ValidateImageFile(file, header, utils.MaxAvatarSize); err != nil {
 		writeError(c, err, 400)
 		return
 	}
@@ -98,7 +98,7 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 	}
 	defer file.Close()
 
-	if err := utils.ValidateImageFile(header, utils.MaxCoverSize); err != nil {
+	if err := utils.ValidateImageFile(file, header, utils.MaxCoverSize); err != nil {
 		writeError(c, err, 400)
 		return
 	}

@@ -1,13 +1,12 @@
 package repository
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -31,8 +30,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	flagDigest := sha256.Sum256([]byte(req.Flag))
-	storedFlag := hex.EncodeToString(flagDigest[:])
+	storedFlag := utils.HashFlag(req.Flag)
 
 	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, storedFlag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
 	if err != nil {

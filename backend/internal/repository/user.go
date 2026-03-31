@@ -426,22 +426,11 @@ func (r *UserRepository) RefreshGlobalUserLeaderboardSnapshot(snapshotAt time.Ti
 
 // UpdateLastLogin 更新最后登陆时间和登录 IP
 func (r *UserRepository) UpdateLastLogin(userID, lastLoginIP string) error {
-	query := `UPDATE users SET last_login_at = NOW(), last_login_ip = ? WHERE id = ?`
+	query := `UPDATE users SET last_login_at = NOW(), last_login_ip = ?, updated_at = NOW() WHERE id = ?`
 	_, err := r.db.Exec(query, normalizeIPAddress(lastLoginIP), userID)
 	if err != nil {
 		return fmt.Errorf("更新登陆时间失败: %w", err)
 	}
-	return nil
-}
-
-// UpdateLastActive 更新用户活跃时间，不影响登录时间语义字段。
-func (r *UserRepository) UpdateLastActive(userID, ipAddress string) error {
-	query := `UPDATE users SET updated_at = NOW() WHERE id = ?`
-	_, err := r.db.Exec(query, userID)
-	if err != nil {
-		return fmt.Errorf("更新活跃时间失败: %w", err)
-	}
-	_ = ipAddress
 	return nil
 }
 
@@ -776,6 +765,15 @@ func boolPtr(v bool) *bool {
 	return &b
 }
 
+func escapeLikePattern(input string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\",
+		"%", "\\%",
+		"_", "\\_",
+	)
+	return replacer.Replace(input)
+}
+
 // GetFollowers 获取某用户粉丝列表。
 func (r *UserRepository) GetFollowers(targetUserID string, viewerUserID string, offset int, limit int, keyword string) ([]*models.FollowUser, int, error) {
 	if offset < 0 {
@@ -786,7 +784,8 @@ func (r *UserRepository) GetFollowers(targetUserID string, viewerUserID string, 
 	}
 
 	trimmed := strings.TrimSpace(keyword)
-	likeKeyword := "%" + trimmed + "%"
+	escapedKeyword := escapeLikePattern(trimmed)
+	likeKeyword := "%" + escapedKeyword + "%"
 
 	var total int
 	countQuery := `
@@ -794,7 +793,7 @@ func (r *UserRepository) GetFollowers(targetUserID string, viewerUserID string, 
 		FROM user_follows uf
 		JOIN users u ON u.id = uf.follower_id AND u.is_active = 1
 		WHERE uf.followee_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 	`
 	if err := r.db.QueryRow(countQuery, targetUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("统计粉丝总数失败: %w", err)
@@ -810,7 +809,7 @@ func (r *UserRepository) GetFollowers(targetUserID string, viewerUserID string, 
 		FROM user_follows uf
 		JOIN users u ON u.id = uf.follower_id AND u.is_active = 1
 		WHERE uf.followee_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 		ORDER BY uf.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -861,7 +860,8 @@ func (r *UserRepository) GetFollowing(targetUserID string, viewerUserID string, 
 	}
 
 	trimmed := strings.TrimSpace(keyword)
-	likeKeyword := "%" + trimmed + "%"
+	escapedKeyword := escapeLikePattern(trimmed)
+	likeKeyword := "%" + escapedKeyword + "%"
 
 	var total int
 	countQuery := `
@@ -869,7 +869,7 @@ func (r *UserRepository) GetFollowing(targetUserID string, viewerUserID string, 
 		FROM user_follows uf
 		JOIN users u ON u.id = uf.followee_id AND u.is_active = 1
 		WHERE uf.follower_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 	`
 	if err := r.db.QueryRow(countQuery, targetUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("统计关注总数失败: %w", err)
@@ -885,7 +885,7 @@ func (r *UserRepository) GetFollowing(targetUserID string, viewerUserID string, 
 		FROM user_follows uf
 		JOIN users u ON u.id = uf.followee_id AND u.is_active = 1
 		WHERE uf.follower_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 		ORDER BY uf.created_at DESC
 		LIMIT ? OFFSET ?
 	`
@@ -936,7 +936,8 @@ func (r *UserRepository) GetMutualFollowing(targetUserID, viewerUserID string, o
 	}
 
 	trimmed := strings.TrimSpace(keyword)
-	likeKeyword := "%" + trimmed + "%"
+	escapedKeyword := escapeLikePattern(trimmed)
+	likeKeyword := "%" + escapedKeyword + "%"
 
 	var total int
 	countQuery := `
@@ -946,7 +947,7 @@ func (r *UserRepository) GetMutualFollowing(targetUserID, viewerUserID string, o
 		JOIN users u ON u.id = f1.followee_id AND u.is_active = 1
 		WHERE f1.follower_id = ?
 			AND f2.follower_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 	`
 	if err := r.db.QueryRow(countQuery, targetUserID, viewerUserID, trimmed, likeKeyword, likeKeyword).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("统计共同关注总数失败: %w", err)
@@ -964,7 +965,7 @@ func (r *UserRepository) GetMutualFollowing(targetUserID, viewerUserID string, o
 		JOIN users u ON u.id = f1.followee_id AND u.is_active = 1
 		WHERE f1.follower_id = ?
 			AND f2.follower_id = ?
-			AND (? = '' OR u.username LIKE ? OR u.display_name LIKE ?)
+			AND (? = '' OR u.username LIKE ? ESCAPE '\\' OR u.display_name LIKE ? ESCAPE '\\')
 		ORDER BY u.username ASC
 		LIMIT ? OFFSET ?
 	`
@@ -1046,31 +1047,33 @@ func (r *UserRepository) ListAdminUsers(offset int, limit int, keyword string, e
 		limit = 10
 	}
 
-	trimmedKeyword := "%" + keyword + "%"
+	trimmed := strings.TrimSpace(keyword)
+	escapedKeyword := escapeLikePattern(trimmed)
+	trimmedKeyword := "%" + escapedKeyword + "%"
 
 	var total int
 	countQuery := `
 		SELECT COUNT(*)
 		FROM users
-		WHERE (? = '' OR username LIKE ? OR display_name LIKE ? OR email LIKE ?)
+		WHERE (? = '' OR username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')
 			AND (? = 0 OR role <> 'root')
 			AND (? = '' OR id <> ?)
 	`
-	if err := r.db.QueryRow(countQuery, keyword, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID).Scan(&total); err != nil {
+	if err := r.db.QueryRow(countQuery, trimmed, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("统计用户总数失败: %w", err)
 	}
 
 	query := `
 		SELECT id, username, COALESCE(display_name, ''), COALESCE(email, ''), role, is_active, is_verified, created_at, updated_at
 		FROM users
-		WHERE (? = '' OR username LIKE ? OR display_name LIKE ? OR email LIKE ?)
+		WHERE (? = '' OR username LIKE ? ESCAPE '\\' OR display_name LIKE ? ESCAPE '\\' OR email LIKE ? ESCAPE '\\')
 			AND (? = 0 OR role <> 'root')
 			AND (? = '' OR id <> ?)
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, keyword, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID, limit, offset)
+	rows, err := r.db.Query(query, trimmed, trimmedKeyword, trimmedKeyword, trimmedKeyword, excludeRoot, excludeUserID, excludeUserID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("查询用户列表失败: %w", err)
 	}

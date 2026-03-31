@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -97,85 +98,112 @@ type BotProtectionConfig struct {
 	TurnstileVerifyURL string
 }
 
+const DefaultJWTSecret = "your-secret-key-change-this-in-production"
+
+var (
+	loadConfigOnce sync.Once
+	loadedConfig   *Config
+	loadConfigErr  error
+)
+
 // LoadConfig 从环境变量加载配置
 func LoadConfig() (*Config, error) {
-	// 尝试从多个位置加载 .env 文件
-	// 1. 当前目录
-	// 2. 项目根目录 (../)
-	// 3. 用户主目录
-	envPaths := []string{".env", "../.env"}
-	for _, path := range envPaths {
-		if err := godotenv.Load(path); err == nil {
-			break
+	loadConfigOnce.Do(func() {
+		// 尝试从多个位置加载 .env 文件
+		// 1. 当前目录
+		// 2. 项目根目录 (../)
+		envPaths := []string{".env", "../.env"}
+		for _, path := range envPaths {
+			if err := godotenv.Load(path); err == nil {
+				break
+			}
 		}
+
+		cfg := &Config{}
+
+		// 加载数据库配置
+		dbConfig, err := loadDatabaseConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载数据库配置失败: %w", err)
+			return
+		}
+		cfg.Database = *dbConfig
+
+		// 加载Redis配置
+		redisConfig, err := loadRedisConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载Redis配置失败: %w", err)
+			return
+		}
+		cfg.Redis = *redisConfig
+
+		// 加载服务器配置
+		serverConfig, err := loadServerConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载服务器配置失败: %w", err)
+			return
+		}
+		cfg.Server = *serverConfig
+
+		// 加载JWT配置
+		jwtConfig, err := loadJWTConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载JWT配置失败: %w", err)
+			return
+		}
+		cfg.JWT = *jwtConfig
+
+		// 加载上传配置
+		uploadConfig, err := loadUploadConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载上传配置失败: %w", err)
+			return
+		}
+		cfg.Upload = *uploadConfig
+
+		// 加载限流配置
+		rateLimitConfig, err := loadRateLimitConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载限流配置失败: %w", err)
+			return
+		}
+		cfg.RateLimit = *rateLimitConfig
+
+		// 加载排行榜配置
+		leaderboardConfig, err := loadLeaderboardConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载排行榜配置失败: %w", err)
+			return
+		}
+		cfg.Leaderboard = *leaderboardConfig
+
+		// 加载邮件配置
+		emailConfig, err := loadEmailConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载邮件配置失败: %w", err)
+			return
+		}
+		cfg.Email = *emailConfig
+
+		// 加载机器人验证配置
+		botConfig, err := loadBotProtectionConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载机器人验证配置失败: %w", err)
+			return
+		}
+		cfg.Bot = *botConfig
+
+		loadedConfig = cfg
+	})
+
+	if loadConfigErr != nil {
+		return nil, loadConfigErr
+	}
+	if loadedConfig == nil {
+		return nil, fmt.Errorf("配置未初始化")
 	}
 
-	config := &Config{}
-
-	// 加载数据库配置
-	dbConfig, err := loadDatabaseConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载数据库配置失败: %w", err)
-	}
-	config.Database = *dbConfig
-
-	// 加载Redis配置
-	redisConfig, err := loadRedisConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载Redis配置失败: %w", err)
-	}
-	config.Redis = *redisConfig
-
-	// 加载服务器配置
-	serverConfig, err := loadServerConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载服务器配置失败: %w", err)
-	}
-	config.Server = *serverConfig
-
-	// 加载JWT配置
-	jwtConfig, err := loadJWTConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载JWT配置失败: %w", err)
-	}
-	config.JWT = *jwtConfig
-
-	// 加载上传配置
-	uploadConfig, err := loadUploadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载上传配置失败: %w", err)
-	}
-	config.Upload = *uploadConfig
-
-	// 加载限流配置
-	rateLimitConfig, err := loadRateLimitConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载限流配置失败: %w", err)
-	}
-	config.RateLimit = *rateLimitConfig
-
-	// 加载排行榜配置
-	leaderboardConfig, err := loadLeaderboardConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载排行榜配置失败: %w", err)
-	}
-	config.Leaderboard = *leaderboardConfig
-
-	// 加载邮件配置
-	emailConfig, err := loadEmailConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载邮件配置失败: %w", err)
-	}
-	config.Email = *emailConfig
-
-	// 加载机器人验证配置
-	botConfig, err := loadBotProtectionConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载机器人验证配置失败: %w", err)
-	}
-	config.Bot = *botConfig
-
-	return config, nil
+	return loadedConfig, nil
 }
 
 // loadDatabaseConfig 加载数据库配置
@@ -253,10 +281,10 @@ func parseCSV(value string) []string {
 
 // loadJWTConfig 加载JWT配置
 func loadJWTConfig() (*JWTConfig, error) {
-	secret := getEnv("JWT_SECRET", "your-secret-key-change-this-in-production")
-	
+	secret := getEnv("JWT_SECRET", DefaultJWTSecret)
+
 	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", 15) // 15分钟
-	refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168) // 7天
+	refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168)  // 7天
 
 	accessExpiration := time.Duration(accessMinutes) * time.Minute
 	refreshExpiration := time.Duration(refreshHours) * time.Hour
@@ -267,6 +295,11 @@ func loadJWTConfig() (*JWTConfig, error) {
 		RefreshExpiration: refreshExpiration,
 		Expiration:        accessExpiration,
 	}, nil
+}
+
+func IsWeakJWTSecret(secret string) bool {
+	trimmed := strings.TrimSpace(secret)
+	return trimmed == "" || trimmed == DefaultJWTSecret
 }
 
 // loadUploadConfig 加载上传配置

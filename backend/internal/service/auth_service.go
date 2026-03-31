@@ -267,7 +267,6 @@ func (s *AuthServiceImpl) Refresh(refreshToken, clientIP, userAgent string) (*mo
 		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
 	}
 
-	_ = s.userRepo.UpdateLastActive(user.ID, clientIP)
 	_ = s.userRepo.LogActivity(user.ID, "online", clientIP)
 
 	return s.issueTokenPair(user, clientIP, userAgent)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,8 +30,15 @@ var AllowedImageExtensions = map[string]bool{
 	".webp": true,
 }
 
+var allowedImageMIMEs = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
 // ValidateImageFile 验证图片文件
-func ValidateImageFile(header *multipart.FileHeader, maxSize int64) error {
+func ValidateImageFile(file multipart.File, header *multipart.FileHeader, maxSize int64) error {
 	// 检查文件大小
 	if header.Size > maxSize {
 		return apperr.New(apperr.ErrBadRequest, fmt.Sprintf("文件大小超过限制，最大允许 %d MB", maxSize/(1024*1024)))
@@ -42,10 +50,26 @@ func ValidateImageFile(header *multipart.FileHeader, maxSize int64) error {
 		return apperr.New(apperr.ErrBadRequest, "不支持的文件格式，仅支持: jpg, jpeg, png, gif, webp")
 	}
 
-	// 检查 MIME 类型
+	// 检查请求头 MIME 类型（弱校验）
 	contentType := header.Header.Get("Content-Type")
 	if !strings.HasPrefix(contentType, "image/") {
 		return apperr.New(apperr.ErrBadRequest, "文件类型必须是图片")
+	}
+
+	// 基于 magic bytes 做强校验，防止伪造 Content-Type 绕过。
+	probe := make([]byte, 512)
+	n, err := io.ReadFull(file, probe)
+	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+		return apperr.New(apperr.ErrBadRequest, "读取文件头失败")
+	}
+
+	if _, err = file.Seek(0, io.SeekStart); err != nil {
+		return apperr.New(apperr.ErrBadRequest, "重置文件指针失败")
+	}
+
+	detectedType := http.DetectContentType(probe[:n])
+	if !allowedImageMIMEs[detectedType] {
+		return apperr.New(apperr.ErrBadRequest, "文件内容不是受支持的图片格式")
 	}
 
 	return nil

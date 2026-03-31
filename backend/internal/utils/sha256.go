@@ -6,11 +6,8 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
-
-	"github.com/ctf_exec/backend/internal/config"
 )
 
 const flagHashV2Prefix = "hmac-sha256$"
@@ -20,19 +17,25 @@ var (
 	flagHashSecretKey  []byte
 )
 
-func getFlagHashSecret() []byte {
+const defaultFlagHashSecret = "ctf_exec_default_flag_secret_change_me"
+
+// InitFlagHashSecret 在启动时注入 flag 哈希密钥。
+// secret 为空时回退为 fallbackSecret；两者都为空时使用内置默认值。
+func InitFlagHashSecret(secret, fallbackSecret string) {
 	flagHashSecretOnce.Do(func() {
-		secret := strings.TrimSpace(os.Getenv("FLAG_HASH_SECRET"))
-		if secret == "" {
-			if cfg, err := config.LoadConfig(); err == nil {
-				secret = strings.TrimSpace(cfg.JWT.Secret)
-			}
+		candidate := strings.TrimSpace(secret)
+		if candidate == "" {
+			candidate = strings.TrimSpace(fallbackSecret)
 		}
-		if secret == "" {
-			secret = "ctf_exec_default_flag_secret_change_me"
+		if candidate == "" {
+			candidate = defaultFlagHashSecret
 		}
-		flagHashSecretKey = []byte(secret)
+		flagHashSecretKey = []byte(candidate)
 	})
+}
+
+func getFlagHashSecret() []byte {
+	InitFlagHashSecret("", "")
 
 	return flagHashSecretKey
 }

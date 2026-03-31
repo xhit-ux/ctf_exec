@@ -40,23 +40,9 @@ func InitJWTConfig(cfg config.JWTConfig) {
 
 func getJWTConfig() (*config.JWTConfig, error) {
 	jwtCfgMu.RLock()
-	if jwtCfg != nil {
-		cfgCopy := *jwtCfg
-		jwtCfgMu.RUnlock()
-		return &cfgCopy, nil
-	}
-	jwtCfgMu.RUnlock()
-
-	loaded, err := config.LoadConfig()
-	if err != nil {
-		return nil, fmt.Errorf("加载配置失败: %w", err)
-	}
-	InitJWTConfig(loaded.JWT)
-
-	jwtCfgMu.RLock()
 	defer jwtCfgMu.RUnlock()
 	if jwtCfg == nil {
-		return nil, fmt.Errorf("jwt 配置未初始化")
+		return nil, fmt.Errorf("jwt 配置未初始化，请在 main 启动阶段调用 InitJWTConfig")
 	}
 	cfgCopy := *jwtCfg
 	return &cfgCopy, nil

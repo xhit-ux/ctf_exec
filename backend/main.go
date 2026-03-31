@@ -24,9 +24,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("加载配置失败: %v", err)
 	}
+	if config.IsWeakJWTSecret(cfg.JWT.Secret) {
+		log.Fatal("SECURITY: JWT_SECRET 为空或仍为默认值，服务拒绝启动")
+	}
 
 	// 初始化数据库
-	sqlDB, err := db.InitDB()
+	sqlDB, err := db.InitDB(cfg.Database)
 	if err != nil {
 		log.Fatalf("数据库初始化失败: %v", err)
 	}
@@ -35,9 +38,10 @@ func main() {
 
 	// 初始化 JWT 运行时配置缓存（启动后全局复用）。
 	utils.InitJWTConfig(cfg.JWT)
+	utils.InitFlagHashSecret("", cfg.JWT.Secret)
 
 	// 初始化Redis
-	redisClient, err := cache.InitRedis()
+	redisClient, err := cache.InitRedis(cfg.Redis)
 	if err != nil {
 		log.Fatalf("Redis初始化失败: %v", err)
 	}
@@ -110,16 +114,28 @@ func main() {
 	// 添加 CORS 中间件（限制为显式允许的前端来源）
 	r.Use(middleware.GinCORSMiddleware(cfg.Server.AllowedOrigins))
 
-	// 健康检查（包含Redis健康检查）
+	// 健康检查（包含 Redis 与 MySQL 健康检查）
 	r.GET("/health", func(c *gin.Context) {
 		redisHealthy := true
 		if err := redisClient.HealthCheck(c.Request.Context()); err != nil {
 			redisHealthy = false
 		}
+		dbHealthy := true
+		if err := sqlDB.PingContext(c.Request.Context()); err != nil {
+			dbHealthy = false
+		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-			"redis":  redisHealthy,
+		httpStatus := http.StatusOK
+		overallStatus := "ok"
+		if !redisHealthy || !dbHealthy {
+			httpStatus = http.StatusServiceUnavailable
+			overallStatus = "degraded"
+		}
+
+		c.JSON(httpStatus, gin.H{
+			"status":   overallStatus,
+			"redis":    redisHealthy,
+			"database": dbHealthy,
 		})
 	})
 
