@@ -38,6 +38,20 @@ export async function readSafeErrorMessage(response: Response, fallback = '操�
   }
 }
 
-export function fromUnknownError(_err: unknown, fallback = '操作失败，请稍后重试'): string {
+export function fromUnknownError(err: unknown, fallback = '操作失败，请稍后重试'): string {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return '请求已取消'
+  }
+
+  if (err instanceof TypeError && err.message?.toLowerCase().includes('fetch')) {
+    return '网络连接异常，请检查网络后重试'
+  }
+
+  if (err instanceof Error) {
+    const msg = (err.message || '').trim()
+    if (!msg) return fallback
+    return msg.slice(0, 120)
+  }
+
   return fallback
 }

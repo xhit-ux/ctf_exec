@@ -27,11 +27,10 @@ func NewContestHandler(repo *repository.ContestRepository, userRepo *repository.
 }
 
 func (h *ContestHandler) ListContestsGin(c *gin.Context) {
-	limit := 20
-	if limitStr := c.Query("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 200 {
-			limit = parsed
-		}
+	limit, err := parseLimitParam(c, "limit", 20, 200)
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
 	}
 
 	contests, err := h.repo.ListContests(limit)
@@ -291,10 +290,13 @@ func (h *ContestHandler) GetContestScoreboardGin(c *gin.Context) {
 	}
 
 	limit := 50
-	if limitStr := strings.TrimSpace(c.Query("limit")); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 200 {
-			limit = parsed
+	if strings.TrimSpace(c.Query("limit")) != "" {
+		parsed, parseErr := parseLimitParam(c, "limit", 50, 200)
+		if parseErr != nil {
+			writeError(c, parseErr, http.StatusBadRequest)
+			return
 		}
+		limit = parsed
 	}
 
 	items, err := h.svc.GetContestScoreboard(contestID, boardType, limit)

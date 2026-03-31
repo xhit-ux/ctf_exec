@@ -35,26 +35,35 @@ func parseUserPreferences(raw string) userPreferences {
 	return pref
 }
 
-func parsePageParams(c *gin.Context, defaultSize, maxSize int) (int, int) {
-	page := 1
-	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
-		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
-			page = parsed
-		}
+func parsePageParams(c *gin.Context, defaultSize, maxSize int) (int, int, error) {
+	pageStr := strings.TrimSpace(c.DefaultQuery("page", "1"))
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page <= 0 {
+		return 0, 0, apperr.New(apperr.ErrBadRequest, "page 必须是大于 0 的整数")
 	}
 
-	pageSize := defaultSize
-	if pageSizeStr := c.DefaultQuery("page_size", strconv.Itoa(defaultSize)); pageSizeStr != "" {
-		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 {
-			if parsed > maxSize {
-				pageSize = maxSize
-			} else {
-				pageSize = parsed
-			}
-		}
+	pageSizeStr := strings.TrimSpace(c.DefaultQuery("page_size", strconv.Itoa(defaultSize)))
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize <= 0 {
+		return 0, 0, apperr.New(apperr.ErrBadRequest, "page_size 必须是大于 0 的整数")
+	}
+	if pageSize > maxSize {
+		return 0, 0, apperr.New(apperr.ErrBadRequest, "page_size 超出允许范围")
 	}
 
-	return page, pageSize
+	return page, pageSize, nil
+}
+
+func parseLimitParam(c *gin.Context, key string, defaultLimit, maxLimit int) (int, error) {
+	value := strings.TrimSpace(c.DefaultQuery(key, strconv.Itoa(defaultLimit)))
+	limit, err := strconv.Atoi(value)
+	if err != nil || limit <= 0 {
+		return 0, apperr.New(apperr.ErrBadRequest, key+" 必须是大于 0 的整数")
+	}
+	if limit > maxLimit {
+		return 0, apperr.New(apperr.ErrBadRequest, key+" 超出允许范围")
+	}
+	return limit, nil
 }
 
 func viewerUserID(c *gin.Context) string {
@@ -78,18 +87,10 @@ func (h *UserHandler) ListAdminUsersGin(c *gin.Context) {
 		return
 	}
 
-	page := 1
-	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
-		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
-			page = parsed
-		}
-	}
-
-	pageSize := 10
-	if pageSizeStr := c.DefaultQuery("page_size", "10"); pageSizeStr != "" {
-		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
+	page, pageSize, parseErr := parsePageParams(c, 10, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
 	}
 
 	keyword := strings.TrimSpace(c.Query("keyword"))
@@ -157,18 +158,10 @@ func (h *UserHandler) PatchUserActiveGin(c *gin.Context) {
 
 // ListRoleChangeLogsGin root 查看角色变更审计日志。
 func (h *UserHandler) ListRoleChangeLogsGin(c *gin.Context) {
-	page := 1
-	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
-		if parsed, err := strconv.Atoi(pageStr); err == nil && parsed > 0 {
-			page = parsed
-		}
-	}
-
-	pageSize := 10
-	if pageSizeStr := c.DefaultQuery("page_size", "10"); pageSizeStr != "" {
-		if parsed, err := strconv.Atoi(pageSizeStr); err == nil && parsed > 0 && parsed <= 100 {
-			pageSize = parsed
-		}
+	page, pageSize, parseErr := parsePageParams(c, 10, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
 	}
 
 	offset := (page - 1) * pageSize
@@ -304,18 +297,10 @@ func (h *UserHandler) getFollowCounts(userID string) (int, int, error) {
 
 // GetLeaderboardGin Gin 版本的获取排行榜
 func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
-	page := 1
-	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 5
-	if sizeStr := c.DefaultQuery("page_size", "5"); sizeStr != "" {
-		if s, err := strconv.Atoi(sizeStr); err == nil && s > 0 && s <= 100 {
-			pageSize = s
-		}
+	page, pageSize, parseErr := parsePageParams(c, 5, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
 	}
 
 	offset := (page - 1) * pageSize
@@ -650,7 +635,11 @@ func (h *UserHandler) GetFollowersGin(c *gin.Context) {
 		return
 	}
 
-	page, pageSize := parsePageParams(c, 20, 50)
+	page, pageSize, parseErr := parsePageParams(c, 20, 50)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
 	offset := (page - 1) * pageSize
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	viewerID := viewerUserID(c)
@@ -689,7 +678,11 @@ func (h *UserHandler) GetFollowingGin(c *gin.Context) {
 		return
 	}
 
-	page, pageSize := parsePageParams(c, 20, 50)
+	page, pageSize, parseErr := parsePageParams(c, 20, 50)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
 	offset := (page - 1) * pageSize
 	keyword := strings.TrimSpace(c.Query("keyword"))
 	viewerID := viewerUserID(c)
@@ -733,7 +726,11 @@ func (h *UserHandler) GetMutualFollowingGin(c *gin.Context) {
 		return
 	}
 
-	page, pageSize := parsePageParams(c, 20, 50)
+	page, pageSize, parseErr := parsePageParams(c, 20, 50)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
 	offset := (page - 1) * pageSize
 	keyword := strings.TrimSpace(c.Query("keyword"))
 

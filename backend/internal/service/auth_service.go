@@ -62,22 +62,22 @@ func NewAuthService(userRepo *repository.UserRepository, redisClient *redis.Clie
 func (s *AuthServiceImpl) issueTokenPair(user *models.User, clientIP, userAgent string) (*models.AuthResponse, error) {
 	accessToken, accessClaims, err := utils.GenerateAccessToken(user.ID, user.Username, user.Role)
 	if err != nil {
-		return nil, fmt.Errorf("生成 access token 失败: %w", err)
+		return nil, wrapServiceError("生成 access token 失败", err)
 	}
 
 	refreshToken, refreshClaims, err := utils.GenerateRefreshToken(user.ID, user.Username, user.Role)
 	if err != nil {
-		return nil, fmt.Errorf("生成 refresh token 失败: %w", err)
+		return nil, wrapServiceError("生成 refresh token 失败", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := s.sessionStore.CreateSession(ctx, accessClaims); err != nil {
-		return nil, fmt.Errorf("创建 access 会话失败: %w", err)
+		return nil, wrapServiceError("创建 access 会话失败", err)
 	}
 	if err := s.sessionStore.CreateRefreshSession(ctx, refreshClaims, refreshToken, clientIP, userAgent); err != nil {
-		return nil, fmt.Errorf("创建 refresh 会话失败: %w", err)
+		return nil, wrapServiceError("创建 refresh 会话失败", err)
 	}
 
 	return &models.AuthResponse{
@@ -104,7 +104,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 
 	exists, err := s.userRepo.UserExistsByEmail(normalizedEmail)
 	if err != nil {
-		return fmt.Errorf("检查邮箱失败: %w", err)
+		return wrapServiceError("检查邮箱失败", err)
 	}
 	if exists {
 		return apperr.New(apperr.ErrConflict, "邮箱已被使用")
@@ -116,7 +116,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 	cooldownKey := cache.GetEmailVerifyCooldownKey(normalizedEmail)
 	ttl, err := s.redisClient.TTL(ctx, cooldownKey).Result()
 	if err != nil && err != redis.Nil {
-		return fmt.Errorf("验证码限流检查失败: %w", err)
+		return wrapServiceError("验证码限流检查失败", err)
 	}
 	if ttl > 0 {
 		return apperr.New(apperr.ErrTooManyRequests, fmt.Sprintf("验证码发送过于频繁，请 %d 秒后重试", int(ttl.Seconds())))
@@ -128,7 +128,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 
 	code, err := generateNumericCode(6)
 	if err != nil {
-		return fmt.Errorf("验证码生成失败: %w", err)
+		return wrapServiceError("验证码生成失败", err)
 	}
 
 	codeKey := cache.GetEmailVerifyCodeKey(normalizedEmail)
@@ -137,10 +137,10 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 	cooldownTTL := time.Duration(s.emailCfg.VerificationSendCooldownSecs) * time.Second
 
 	if err := s.redisClient.Set(ctx, codeKey, codeHash, codeTTL).Err(); err != nil {
-		return fmt.Errorf("验证码存储失败: %w", err)
+		return wrapServiceError("验证码存储失败", err)
 	}
 	if err := s.redisClient.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
-		return fmt.Errorf("验证码冷却存储失败: %w", err)
+		return wrapServiceError("验证码冷却存储失败", err)
 	}
 
 	if err := s.sendVerificationEmail(normalizedEmail, code); err != nil {
@@ -167,7 +167,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 	// 检查用户名是否存在
 	exists, err := s.userRepo.UserExistsByUsername(req.Username)
 	if err != nil {
-		return nil, fmt.Errorf("检查用户名失败: %w", err)
+		return nil, wrapServiceError("检查用户名失败", err)
 	}
 	if exists {
 		return nil, apperr.New(apperr.ErrConflict, "用户名已被使用")
@@ -177,7 +177,7 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 	if normalizedEmail != "" {
 		exists, err := s.userRepo.UserExistsByEmail(normalizedEmail)
 		if err != nil {
-			return nil, fmt.Errorf("检查邮箱失败: %w", err)
+			return nil, wrapServiceError("检查邮箱失败", err)
 		}
 		if exists {
 			return nil, apperr.New(apperr.ErrConflict, "邮箱已被使用")
@@ -189,13 +189,13 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 	// 加密密码
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
-		return nil, fmt.Errorf("密码加密失败: %w", err)
+		return nil, wrapServiceError("密码加密失败", err)
 	}
 
 	// 创建用户
 	user, err := s.userRepo.CreateUser(req, hashedPassword, clientIP)
 	if err != nil {
-		return nil, fmt.Errorf("创建用户失败: %w", err)
+		return nil, wrapServiceError("创建用户失败", err)
 	}
 
 	now := time.Now()
@@ -252,7 +252,7 @@ func (s *AuthServiceImpl) Refresh(refreshToken, clientIP, userAgent string) (*mo
 
 	active, err := s.sessionStore.IsRefreshSessionActive(ctx, refreshToken, refreshClaims.UserID, refreshClaims.ID)
 	if err != nil {
-		return nil, fmt.Errorf("刷新会话校验失败: %w", err)
+		return nil, wrapServiceError("刷新会话校验失败", err)
 	}
 	if !active {
 		return nil, apperr.New(apperr.ErrUnauthorized, "refresh token 已失效")
@@ -264,7 +264,7 @@ func (s *AuthServiceImpl) Refresh(refreshToken, clientIP, userAgent string) (*mo
 	}
 
 	if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, refreshClaims.UserID, refreshClaims.ID); err != nil {
-		return nil, fmt.Errorf("撤销旧 refresh token 失败: %w", err)
+		return nil, wrapServiceError("撤销旧 refresh token 失败", err)
 	}
 
 	_ = s.userRepo.LogActivity(user.ID, "online", clientIP)
@@ -281,7 +281,7 @@ func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.sessionStore.RevokeSession(ctx, userID, accessJTI); err != nil {
-		return fmt.Errorf("登出失败: %w", err)
+		return wrapServiceError("登出失败", err)
 	}
 
 	refreshToken = strings.TrimSpace(refreshToken)
@@ -289,7 +289,7 @@ func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
 		refreshClaims, err := utils.VerifyTokenByType(refreshToken, utils.TokenTypeRefresh)
 		if err == nil && refreshClaims.UserID == userID {
 			if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, userID, refreshClaims.ID); err != nil {
-				return fmt.Errorf("撤销 refresh 会话失败: %w", err)
+				return wrapServiceError("撤销 refresh 会话失败", err)
 			}
 		}
 	}
@@ -308,7 +308,7 @@ func (s *AuthServiceImpl) RevokeUserSessions(userID string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := s.sessionStore.RevokeAllUserSessions(ctx, userID); err != nil {
-		return fmt.Errorf("撤销用户会话失败: %w", err)
+		return wrapServiceError("撤销用户会话失败", err)
 	}
 
 	return nil
@@ -324,7 +324,7 @@ func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 		return apperr.New(apperr.ErrBadRequest, "验证码已过期或不存在，请重新获取")
 	}
 	if err != nil {
-		return fmt.Errorf("验证码校验失败: %w", err)
+		return wrapServiceError("验证码校验失败", err)
 	}
 
 	computedHash := hashEmailCode(email, strings.TrimSpace(rawCode))
@@ -333,7 +333,7 @@ func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 	}
 
 	if err := s.redisClient.Del(ctx, codeKey).Err(); err != nil {
-		return fmt.Errorf("验证码状态更新失败: %w", err)
+		return wrapServiceError("验证码状态更新失败", err)
 	}
 
 	return nil
@@ -345,7 +345,7 @@ func (s *AuthServiceImpl) checkAndIncreaseDailyLimit(ctx context.Context, email 
 
 	count, err := s.redisClient.Incr(ctx, dailyKey).Result()
 	if err != nil {
-		return fmt.Errorf("验证码频率统计失败: %w", err)
+		return wrapServiceError("验证码频率统计失败", err)
 	}
 	if count == 1 {
 		_ = s.redisClient.Expire(ctx, dailyKey, 24*time.Hour).Err()
@@ -388,7 +388,7 @@ func (s *AuthServiceImpl) verifyBotToken(botToken, clientIP string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.botCfg.TurnstileVerifyURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return fmt.Errorf("机器人验证请求构建失败: %w", err)
+		return wrapServiceError("机器人验证请求构建失败", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -423,7 +423,7 @@ func (s *AuthServiceImpl) limitBotVerifyByIP(ctx context.Context, clientIP strin
 	key := cache.GetBotVerifyRateLimitKey(ip)
 	count, err := s.redisClient.Incr(ctx, key).Result()
 	if err != nil {
-		return fmt.Errorf("机器人验证限流失败: %w", err)
+		return wrapServiceError("机器人验证限流失败", err)
 	}
 	if count == 1 {
 		_ = s.redisClient.Expire(ctx, key, 60*time.Second).Err()
@@ -437,7 +437,7 @@ func (s *AuthServiceImpl) limitBotVerifyByIP(ctx context.Context, clientIP strin
 
 func (s *AuthServiceImpl) sendVerificationEmail(toEmail, code string) error {
 	if strings.TrimSpace(s.emailCfg.ResendAPIKey) == "" || strings.TrimSpace(s.emailCfg.ResendFromEmail) == "" {
-		return fmt.Errorf("邮件服务未配置，请联系管理员")
+		return apperr.New(apperr.ErrInternal, "邮件服务未配置，请联系管理员")
 	}
 
 	payload := map[string]any{
@@ -454,24 +454,24 @@ func (s *AuthServiceImpl) sendVerificationEmail(toEmail, code string) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("邮件请求构建失败: %w", err)
+		return wrapServiceError("邮件请求构建失败", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, "https://api.resend.com/emails", strings.NewReader(string(body)))
 	if err != nil {
-		return fmt.Errorf("邮件请求创建失败: %w", err)
+		return wrapServiceError("邮件请求创建失败", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+s.emailCfg.ResendAPIKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("邮件发送失败")
+		return apperr.New(apperr.ErrInternal, "邮件发送失败")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("邮件发送失败，请稍后重试")
+		return apperr.New(apperr.ErrInternal, "邮件发送失败，请稍后重试")
 	}
 
 	return nil

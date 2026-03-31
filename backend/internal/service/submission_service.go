@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
@@ -57,7 +58,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	// 检查提交频率限制
 	allowed, remaining, err := s.CheckRateLimit(userID)
 	if err != nil {
-		return nil, fmt.Errorf("检查提交限制失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "检查提交限制失败", err)
 	}
 	if !allowed {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining))
@@ -69,7 +70,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		if errors.Is(err, apperr.ErrNotFound) {
 			return nil, apperr.New(apperr.ErrBadRequest, "题目不存在")
 		}
-		return nil, fmt.Errorf("查询题目失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "查询题目失败", err)
 	}
 
 	if err := validateProblemSubmissionPolicy(problemMeta, contestID); err != nil {
@@ -82,7 +83,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		if errors.Is(err, apperr.ErrNotFound) {
 			return nil, apperr.New(apperr.ErrNotFound, "获取题目 Flag 失败")
 		}
-		return nil, fmt.Errorf("获取题目 Flag Hash 失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "获取题目 Flag Hash 失败", err)
 	}
 
 	// 验证 flag (SHA256 哈希比较)
@@ -104,7 +105,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 
 	alreadySolved, err := s.submissionRepo.HasCorrectSubmissionByUserProblem(userID, problemID)
 	if err != nil {
-		return nil, fmt.Errorf("查询历史解题记录失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "查询历史解题记录失败", err)
 	}
 
 	// 非赛事场景：检查是否已经正确提交过该题目
@@ -128,7 +129,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	// 保存提交记录
 	submission, err := s.submissionRepo.CreateSubmission(userID, req)
 	if err != nil {
-		return nil, fmt.Errorf("保存提交记录失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "保存提交记录失败", err)
 	}
 
 	// 正确提交后仅更新对应维度的分数。
@@ -136,14 +137,14 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		if !alreadySolved && s.userRepo != nil && (contestID == nil || *contestID == "") {
 			err = s.userRepo.IncreaseUserScoreAndSolvedCount(userID, problemMeta.Points)
 			if err != nil {
-				fmt.Printf("更新全站用户积分失败: %v\n", err)
+				log.Printf("[submission] 更新全站用户积分失败 user_id=%s points=%d err=%v", userID, problemMeta.Points, err)
 			}
 		}
 
 		if contestID != nil && *contestID != "" {
 			err = s.contestSvc.ApplyContestSolve(*contestID, contestScope, contestScore, time.Now())
 			if err != nil {
-				fmt.Printf("更新赛事榜失败: %v\n", err)
+				log.Printf("[submission] 更新赛事榜失败 user_id=%s contest_id=%s problem_id=%d err=%v", userID, *contestID, problemID, err)
 			}
 		}
 	}
@@ -151,7 +152,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	// 记录提交频率
 	err = s.recordSubmission(userID)
 	if err != nil {
-		fmt.Printf("记录提交频率失败: %v\n", err)
+		log.Printf("[submission] 记录提交频率失败 user_id=%s err=%v", userID, err)
 	}
 
 	// 设置提交标题
@@ -210,7 +211,7 @@ func validateProblemSubmissionPolicy(problem *models.ProblemSubmissionMeta, cont
 func (s *SubmissionServiceImpl) GetMySubmissions(userID string) ([]*models.Submission, error) {
 	submissions, err := s.submissionRepo.GetSubmissionsByUserID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("获取提交记录失败: %w", err)
+		return nil, apperr.Wrap(apperr.ErrInternal, "获取提交记录失败", err)
 	}
 
 	return submissions, nil
@@ -228,13 +229,13 @@ func (s *SubmissionServiceImpl) CheckRateLimit(userID string) (bool, int64, erro
 	// 删除窗口期之前的记录
 	err := s.redisClient.ZRemRangeByScore(ctx, key, "0", fmt.Sprintf("%d", windowStart)).Err()
 	if err != nil {
-		return false, 0, fmt.Errorf("清理旧记录失败: %w", err)
+		return false, 0, apperr.Wrap(apperr.ErrInternal, "清理旧记录失败", err)
 	}
 
 	// 获取窗口期内的提交数量
 	count, err := s.redisClient.ZCount(ctx, key, fmt.Sprintf("%d", windowStart), "+inf").Result()
 	if err != nil {
-		return false, 0, fmt.Errorf("获取提交数量失败: %w", err)
+		return false, 0, apperr.Wrap(apperr.ErrInternal, "获取提交数量失败", err)
 	}
 
 	// 检查是否超过限制
@@ -267,14 +268,14 @@ func (s *SubmissionServiceImpl) recordSubmission(userID string) error {
 		Member: now,
 	}).Err()
 	if err != nil {
-		return fmt.Errorf("记录提交失败: %w", err)
+		return apperr.Wrap(apperr.ErrInternal, "记录提交失败", err)
 	}
 
 	// 设置键的过期时间
 	expireTime := time.Duration(s.windowSeconds+60) * time.Second // 额外60秒缓冲
 	err = s.redisClient.Expire(ctx, key, expireTime).Err()
 	if err != nil {
-		return fmt.Errorf("设置过期时间失败: %w", err)
+		return apperr.Wrap(apperr.ErrInternal, "设置过期时间失败", err)
 	}
 
 	return nil

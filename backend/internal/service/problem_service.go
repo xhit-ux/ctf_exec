@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 )
@@ -32,13 +30,13 @@ func (s *ProblemServiceImpl) GetProblems(userID string) ([]*models.Problem, erro
 		// 未登录用户，只获取基础题目信息
 		problems, err = s.problemRepo.GetProblems()
 		if err != nil {
-			return nil, fmt.Errorf("获取题目列表失败: %w", err)
+			return nil, wrapServiceError("获取题目列表失败", err)
 		}
 	} else {
 		// 已登录用户，获取包含解题状态的题目列表
 		problems, err = s.problemRepo.GetProblemsWithStatus(userID)
 		if err != nil {
-			return nil, fmt.Errorf("获取题目列表失败: %w", err)
+			return nil, wrapServiceError("获取题目列表失败", err)
 		}
 	}
 
@@ -50,7 +48,7 @@ func (s *ProblemServiceImpl) GetProblemDetail(problemID int, userID string) (*mo
 	// 获取题目基础信息
 	problem, err := s.problemRepo.GetProblemByID(problemID)
 	if err != nil {
-		return nil, fmt.Errorf("获取题目详情失败: %w", err)
+		return nil, wrapServiceError("获取题目详情失败", err)
 	}
 
 	// 如果用户已登录，检查是否已解决

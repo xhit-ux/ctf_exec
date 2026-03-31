@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/ctf_exec/backend/internal/apierror"
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -29,7 +31,7 @@ func GetClaims(c *gin.Context) (*utils.Claims, error) {
 func MustGetClaims(c *gin.Context) (*utils.Claims, bool) {
 	claims, err := GetClaims(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的用户信息"})
+		apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "无效的用户信息"), http.StatusUnauthorized)
 		c.Abort()
 		return nil, false
 	}

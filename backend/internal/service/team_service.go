@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/models"
@@ -44,7 +42,7 @@ func (s *TeamServiceImpl) CreateTeam(userID string, name string) (*models.Team, 
 
 	team, err := s.teamRepo.CreateTeam(userID, name)
 	if err != nil {
-		return nil, fmt.Errorf("创建队伍失败: %w", err)
+		return nil, wrapServiceError("创建队伍失败", err)
 	}
 
 	return team, nil
@@ -58,7 +56,7 @@ func (s *TeamServiceImpl) JoinTeam(userID string, inviteCode string) error {
 
 	err := s.teamRepo.JoinTeam(userID, inviteCode)
 	if err != nil {
-		return fmt.Errorf("加入队伍失败: %w", err)
+		return wrapServiceError("加入队伍失败", err)
 	}
 
 	return nil
@@ -68,13 +66,13 @@ func (s *TeamServiceImpl) JoinTeam(userID string, inviteCode string) error {
 func (s *TeamServiceImpl) GetMyTeam(userID string) (*models.Team, error) {
 	team, err := s.teamRepo.GetTeamByUserID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("获取队伍信息失败: %w", err)
+		return nil, wrapServiceError("获取队伍信息失败", err)
 	}
 
 	// 获取成员列表
 	members, err := s.teamRepo.GetTeamMembers(team.ID)
 	if err != nil {
-		return nil, fmt.Errorf("获取成员列表失败: %w", err)
+		return nil, wrapServiceError("获取成员列表失败", err)
 	}
 
 	team.Members = members
@@ -85,7 +83,7 @@ func (s *TeamServiceImpl) GetMyTeam(userID string) (*models.Team, error) {
 func (s *TeamServiceImpl) LeaveTeam(userID string) error {
 	err := s.teamRepo.LeaveTeam(userID)
 	if err != nil {
-		return fmt.Errorf("退出队伍失败: %w", err)
+		return wrapServiceError("退出队伍失败", err)
 	}
 
 	return nil
@@ -95,7 +93,7 @@ func (s *TeamServiceImpl) LeaveTeam(userID string) error {
 func (s *TeamServiceImpl) DissolveTeam(userID string) error {
 	err := s.teamRepo.DissolveTeam(userID)
 	if err != nil {
-		return fmt.Errorf("解散队伍失败: %w", err)
+		return wrapServiceError("解散队伍失败", err)
 	}
 
 	return nil
@@ -112,7 +110,7 @@ func (s *TeamServiceImpl) GetTeamLeaderboard(limit int) ([]*models.TeamLeaderboa
 
 	ranking, err := s.teamRepo.GetTeamRanking(limit)
 	if err != nil {
-		return nil, fmt.Errorf("获取团队排行榜失败: %w", err)
+		return nil, wrapServiceError("获取团队排行榜失败", err)
 	}
 
 	return ranking, nil
@@ -126,13 +124,13 @@ func (s *TeamServiceImpl) GetTeamPublic(teamID string) (*models.Team, error) {
 
 	team, err := s.teamRepo.GetTeamByID(teamID)
 	if err != nil {
-		return nil, fmt.Errorf("获取队伍信息失败: %w", err)
+		return nil, wrapServiceError("获取队伍信息失败", err)
 	}
 
 	// 获取成员列表（仅公开信息）
 	members, err := s.teamRepo.GetTeamMembers(teamID)
 	if err != nil {
-		return nil, fmt.Errorf("获取成员列表失败: %w", err)
+		return nil, wrapServiceError("获取成员列表失败", err)
 	}
 
 	// 隐藏敏感信息
@@ -153,7 +151,7 @@ func (s *TeamServiceImpl) UpdateTeam(userID string, name string) error {
 	// 验证权限：必须是队长
 	team, err := s.teamRepo.GetTeamByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("获取队伍信息失败: %w", err)
+		return wrapServiceError("获取队伍信息失败", err)
 	}
 
 	// 检查是否是队长
@@ -171,7 +169,7 @@ func (s *TeamServiceImpl) UpdateTeam(userID string, name string) error {
 
 	err = s.teamRepo.UpdateTeam(team.ID, name)
 	if err != nil {
-		return fmt.Errorf("更新队伍信息失败: %w", err)
+		return wrapServiceError("更新队伍信息失败", err)
 	}
 
 	return nil
@@ -191,7 +189,7 @@ func (s *TeamServiceImpl) KickMember(userID string, targetUserID string) error {
 	// 验证权限：必须是队长
 	team, err := s.teamRepo.GetTeamByUserID(userID)
 	if err != nil {
-		return fmt.Errorf("获取队伍信息失败: %w", err)
+		return wrapServiceError("获取队伍信息失败", err)
 	}
 
 	if !authz.IsTeamLeader(userID, team.LeaderID) {
@@ -200,7 +198,7 @@ func (s *TeamServiceImpl) KickMember(userID string, targetUserID string) error {
 
 	err = s.teamRepo.KickMember(team.ID, targetUserID)
 	if err != nil {
-		return fmt.Errorf("踢出成员失败: %w", err)
+		return wrapServiceError("踢出成员失败", err)
 	}
 
 	return nil

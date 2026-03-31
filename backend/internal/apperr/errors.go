@@ -9,6 +9,7 @@ var (
 	ErrNotFound        = errors.New("not_found")
 	ErrConflict        = errors.New("conflict")
 	ErrTooManyRequests = errors.New("too_many_requests")
+	ErrInternal        = errors.New("internal")
 )
 
 // AppError keeps machine-readable kind and user-facing message separated.

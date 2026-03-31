@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apierror"
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -71,33 +73,33 @@ func GinAuthMiddlewareWithRepo(userRepo *repository.UserRepository, sessionStore
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing authorization header"})
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "缺少认证信息"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
 
 		tokenString, err := extractBearerToken(authHeader)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "认证信息格式错误"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
 
 		claims, err := utils.VerifyTokenByType(tokenString, utils.TokenTypeAccess)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "登录凭证无效"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
 
 		if err := ensureClaimsUserValid(claims, userRepo); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "账户不存在、已被封禁或权限已变更，请重新登录"})
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "账户不存在、已被封禁或权限已变更，请重新登录"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
 
 		if err := ensureClaimsSessionValid(claims, sessionStore); err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "登录已失效，请重新登录"})
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "登录已失效，请重新登录"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}

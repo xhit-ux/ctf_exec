@@ -2,7 +2,6 @@ package handler
 
 import (
 	"net/http"
-	"strconv"
 
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
@@ -147,18 +146,10 @@ func (h *TeamHandler) DissolveTeamGin(c *gin.Context) {
 
 // GetTeamLeaderboardGin Gin 版本的获取团队排行榜
 func (h *TeamHandler) GetTeamLeaderboardGin(c *gin.Context) {
-	page := 1
-	if pageStr := c.DefaultQuery("page", "1"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 5
-	if sizeStr := c.DefaultQuery("page_size", "5"); sizeStr != "" {
-		if s, err := strconv.Atoi(sizeStr); err == nil && s > 0 && s <= 100 {
-			pageSize = s
-		}
+	page, pageSize, parseErr := parsePageParams(c, 5, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
 	}
 
 	offset := (page - 1) * pageSize

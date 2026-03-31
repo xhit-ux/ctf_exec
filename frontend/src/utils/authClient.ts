@@ -140,23 +140,33 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
     })
   }
 
-  const executeWithNetworkFallback = async (accessToken?: string) => {
+  const executeWithNetworkFallback = async (accessToken?: string, suppressGlobalError = false) => {
     try {
       return await execute(accessToken)
-    } catch (err) {
-      if (!options?.disableGlobalError) {
-        publishGlobalHttpError({
-          status: 0,
-          message: '网络连接异常，请检查网络后重试',
-          url,
-          method,
-        })
+    } catch {
+      try {
+        return await execute(accessToken)
+      } catch (err) {
+        if (!options?.disableGlobalError && !suppressGlobalError) {
+          publishGlobalHttpError({
+            status: 0,
+            message: '网络连接异常，请检查网络后重试',
+            url,
+            method,
+          })
+        }
+        throw err
       }
-      throw err
     }
   }
 
-  const response = await executeWithNetworkFallback()
+  let response: Response
+  try {
+    response = await executeWithNetworkFallback()
+  } catch (err) {
+    throw err
+  }
+
   if (response.status !== 401) {
     if (!response.ok && !options?.disableGlobalError) {
       const message = await readSafeErrorMessage(response.clone())
@@ -181,7 +191,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
     return response
   }
 
-  const retriedResponse = await executeWithNetworkFallback(newAccessToken)
+  const retriedResponse = await executeWithNetworkFallback(newAccessToken, true)
   if (!retriedResponse.ok && retriedResponse.status !== 401 && !options?.disableGlobalError) {
     const message = await readSafeErrorMessage(retriedResponse.clone())
     publishGlobalHttpError({

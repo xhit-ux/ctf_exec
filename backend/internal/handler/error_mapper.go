@@ -21,6 +21,8 @@ func statusCodeByError(err error, defaultStatus int) int {
 		return http.StatusConflict
 	case errors.Is(err, apperr.ErrTooManyRequests):
 		return http.StatusTooManyRequests
+	case errors.Is(err, apperr.ErrInternal):
+		return http.StatusInternalServerError
 	default:
 		return defaultStatus
 	}

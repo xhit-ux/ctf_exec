@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/apierror"
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -23,7 +25,7 @@ func RequireContestAdmin(userRepo *repository.UserRepository, contestAdminRepo r
 			contestID = strings.TrimSpace(c.Param("contest_id"))
 		}
 		if contestID == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少赛事ID"})
+			apierror.Write(c, apperr.New(apperr.ErrBadRequest, "缺少赛事ID"), http.StatusBadRequest)
 			c.Abort()
 			return
 		}
@@ -32,7 +34,7 @@ func RequireContestAdmin(userRepo *repository.UserRepository, contestAdminRepo r
 		if userRepo != nil {
 			dbUser, err := userRepo.GetUserByID(claims.UserID)
 			if err != nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "用户状态异常，请重新登录"})
+				apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "用户状态异常，请重新登录"), http.StatusUnauthorized)
 				c.Abort()
 				return
 			}
@@ -41,12 +43,12 @@ func RequireContestAdmin(userRepo *repository.UserRepository, contestAdminRepo r
 
 		ok, err := authz.CanManageContest(user, contestID, contestAdminRepo)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "权限校验失败"})
+			apierror.Write(c, apperr.Wrap(apperr.ErrInternal, "权限校验失败", err), http.StatusInternalServerError)
 			c.Abort()
 			return
 		}
 		if !ok {
-			c.JSON(http.StatusForbidden, gin.H{"error": "无权操作该赛事"})
+			apierror.Write(c, apperr.New(apperr.ErrForbidden, "无权操作该赛事"), http.StatusForbidden)
 			c.Abort()
 			return
 		}

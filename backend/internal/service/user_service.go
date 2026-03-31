@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -37,7 +35,7 @@ func (s *UserServiceImpl) GetLeaderboard(limit int) ([]*models.User, error) {
 
 	users, err := s.userRepo.GetLeaderboard(limit)
 	if err != nil {
-		return nil, fmt.Errorf("获取排行榜失败: %w", err)
+		return nil, wrapServiceError("获取排行榜失败", err)
 	}
 
 	return users, nil
@@ -47,7 +45,7 @@ func (s *UserServiceImpl) GetLeaderboard(limit int) ([]*models.User, error) {
 func (s *UserServiceImpl) GetCurrentUser(userID string) (*models.User, error) {
 	user, err := s.userRepo.GetUserByID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("获取用户信息失败: %w", err)
+		return nil, wrapServiceError("获取用户信息失败", err)
 	}
 
 	return user, nil
@@ -59,13 +57,13 @@ func (s *UserServiceImpl) UpdateProfile(userID string, req *models.UpdateProfile
 	if req.Email != "" {
 		exists, err := s.userRepo.UserExistsByEmail(req.Email)
 		if err != nil {
-			return fmt.Errorf("检查邮箱失败: %w", err)
+			return wrapServiceError("检查邮箱失败", err)
 		}
 		if exists {
 			// 需要检查是否是当前用户自己的邮箱
 			user, err := s.userRepo.GetUserByID(userID)
 			if err != nil {
-				return fmt.Errorf("获取用户信息失败: %w", err)
+				return wrapServiceError("获取用户信息失败", err)
 			}
 			if user.Email != req.Email {
 				return apperr.New(apperr.ErrConflict, "邮箱已被其他用户使用")
@@ -76,7 +74,7 @@ func (s *UserServiceImpl) UpdateProfile(userID string, req *models.UpdateProfile
 	// 更新用户资料
 	err := s.userRepo.UpdateProfile(userID, req)
 	if err != nil {
-		return fmt.Errorf("更新用户资料失败: %w", err)
+		return wrapServiceError("更新用户资料失败", err)
 	}
 
 	return nil
@@ -86,7 +84,7 @@ func (s *UserServiceImpl) UpdateProfile(userID string, req *models.UpdateProfile
 func (s *UserServiceImpl) GetPublicProfile(userID string) (*models.User, error) {
 	user, err := s.userRepo.GetUserByID(userID)
 	if err != nil {
-		return nil, fmt.Errorf("获取用户信息失败: %w", err)
+		return nil, wrapServiceError("获取用户信息失败", err)
 	}
 
 	// 隐藏敏感信息

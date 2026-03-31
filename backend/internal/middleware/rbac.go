@@ -3,6 +3,8 @@ package middleware
 import (
 	"net/http"
 
+	"github.com/ctf_exec/backend/internal/apierror"
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -28,7 +30,7 @@ func RequireRoles(roles ...string) gin.HandlerFunc {
 		effectiveRole := models.NormalizeRole(claims.Role)
 
 		if !authz.CanAccessRole(effectiveRole, allowed...) {
-			c.JSON(http.StatusForbidden, gin.H{"error": "权限不足"})
+			apierror.Write(c, apperr.New(apperr.ErrForbidden, "权限不足"), http.StatusForbidden)
 			c.Abort()
 			return
 		}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -77,11 +76,11 @@ func (s *LeaderboardServiceImpl) RefreshGlobalLeaderboardSnapshot() error {
 	now := time.Now()
 
 	if err := s.userRepo.RefreshGlobalUserLeaderboardSnapshot(now); err != nil {
-		return fmt.Errorf("刷新用户榜单快照失败: %w", err)
+		return wrapServiceError("刷新用户榜单快照失败", err)
 	}
 
 	if err := s.teamRepo.RefreshGlobalTeamLeaderboardSnapshot(now); err != nil {
-		return fmt.Errorf("刷新团队榜单快照失败: %w", err)
+		return wrapServiceError("刷新团队榜单快照失败", err)
 	}
 
 	return nil
@@ -98,7 +97,7 @@ func (s *LeaderboardServiceImpl) UpdateContestUserScore(contestID, userID string
 		Member: userID,
 	}).Err()
 	if err != nil {
-		return fmt.Errorf("更新赛事用户排行榜失败: %w", err)
+		return wrapServiceError("更新赛事用户排行榜失败", err)
 	}
 
 	return nil
@@ -111,7 +110,7 @@ func (s *LeaderboardServiceImpl) GetContestUserTopN(ctx context.Context, contest
 	// 从Redis获取前N名
 	result, err := s.redisClient.ZRevRangeWithScores(ctx, key, 0, n-1).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取赛事用户排行榜前N名失败: %w", err)
+		return nil, wrapServiceError("获取赛事用户排行榜前N名失败", err)
 	}
 
 	return result, nil
@@ -128,7 +127,7 @@ func (s *LeaderboardServiceImpl) GetContestUserRank(ctx context.Context, contest
 			// 用户不在排行榜中，返回-1表示未上榜
 			return -1, nil
 		}
-		return -1, fmt.Errorf("获取赛事用户排名失败: %w", err)
+		return -1, wrapServiceError("获取赛事用户排名失败", err)
 	}
 
 	return rank, nil
@@ -145,7 +144,7 @@ func (s *LeaderboardServiceImpl) UpdateContestTeamScore(contestID, teamID string
 		Member: teamID,
 	}).Err()
 	if err != nil {
-		return fmt.Errorf("更新赛事团队排行榜失败: %w", err)
+		return wrapServiceError("更新赛事团队排行榜失败", err)
 	}
 
 	return nil
@@ -158,7 +157,7 @@ func (s *LeaderboardServiceImpl) GetContestTeamTopN(ctx context.Context, contest
 	// 从Redis获取前N名
 	result, err := s.redisClient.ZRevRangeWithScores(ctx, key, 0, n-1).Result()
 	if err != nil {
-		return nil, fmt.Errorf("获取赛事团队排行榜前N名失败: %w", err)
+		return nil, wrapServiceError("获取赛事团队排行榜前N名失败", err)
 	}
 
 	return result, nil
@@ -175,7 +174,7 @@ func (s *LeaderboardServiceImpl) GetContestTeamRank(ctx context.Context, contest
 			// 团队不在排行榜中，返回-1表示未上榜
 			return -1, nil
 		}
-		return -1, fmt.Errorf("获取赛事团队排名失败: %w", err)
+		return -1, wrapServiceError("获取赛事团队排名失败", err)
 	}
 
 	return rank, nil
