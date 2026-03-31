@@ -55,13 +55,17 @@ func NewSubmissionService(
 
 // SubmitFlag 提交 flag
 func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string, contestID *string, clientIP string) (*models.Submission, error) {
+	if err := validateSubmissionInput(problemID, flag); err != nil {
+		return nil, err
+	}
+
 	// 检查提交频率限制
 	allowed, remaining, err := s.CheckRateLimit(userID)
 	if err != nil {
 		return nil, apperr.Wrap(apperr.ErrInternal, "检查提交限制失败", err)
 	}
 	if !allowed {
-		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining))
+		return nil, apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, fmt.Sprintf("提交过于频繁，请稍后再试 (剩余时间: %d秒)", remaining), int(remaining))
 	}
 
 	// 获取题目元数据并校验提交可见性策略。
@@ -159,6 +163,16 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	submission.ProblemTitle = problemMeta.Title
 
 	return submission, nil
+}
+
+func validateSubmissionInput(problemID int, flag string) error {
+	if problemID <= 0 {
+		return apperr.New(apperr.ErrBadRequest, "无效的题目 ID")
+	}
+	if flag == "" {
+		return apperr.New(apperr.ErrBadRequest, "Flag 不能为空")
+	}
+	return nil
 }
 
 func validateProblemSubmissionPolicy(problem *models.ProblemSubmissionMeta, contestID *string) error {

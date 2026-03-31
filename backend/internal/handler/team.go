@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -32,11 +34,6 @@ func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
 	var req models.CreateTeamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeBadRequest(c, "请求格式错误")
-		return
-	}
-
-	if req.Name == "" {
-		writeBadRequest(c, "队伍名称不能为空")
 		return
 	}
 
@@ -70,11 +67,6 @@ func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
 		return
 	}
 
-	if req.InviteCode == "" {
-		writeBadRequest(c, "邀请码不能为空")
-		return
-	}
-
 	err := h.teamService.JoinTeam(claims.UserID, req.InviteCode)
 	if err != nil {
 		writeError(c, err, http.StatusBadRequest)
@@ -100,8 +92,7 @@ func (h *TeamHandler) GetMyTeamGin(c *gin.Context) {
 
 	team, err := h.teamService.GetMyTeam(claims.UserID)
 	if err != nil {
-		statusCode := statusCodeByError(err, http.StatusNotFound)
-		if statusCode == http.StatusNotFound {
+		if errors.Is(err, apperr.ErrNotFound) {
 			writeNotFound(c, "未加入任何队伍")
 			return
 		}
@@ -234,11 +225,6 @@ func (h *TeamHandler) UpdateTeamGin(c *gin.Context) {
 	var req models.UpdateTeamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeBadRequest(c, "请求格式错误")
-		return
-	}
-
-	if req.Name == "" {
-		writeBadRequest(c, "队伍名称不能为空")
 		return
 	}
 

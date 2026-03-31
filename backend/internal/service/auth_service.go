@@ -119,7 +119,7 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 		return wrapServiceError("验证码限流检查失败", err)
 	}
 	if ttl > 0 {
-		return apperr.New(apperr.ErrTooManyRequests, fmt.Sprintf("验证码发送过于频繁，请 %d 秒后重试", int(ttl.Seconds())))
+		return apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, fmt.Sprintf("验证码发送过于频繁，请 %d 秒后重试", int(ttl.Seconds())), int(ttl.Seconds()))
 	}
 
 	if err := s.checkAndIncreaseDailyLimit(ctx, normalizedEmail); err != nil {
@@ -352,7 +352,7 @@ func (s *AuthServiceImpl) checkAndIncreaseDailyLimit(ctx context.Context, email 
 	}
 
 	if int(count) > s.emailCfg.VerificationDailyLimit {
-		return apperr.New(apperr.ErrTooManyRequests, "验证码发送已达当日上限，请明日再试")
+		return apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, "验证码发送已达当日上限，请明日再试", 86400)
 	}
 
 	return nil
@@ -429,7 +429,7 @@ func (s *AuthServiceImpl) limitBotVerifyByIP(ctx context.Context, clientIP strin
 		_ = s.redisClient.Expire(ctx, key, 60*time.Second).Err()
 	}
 	if count > 30 {
-		return apperr.New(apperr.ErrTooManyRequests, "请求过于频繁，请稍后再试")
+		return apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, "请求过于频繁，请稍后再试", 60)
 	}
 
 	return nil

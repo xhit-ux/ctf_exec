@@ -2,6 +2,7 @@ package apierror
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -96,6 +97,14 @@ func logError(c *gin.Context, statusCode int, err error) {
 
 func Write(c *gin.Context, err error, defaultStatus int) {
 	statusCode := statusCodeByError(err, defaultStatus)
+	if statusCode == http.StatusTooManyRequests {
+		retryAfter := 60
+		var appErr *apperr.AppError
+		if errors.As(err, &appErr) && appErr != nil && appErr.RetryAfterSeconds > 0 {
+			retryAfter = appErr.RetryAfterSeconds
+		}
+		c.Header("Retry-After", fmt.Sprintf("%d", retryAfter))
+	}
 	logError(c, statusCode, err)
 	c.JSON(statusCode, gin.H{"error": publicErrorMessage(err, statusCode)})
 }

@@ -14,9 +14,10 @@ var (
 
 // AppError keeps machine-readable kind and user-facing message separated.
 type AppError struct {
-	Kind  error
-	Msg   string
-	Cause error
+	Kind              error
+	Msg               string
+	Cause             error
+	RetryAfterSeconds int
 }
 
 func (e *AppError) Error() string {
@@ -37,4 +38,18 @@ func New(kind error, msg string) error {
 
 func Wrap(kind error, msg string, cause error) error {
 	return &AppError{Kind: kind, Msg: msg, Cause: cause}
+}
+
+func NewWithRetryAfter(kind error, msg string, retryAfterSeconds int) error {
+	if retryAfterSeconds < 0 {
+		retryAfterSeconds = 0
+	}
+	return &AppError{Kind: kind, Msg: msg, RetryAfterSeconds: retryAfterSeconds}
+}
+
+func WrapWithRetryAfter(kind error, msg string, cause error, retryAfterSeconds int) error {
+	if retryAfterSeconds < 0 {
+		retryAfterSeconds = 0
+	}
+	return &AppError{Kind: kind, Msg: msg, Cause: cause, RetryAfterSeconds: retryAfterSeconds}
 }

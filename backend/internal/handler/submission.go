@@ -41,16 +41,6 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 		return
 	}
 
-	if req.Flag == "" {
-		writeBadRequest(c, "Flag 不能为空")
-		return
-	}
-
-	if req.ProblemID <= 0 {
-		writeBadRequest(c, "无效的题目 ID")
-		return
-	}
-
 	// 使用 Service 层提交（包含限流和排行榜更新）
 	clientIP := realClientIP(c)
 	submission, err := h.submissionService.SubmitFlag(claims.UserID, req.ProblemID, req.Flag, req.ContestID, clientIP)

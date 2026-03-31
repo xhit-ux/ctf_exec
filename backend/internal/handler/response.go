@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/ctf_exec/backend/internal/apierror"
@@ -39,5 +38,5 @@ func writeTooManyRequests(c *gin.Context, msg string) {
 }
 
 func writeInternal(c *gin.Context, msg string) {
-	writeError(c, errors.New(msg), http.StatusInternalServerError)
+	writeError(c, apperr.New(apperr.ErrInternal, msg), http.StatusInternalServerError)
 }

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
@@ -51,8 +52,7 @@ func (h *ContestHandler) GetContestDetailGin(c *gin.Context) {
 
 	contest, err := h.repo.GetContestByID(contestID)
 	if err != nil {
-		statusCode := statusCodeByError(err, http.StatusInternalServerError)
-		if statusCode == http.StatusInternalServerError {
+		if !errors.Is(err, apperr.ErrNotFound) {
 			writeInternal(c, "获取赛事详情失败")
 			return
 		}

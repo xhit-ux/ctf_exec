@@ -1,6 +1,8 @@
 import React, { createContext, useState, useEffect, ReactNode } from 'react'
 import { apiUrl } from '../utils/api'
 import { AUTH_REFRESH_FAILED_EVENT, AUTH_USER_UPDATED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens } from '../utils/authClient'
+import { readSafeErrorMessage } from '../utils/error'
+import { publishGlobalHttpError } from '../utils/globalErrorBus'
 
 export interface User {
   id: string
@@ -177,11 +179,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           clearAuthState()
           return
         } else {
-          console.error('Failed to refresh user:', response.status)
+          const message = await readSafeErrorMessage(response.clone(), '刷新用户信息失败，请稍后重试')
+          publishGlobalHttpError({
+            status: response.status,
+            message,
+            url: apiUrl('/api/auth/me'),
+            method: 'GET',
+          })
         }
       }
-    } catch (err) {
-      console.error('Failed to refresh user:', err)
+    } catch {
+      publishGlobalHttpError({
+        status: 0,
+        message: '网络连接异常，请检查网络后重试',
+        url: apiUrl('/api/auth/me'),
+        method: 'GET',
+      })
     }
   }
 

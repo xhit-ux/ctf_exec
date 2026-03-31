@@ -27,8 +27,8 @@ export async function readSafeErrorMessage(response: Response, fallback = '操�
   }
 
   try {
-    const data = await response.json() as { error?: string; message?: string }
-    const msg = (data?.error || data?.message || '').trim()
+    const data = await response.json() as { error?: string }
+    const msg = (data?.error || '').trim()
     if (!msg) return defaultMessage
 
     // 控制长度，避免意外回显过长信息。

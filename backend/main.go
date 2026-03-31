@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctf_exec/backend/internal/apierror"
+	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
@@ -98,8 +100,14 @@ func main() {
 	contestHandler := handler.NewContestHandler(contestRepo, userRepo, contestAdminRepo, contestService)
 	siteConfigHandler := handler.NewSiteConfigHandler(siteConfigRepo)
 
-	// 创建 Gin 引擎
-	r := gin.Default()
+	// 创建 Gin 引擎：统一日志 + JSON panic 恢复。
+	r := gin.New()
+	r.Use(gin.Logger())
+	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
+		log.Printf("[panic-recovered] method=%s path=%s ip=%s panic=%v", c.Request.Method, c.Request.URL.Path, c.ClientIP(), recovered)
+		apierror.Write(c, apperr.New(apperr.ErrInternal, "服务器开小差了，请稍后再试"), http.StatusInternalServerError)
+		c.Abort()
+	}))
 	for _, proxy := range cfg.Server.TrustedProxies {
 		normalized := strings.TrimSpace(proxy)
 		switch normalized {
