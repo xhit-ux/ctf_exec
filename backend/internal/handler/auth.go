@@ -24,7 +24,7 @@ func NewAuthHandler(authService service.AuthService, userService service.UserSer
 func (h *AuthHandler) SendRegisterCodeGin(c *gin.Context) {
 	var req models.SendRegisterCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -41,7 +41,7 @@ func (h *AuthHandler) SendRegisterCodeGin(c *gin.Context) {
 func (h *AuthHandler) RegisterGin(c *gin.Context) {
 	var req models.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *AuthHandler) RegisterGin(c *gin.Context) {
 func (h *AuthHandler) LoginGin(c *gin.Context) {
 	var req models.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *AuthHandler) LoginGin(c *gin.Context) {
 func (h *AuthHandler) RefreshGin(c *gin.Context) {
 	var req models.RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -100,7 +100,7 @@ func (h *AuthHandler) LogoutGin(c *gin.Context) {
 	var req models.LogoutRequest
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+			writeBadRequest(c, "请求体格式错误")
 			return
 		}
 	}
@@ -123,7 +123,7 @@ func (h *AuthHandler) GetCurrentUserGin(c *gin.Context) {
 	// 使用用户服务获取用户信息
 	user, err := h.userService.GetCurrentUser(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		writeNotFound(c, "用户不存在")
 		return
 	}
 

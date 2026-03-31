@@ -38,18 +38,18 @@ func (h *SiteConfigHandler) UpdateSiteConfigGin(c *gin.Context) {
 
 	var req models.UpdateSiteConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
 	if strings.TrimSpace(req.SiteName) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "site_name 不能为空"})
+		writeBadRequest(c, "site_name 不能为空")
 		return
 	}
 
 	visibility := strings.ToLower(strings.TrimSpace(req.DefaultContestVisibility))
 	if visibility != "public" && visibility != "invite_only" && visibility != "private" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "default_contest_visibility 仅支持 public/invite_only/private"})
+		writeBadRequest(c, "default_contest_visibility 仅支持 public/invite_only/private")
 		return
 	}
 	req.DefaultContestVisibility = visibility

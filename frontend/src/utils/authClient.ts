@@ -1,4 +1,6 @@
 import { apiUrl } from './api'
+import { readSafeErrorMessage } from './error'
+import { publishGlobalHttpError } from './globalErrorBus'
 
 const ACCESS_TOKEN_KEY = 'token'
 const REFRESH_TOKEN_KEY = 'refresh_token'
@@ -101,6 +103,7 @@ export type ApiFetchOptions = {
   disableAuth?: boolean
   disableRetry401?: boolean
   accessTokenOverride?: string
+  disableGlobalError?: boolean
 }
 
 function broadcastRefreshFailed(url: string) {
@@ -113,6 +116,7 @@ function broadcastRefreshFailed(url: string) {
 
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, options?: ApiFetchOptions): Promise<Response> {
   const url = normalizeUrl(input)
+  const method = (init?.method || 'GET').toUpperCase()
   const headers = new Headers(init?.headers)
 
   if (options?.accessTokenOverride && !headers.has('Authorization')) {
@@ -136,8 +140,36 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
     })
   }
 
-  const response = await execute()
-  if (response.status !== 401) return response
+  const executeWithNetworkFallback = async (accessToken?: string) => {
+    try {
+      return await execute(accessToken)
+    } catch (err) {
+      if (!options?.disableGlobalError) {
+        publishGlobalHttpError({
+          status: 0,
+          message: '网络连接异常，请检查网络后重试',
+          url,
+          method,
+        })
+      }
+      throw err
+    }
+  }
+
+  const response = await executeWithNetworkFallback()
+  if (response.status !== 401) {
+    if (!response.ok && !options?.disableGlobalError) {
+      const message = await readSafeErrorMessage(response.clone())
+      publishGlobalHttpError({
+        status: response.status,
+        message,
+        url,
+        method,
+      })
+    }
+
+    return response
+  }
 
   if (options?.disableRetry401 || shouldBypassAutoRefresh(url)) {
     return response
@@ -149,5 +181,16 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
     return response
   }
 
-  return execute(newAccessToken)
+  const retriedResponse = await executeWithNetworkFallback(newAccessToken)
+  if (!retriedResponse.ok && retriedResponse.status !== 401 && !options?.disableGlobalError) {
+    const message = await readSafeErrorMessage(retriedResponse.clone())
+    publishGlobalHttpError({
+      status: retriedResponse.status,
+      message,
+      url,
+      method,
+    })
+  }
+
+  return retriedResponse
 }

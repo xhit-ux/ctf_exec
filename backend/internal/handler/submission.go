@@ -37,17 +37,17 @@ func (h *SubmissionHandler) SubmitFlagGin(c *gin.Context) {
 
 	var req models.CreateSubmissionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
 	if req.Flag == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Flag 不能为空"})
+		writeBadRequest(c, "Flag 不能为空")
 		return
 	}
 
 	if req.ProblemID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的题目 ID"})
+		writeBadRequest(c, "无效的题目 ID")
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *SubmissionHandler) GetMySubmissionsGin(c *gin.Context) {
 
 	submissions, err := h.subRepo.GetSubmissionsByUserID(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取提交记录失败"})
+		writeInternal(c, "获取提交记录失败")
 		return
 	}
 

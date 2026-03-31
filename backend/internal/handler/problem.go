@@ -19,20 +19,20 @@ type ProblemHandler struct {
 func (h *ProblemHandler) CreateProblemGin(c *gin.Context) {
 	var req models.CreateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "title/category/difficulty 不能为空"})
+		writeBadRequest(c, "title/category/difficulty 不能为空")
 		return
 	}
 	if req.Points < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "points 不能为负数"})
+		writeBadRequest(c, "points 不能为负数")
 		return
 	}
 	if strings.TrimSpace(req.Flag) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "flag 不能为空"})
+		writeBadRequest(c, "flag 不能为空")
 		return
 	}
 
@@ -50,22 +50,22 @@ func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的题目ID"})
+		writeBadRequest(c, "无效的题目ID")
 		return
 	}
 
 	var req models.UpdateProblemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "title/category/difficulty 不能为空"})
+		writeBadRequest(c, "title/category/difficulty 不能为空")
 		return
 	}
 	if req.Points < 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "points 不能为负数"})
+		writeBadRequest(c, "points 不能为负数")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的题目ID"})
+		writeBadRequest(c, "无效的题目ID")
 		return
 	}
 
@@ -107,7 +107,7 @@ func (h *ProblemHandler) GetProblemsGin(c *gin.Context) {
 	if claims, err := middleware.GetClaims(c); err == nil {
 		problems, err = h.repo.GetProblemsWithStatus(claims.UserID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取题目列表失败"})
+			writeInternal(c, "获取题目列表失败")
 			return
 		}
 		c.JSON(http.StatusOK, problems)
@@ -117,7 +117,7 @@ func (h *ProblemHandler) GetProblemsGin(c *gin.Context) {
 	// 如果没有认证信息，获取普通题目列表
 	problems, err = h.repo.GetProblems()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取题目列表失败"})
+		writeInternal(c, "获取题目列表失败")
 		return
 	}
 
@@ -128,13 +128,13 @@ func (h *ProblemHandler) GetProblemsGin(c *gin.Context) {
 func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 	idStr := c.Query("id")
 	if idStr == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 id 参数"})
+		writeBadRequest(c, "缺少 id 参数")
 		return
 	}
 
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 id"})
+		writeBadRequest(c, "无效的 id")
 		return
 	}
 

@@ -340,7 +340,7 @@ func loadEmailConfig() (*EmailConfig, error) {
 		ResendFromEmail:              getEnv("RESEND_FROM_EMAIL", ""),
 		VerificationCodeTTLSeconds:   getEnvInt("EMAIL_VERIFY_CODE_TTL_SECONDS", 300),
 		VerificationSendCooldownSecs: getEnvInt("EMAIL_VERIFY_SEND_COOLDOWN_SECONDS", 60),
-		VerificationDailyLimit:       getEnvInt("EMAIL_VERIFY_DAILY_LIMIT", 20),
+		VerificationDailyLimit:       getEnvInt("EMAIL_VERIFY_DAILY_LIMIT", 5),
 	}, nil
 }
 

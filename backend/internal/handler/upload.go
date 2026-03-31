@@ -29,14 +29,14 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 
 	// 解析 multipart form，限制最大内存为 10MB
 	if err := c.Request.ParseMultipartForm(10 << 20); err != nil {
-		c.JSON(400, gin.H{"error": "解析表单失败"})
+		writeBadRequest(c, "解析表单失败")
 		return
 	}
 
 	// 获取上传的文件
 	file, header, err := c.Request.FormFile("avatar")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "获取文件失败"})
+		writeBadRequest(c, "获取文件失败")
 		return
 	}
 	defer file.Close()
@@ -87,13 +87,13 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 
 	// 解析 multipart form
 	if err := c.Request.ParseMultipartForm(10 << 20); err != nil {
-		c.JSON(400, gin.H{"error": "解析表单失败"})
+		writeBadRequest(c, "解析表单失败")
 		return
 	}
 
 	file, header, err := c.Request.FormFile("cover")
 	if err != nil {
-		c.JSON(400, gin.H{"error": "获取文件失败"})
+		writeBadRequest(c, "获取文件失败")
 		return
 	}
 	defer file.Close()

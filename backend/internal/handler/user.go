@@ -127,13 +127,13 @@ func (h *UserHandler) PatchUserActiveGin(c *gin.Context) {
 
 	targetUserID := c.Param("id")
 	if targetUserID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户ID"})
+		writeBadRequest(c, "缺少用户ID")
 		return
 	}
 
 	var req models.UpdateUserActiveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -201,13 +201,13 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 
 	targetUserID := c.Param("id")
 	if targetUserID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户ID"})
+		writeBadRequest(c, "缺少用户ID")
 		return
 	}
 
 	var req models.UpdateUserRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
@@ -321,7 +321,7 @@ func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
 	offset := (page - 1) * pageSize
 	users, total, err := h.userRepo.GetLeaderboardPage(offset, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取排行榜失败"})
+		writeInternal(c, "获取排行榜失败")
 		return
 	}
 
@@ -364,7 +364,7 @@ func (h *UserHandler) GetLeaderboardGin(c *gin.Context) {
 func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
 	username := strings.TrimSpace(c.Query("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -397,7 +397,7 @@ func (h *UserHandler) GetLeaderboardUserByUsernameGin(c *gin.Context) {
 func (h *UserHandler) GetProfileGin(c *gin.Context) {
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -496,17 +496,17 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	// 解析请求体
 	var req models.UpdateProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求体格式错误"})
+		writeBadRequest(c, "请求体格式错误")
 		return
 	}
 
 	// 简单验证
 	if req.DisplayName == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能为空"})
+		writeBadRequest(c, "显示名称不能为空")
 		return
 	}
 	if len(req.DisplayName) > 64 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "显示名称不能超过 64 字符"})
+		writeBadRequest(c, "显示名称不能超过 64 字符")
 		return
 	}
 
@@ -515,11 +515,11 @@ func (h *UserHandler) UpdateProfileGin(c *gin.Context) {
 	if user != nil && user.Email != req.Email {
 		exists, err := h.userRepo.UserExistsByEmail(req.Email)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查邮箱失败"})
+			writeInternal(c, "检查邮箱失败")
 			return
 		}
 		if exists {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "该邮箱已被其他账号使用"})
+			writeBadRequest(c, "该邮箱已被其他账号使用")
 			return
 		}
 	}
@@ -549,7 +549,7 @@ func (h *UserHandler) FollowUserGin(c *gin.Context) {
 
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -560,7 +560,7 @@ func (h *UserHandler) FollowUserGin(c *gin.Context) {
 	}
 
 	if targetUser.ID == claims.UserID {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "不能关注自己"})
+		writeBadRequest(c, "不能关注自己")
 		return
 	}
 
@@ -602,7 +602,7 @@ func (h *UserHandler) UnfollowUserGin(c *gin.Context) {
 
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -640,7 +640,7 @@ func (h *UserHandler) UnfollowUserGin(c *gin.Context) {
 func (h *UserHandler) GetFollowersGin(c *gin.Context) {
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -679,7 +679,7 @@ func (h *UserHandler) GetFollowersGin(c *gin.Context) {
 func (h *UserHandler) GetFollowingGin(c *gin.Context) {
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -723,7 +723,7 @@ func (h *UserHandler) GetMutualFollowingGin(c *gin.Context) {
 
 	username := strings.TrimSpace(c.Param("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
@@ -761,13 +761,13 @@ func (h *UserHandler) GetMutualFollowingGin(c *gin.Context) {
 func (h *UserHandler) GetPublicProfileGin(c *gin.Context) {
 	username := strings.TrimSpace(c.Query("username"))
 	if username == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少用户名参数"})
+		writeBadRequest(c, "缺少用户名参数")
 		return
 	}
 
 	user, err := h.userRepo.GetUserByUsername(username)
 	if err != nil {
-		c.JSON(statusCodeByError(err, http.StatusNotFound), gin.H{"error": "用户不存在"})
+		writeNotFound(c, "用户不存在")
 		return
 	}
 

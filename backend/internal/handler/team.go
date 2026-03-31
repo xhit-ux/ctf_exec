@@ -32,12 +32,12 @@ func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
 
 	var req models.CreateTeamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		writeBadRequest(c, "请求格式错误")
 		return
 	}
 
 	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "队伍名称不能为空"})
+		writeBadRequest(c, "队伍名称不能为空")
 		return
 	}
 
@@ -50,7 +50,7 @@ func (h *TeamHandler) CreateTeamGin(c *gin.Context) {
 	// 加载团队成员列表
 	members, err := h.teamRepo.GetTeamMembers(team.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "加载成员列表失败"})
+		writeInternal(c, "加载成员列表失败")
 		return
 	}
 	team.Members = members
@@ -67,12 +67,12 @@ func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
 
 	var req models.JoinTeamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		writeBadRequest(c, "请求格式错误")
 		return
 	}
 
 	if req.InviteCode == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "邀请码不能为空"})
+		writeBadRequest(c, "邀请码不能为空")
 		return
 	}
 
@@ -85,7 +85,7 @@ func (h *TeamHandler) JoinTeamGin(c *gin.Context) {
 	// 加入成功后，获取并返回更新后的团队信息
 	team, err := h.teamRepo.GetTeamByUserID(claims.UserID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取团队信息失败"})
+		writeInternal(c, "获取团队信息失败")
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *TeamHandler) GetMyTeamGin(c *gin.Context) {
 	if err != nil {
 		statusCode := statusCodeByError(err, http.StatusNotFound)
 		if statusCode == http.StatusNotFound {
-			c.JSON(statusCode, gin.H{"error": "未加入任何队伍"})
+			writeNotFound(c, "未加入任何队伍")
 			return
 		}
 		writeError(c, err, http.StatusNotFound)
@@ -165,7 +165,7 @@ func (h *TeamHandler) GetTeamLeaderboardGin(c *gin.Context) {
 
 	ranking, total, err := h.teamRepo.GetTeamRankingPage(offset, pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取排行榜失败"})
+		writeInternal(c, "获取排行榜失败")
 		return
 	}
 
@@ -187,19 +187,19 @@ func (h *TeamHandler) GetTeamLeaderboardGin(c *gin.Context) {
 func (h *TeamHandler) GetTeamPublicGin(c *gin.Context) {
 	teamID := c.Query("id")
 	if teamID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少队伍 ID"})
+		writeBadRequest(c, "缺少队伍 ID")
 		return
 	}
 
 	team, err := h.teamRepo.GetTeamByID(teamID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "队伍不存在"})
+		writeNotFound(c, "队伍不存在")
 		return
 	}
 
 	members, err := h.teamRepo.GetTeamMembers(teamID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取成员失败"})
+		writeInternal(c, "获取成员失败")
 		return
 	}
 
@@ -242,12 +242,12 @@ func (h *TeamHandler) UpdateTeamGin(c *gin.Context) {
 
 	var req models.UpdateTeamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		writeBadRequest(c, "请求格式错误")
 		return
 	}
 
 	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "队伍名称不能为空"})
+		writeBadRequest(c, "队伍名称不能为空")
 		return
 	}
 
@@ -269,7 +269,7 @@ func (h *TeamHandler) KickMemberGin(c *gin.Context) {
 
 	var req models.KickMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		writeBadRequest(c, "请求格式错误")
 		return
 	}
 
