@@ -84,3 +84,32 @@ type ContestParticipantScope struct {
 	UserID *string
 	TeamID *string
 }
+
+// ContestParticipantItem 赛事参赛者条目。
+type ContestParticipantItem struct {
+	ID           string    `json:"id"`
+	ContestID    string    `json:"contest_id"`
+	UserID       *string   `json:"user_id,omitempty"`
+	TeamID       *string   `json:"team_id,omitempty"`
+	Username     *string   `json:"username,omitempty"`
+	DisplayName  *string   `json:"display_name,omitempty"`
+	TeamName     *string   `json:"team_name,omitempty"`
+	Status       string    `json:"status"`
+	RegisteredAt time.Time `json:"registered_at"`
+}
+
+// ContestSubmissionItem 赛事提交记录条目。
+type ContestSubmissionItem struct {
+	ID           string    `json:"id"`
+	UserID       *string   `json:"user_id,omitempty"`
+	TeamID       *string   `json:"team_id,omitempty"`
+	ProblemID    int       `json:"problem_id"`
+	ContestID    *string   `json:"contest_id,omitempty"`
+	IsCorrect    bool      `json:"is_correct"`
+	IPAddress    *string   `json:"ip_address,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	Username     *string   `json:"username,omitempty"`
+	DisplayName  *string   `json:"display_name,omitempty"`
+	TeamName     *string   `json:"team_name,omitempty"`
+	ProblemTitle *string   `json:"problem_title,omitempty"`
+}

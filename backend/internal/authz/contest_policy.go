@@ -38,6 +38,29 @@ func CanEditProblemInContest(user *models.User, contest *models.Contest, contest
 	return CanManageContest(user, contestID, repo)
 }
 
+// CanViewContestAdmin 判断用户是否可访问赛事管理只读视图（含 observer）。
+func CanViewContestAdmin(user *models.User, contestID string, repo repository.ContestAdminRepository) (bool, error) {
+	if user == nil {
+		return false, nil
+	}
+
+	role := models.NormalizeRole(user.Role)
+	if role == models.RoleRoot || role == models.RoleSiteAdmin {
+		return true, nil
+	}
+
+	if repo == nil {
+		return false, nil
+	}
+
+	adminRole, err := repo.GetContestAdminRole(user.ID, contestID)
+	if err != nil {
+		return false, err
+	}
+
+	return adminRole == models.ContestAdminRoleAdmin || adminRole == models.ContestAdminRoleObserver, nil
+}
+
 // CanOperateUser 判断操作者是否可以对目标用户执行敏感操作。
 func CanOperateUser(actor, target *models.User) bool {
 	if actor == nil || target == nil {

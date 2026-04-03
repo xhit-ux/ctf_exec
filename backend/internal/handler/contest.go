@@ -267,7 +267,7 @@ func (h *ContestHandler) GetContestChallengesGin(c *gin.Context) {
 		return
 	}
 
-	items, err := h.svc.GetContestChallengesForUser(contestID, claims.UserID)
+	items, err := h.svc.GetContestChallengesForUser(contestID, claims.UserID, claims.Role)
 	if err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
@@ -308,6 +308,195 @@ func (h *ContestHandler) GetContestScoreboardGin(c *gin.Context) {
 	c.JSON(http.StatusOK, items)
 }
 
+// GetContestParticipantsGin 查询赛事参赛者列表（已报名用户或赛事管理员可查看）。
+func (h *ContestHandler) GetContestParticipantsGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		writeBadRequest(c, "缺少赛事ID")
+		return
+	}
+
+	page, pageSize, parseErr := parsePageParams(c, 20, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
+
+	allowed, err := h.canAccessContestMemberData(claims.UserID, claims.Role, contestID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		writeForbidden(c, "未报名该赛事或无管理权限")
+		return
+	}
+
+	offset := (page - 1) * pageSize
+	items, total, err := h.repo.ListContestParticipants(contestID, offset, pageSize)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// GetContestMySubmissionsGin 查询当前用户在赛事中的提交记录。
+func (h *ContestHandler) GetContestMySubmissionsGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		writeBadRequest(c, "缺少赛事ID")
+		return
+	}
+
+	page, pageSize, parseErr := parsePageParams(c, 20, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
+
+	allowed, err := h.canAccessContestMemberData(claims.UserID, claims.Role, contestID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		writeForbidden(c, "未报名该赛事或无管理权限")
+		return
+	}
+
+	offset := (page - 1) * pageSize
+	items, total, err := h.repo.ListContestMySubmissions(contestID, claims.UserID, offset, pageSize)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// ListAdminContestsGin 管理端分页查询赛事。
+func (h *ContestHandler) ListAdminContestsGin(c *gin.Context) {
+	page, pageSize, parseErr := parsePageParams(c, 20, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
+
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	visibility := strings.ToLower(strings.TrimSpace(c.Query("visibility")))
+	if visibility != "" && visibility != "public" && visibility != "invite_only" && visibility != "private" {
+		writeBadRequest(c, "visibility 仅支持 public/invite_only/private")
+		return
+	}
+
+	offset := (page - 1) * pageSize
+	items, total, err := h.repo.ListAdminContests(offset, pageSize, keyword, visibility)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
+// ListContestSubmissionsGin 查询赛事提交审计记录（contest_admin+）。
+func (h *ContestHandler) ListContestSubmissionsGin(c *gin.Context) {
+	contestID := strings.TrimSpace(c.Param("id"))
+	if contestID == "" {
+		writeBadRequest(c, "缺少赛事ID")
+		return
+	}
+
+	page, pageSize, parseErr := parsePageParams(c, 20, 100)
+	if parseErr != nil {
+		writeError(c, parseErr, http.StatusBadRequest)
+		return
+	}
+
+	problemID := 0
+	problemIDRaw := strings.TrimSpace(c.Query("problem_id"))
+	if problemIDRaw != "" {
+		parsed, err := strconv.Atoi(problemIDRaw)
+		if err != nil || parsed <= 0 {
+			writeBadRequest(c, "problem_id 必须是大于 0 的整数")
+			return
+		}
+		problemID = parsed
+	}
+
+	result := strings.ToLower(strings.TrimSpace(c.Query("result")))
+	if result != "" && result != "correct" && result != "wrong" {
+		writeBadRequest(c, "result 仅支持 correct/wrong")
+		return
+	}
+
+	userID := strings.TrimSpace(c.Query("user_id"))
+	offset := (page - 1) * pageSize
+	items, total, err := h.repo.ListContestSubmissions(contestID, offset, pageSize, userID, problemID, result)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	totalPages := 0
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"page":        page,
+		"page_size":   pageSize,
+		"total":       total,
+		"total_pages": totalPages,
+	})
+}
+
 // ListContestAdminsGin 查询赛事管理员列表。
 func (h *ContestHandler) ListContestAdminsGin(c *gin.Context) {
 	contestID := strings.TrimSpace(c.Param("id"))
@@ -343,12 +532,12 @@ func (h *ContestHandler) AddContestAdminGin(c *gin.Context) {
 		writeBadRequest(c, "请求体格式错误")
 		return
 	}
-	if strings.TrimSpace(req.UserID) == "" {
-		writeBadRequest(c, "user_id 不能为空")
+	if strings.TrimSpace(req.Username) == "" {
+		writeBadRequest(c, "username 不能为空")
 		return
 	}
 
-	targetUser, err := h.userRepo.GetUserByID(strings.TrimSpace(req.UserID))
+	targetUser, err := h.userRepo.GetUserByUsername(strings.TrimSpace(req.Username))
 	if err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
@@ -368,7 +557,7 @@ func (h *ContestHandler) AddContestAdminGin(c *gin.Context) {
 		return
 	}
 
-	if err := h.contestAdminRepo.AddContestAdmin(req.UserID, contestID, req.Role, claims.UserID); err != nil {
+	if err := h.contestAdminRepo.AddContestAdmin(targetUser.ID, contestID, req.Role, claims.UserID); err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
 	}
@@ -379,13 +568,13 @@ func (h *ContestHandler) AddContestAdminGin(c *gin.Context) {
 // RemoveContestAdminGin 移除赛事管理员。
 func (h *ContestHandler) RemoveContestAdminGin(c *gin.Context) {
 	contestID := strings.TrimSpace(c.Param("id"))
-	userID := strings.TrimSpace(c.Param("user_id"))
-	if contestID == "" || userID == "" {
+	username := strings.TrimSpace(c.Param("username"))
+	if contestID == "" || username == "" {
 		writeBadRequest(c, "参数不完整")
 		return
 	}
 
-	if err := h.contestAdminRepo.RemoveContestAdmin(userID, contestID); err != nil {
+	if err := h.contestAdminRepo.RemoveContestAdminByUsername(username, contestID); err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
 	}
@@ -456,4 +645,25 @@ func (h *ContestHandler) canAccessPrivateContest(c *gin.Context, contestID strin
 	}
 
 	return ok
+}
+
+func (h *ContestHandler) canAccessContestMemberData(userID, role, contestID string) (bool, error) {
+	if strings.TrimSpace(userID) == "" {
+		return false, nil
+	}
+
+	participant, err := h.repo.IsUserContestParticipant(contestID, userID)
+	if err != nil {
+		return false, err
+	}
+	if participant {
+		return true, nil
+	}
+
+	allowed, err := authz.CanViewContestAdmin(&models.User{ID: userID, Role: role}, contestID, h.contestAdminRepo)
+	if err != nil {
+		return false, err
+	}
+
+	return allowed, nil
 }

@@ -529,3 +529,383 @@ func (r *ContestRepository) GetContestTeamScoreboardFromDB(contestID string, lim
 
 	return result, nil
 }
+
+// ListAdminContests 管理端分页查询赛事列表。
+func (r *ContestRepository) ListAdminContests(offset, limit int, keyword, visibility string) ([]*models.Contest, int, error) {
+	filters := make([]string, 0, 2)
+	args := make([]interface{}, 0, 4)
+
+	if strings.TrimSpace(keyword) != "" {
+		filters = append(filters, "(c.title LIKE ? OR c.description LIKE ?)")
+		kw := "%" + strings.TrimSpace(keyword) + "%"
+		args = append(args, kw, kw)
+	}
+	if strings.TrimSpace(visibility) != "" {
+		filters = append(filters, "c.visibility = ?")
+		args = append(args, strings.ToLower(strings.TrimSpace(visibility)))
+	}
+
+	whereSQL := ""
+	if len(filters) > 0 {
+		whereSQL = " WHERE " + strings.Join(filters, " AND ")
+	}
+
+	countQuery := "SELECT COUNT(1) FROM contests c" + whereSQL
+	var total int
+	if err := r.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计赛事总数失败: %w", err)
+	}
+
+	query := `
+		SELECT c.id, c.title, COALESCE(c.description, ''), COALESCE(c.cover_image, ''), c.visibility,
+		       c.created_by, c.start_time, c.end_time, c.scoring_type, c.created_at, c.updated_at
+		FROM contests c
+	` + whereSQL + `
+		ORDER BY c.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	listArgs := make([]interface{}, 0, len(args)+2)
+	listArgs = append(listArgs, args...)
+	listArgs = append(listArgs, limit, offset)
+
+	rows, err := r.db.Query(query, listArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询赛事列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.Contest, 0, limit)
+	for rows.Next() {
+		item := &models.Contest{}
+		if err := rows.Scan(
+			&item.ID,
+			&item.Title,
+			&item.Description,
+			&item.CoverImage,
+			&item.Visibility,
+			&item.CreatedBy,
+			&item.StartTime,
+			&item.EndTime,
+			&item.ScoringType,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("扫描赛事数据失败: %w", err)
+		}
+		items = append(items, item)
+	}
+
+	return items, total, nil
+}
+
+// IsUserContestParticipant 校验用户是否已报名指定赛事（包含团队报名）。
+func (r *ContestRepository) IsUserContestParticipant(contestID, userID string) (bool, error) {
+	var cnt int
+	query := `
+		SELECT COUNT(1)
+		FROM contest_participants cp
+		LEFT JOIN team_members tm ON cp.team_id = tm.team_id
+		WHERE cp.contest_id = ?
+		  AND cp.status = 'approved'
+		  AND (cp.user_id = ? OR tm.user_id = ?)
+	`
+	if err := r.db.QueryRow(query, contestID, userID, userID).Scan(&cnt); err != nil {
+		return false, fmt.Errorf("查询赛事报名状态失败: %w", err)
+	}
+	return cnt > 0, nil
+}
+
+// ListContestParticipants 查询赛事参赛者列表。
+func (r *ContestRepository) ListContestParticipants(contestID string, offset, limit int) ([]*models.ContestParticipantItem, int, error) {
+	countQuery := `
+		SELECT COUNT(1)
+		FROM contest_participants cp
+		WHERE cp.contest_id = ?
+	`
+	var total int
+	if err := r.db.QueryRow(countQuery, contestID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计参赛者失败: %w", err)
+	}
+
+	query := `
+		SELECT cp.id, cp.contest_id, cp.user_id, cp.team_id, cp.status, cp.registered_at,
+		       u.username, u.display_name, t.name
+		FROM contest_participants cp
+		LEFT JOIN users u ON cp.user_id = u.id
+		LEFT JOIN teams t ON cp.team_id = t.id
+		WHERE cp.contest_id = ?
+		ORDER BY cp.registered_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, contestID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询参赛者列表失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.ContestParticipantItem, 0, limit)
+	for rows.Next() {
+		item := &models.ContestParticipantItem{}
+		var userID sql.NullString
+		var teamID sql.NullString
+		var username sql.NullString
+		var displayName sql.NullString
+		var teamName sql.NullString
+		if err := rows.Scan(
+			&item.ID,
+			&item.ContestID,
+			&userID,
+			&teamID,
+			&item.Status,
+			&item.RegisteredAt,
+			&username,
+			&displayName,
+			&teamName,
+		); err != nil {
+			return nil, 0, fmt.Errorf("扫描参赛者失败: %w", err)
+		}
+
+		if userID.Valid {
+			v := userID.String
+			item.UserID = &v
+		}
+		if teamID.Valid {
+			v := teamID.String
+			item.TeamID = &v
+		}
+		if username.Valid {
+			v := username.String
+			item.Username = &v
+		}
+		if displayName.Valid {
+			v := displayName.String
+			item.DisplayName = &v
+		}
+		if teamName.Valid {
+			v := teamName.String
+			item.TeamName = &v
+		}
+
+		items = append(items, item)
+	}
+
+	return items, total, nil
+}
+
+// ListContestMySubmissions 查询用户在指定赛事中的提交记录。
+func (r *ContestRepository) ListContestMySubmissions(contestID, userID string, offset, limit int) ([]*models.ContestSubmissionItem, int, error) {
+	countQuery := `
+		SELECT COUNT(1)
+		FROM submissions s
+		WHERE s.contest_id = ? AND s.user_id = ?
+	`
+	var total int
+	if err := r.db.QueryRow(countQuery, contestID, userID).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计赛事提交失败: %w", err)
+	}
+
+	query := `
+		SELECT s.id, s.user_id, s.team_id, s.problem_id, s.contest_id, s.is_correct, s.ip_address, s.created_at,
+		       u.username, u.display_name, t.name, p.title
+		FROM submissions s
+		LEFT JOIN users u ON s.user_id = u.id
+		LEFT JOIN teams t ON s.team_id = t.id
+		LEFT JOIN problems p ON s.problem_id = p.id
+		WHERE s.contest_id = ? AND s.user_id = ?
+		ORDER BY s.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	rows, err := r.db.Query(query, contestID, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询赛事提交失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.ContestSubmissionItem, 0, limit)
+	for rows.Next() {
+		item := &models.ContestSubmissionItem{}
+		var userIDVal sql.NullString
+		var teamID sql.NullString
+		var contestIDVal sql.NullString
+		var ipAddress sql.NullString
+		var username sql.NullString
+		var displayName sql.NullString
+		var teamName sql.NullString
+		var problemTitle sql.NullString
+
+		if err := rows.Scan(
+			&item.ID,
+			&userIDVal,
+			&teamID,
+			&item.ProblemID,
+			&contestIDVal,
+			&item.IsCorrect,
+			&ipAddress,
+			&item.CreatedAt,
+			&username,
+			&displayName,
+			&teamName,
+			&problemTitle,
+		); err != nil {
+			return nil, 0, fmt.Errorf("扫描赛事提交失败: %w", err)
+		}
+
+		if userIDVal.Valid {
+			v := userIDVal.String
+			item.UserID = &v
+		}
+		if teamID.Valid {
+			v := teamID.String
+			item.TeamID = &v
+		}
+		if contestIDVal.Valid {
+			v := contestIDVal.String
+			item.ContestID = &v
+		}
+		if ipAddress.Valid {
+			v := ipAddress.String
+			item.IPAddress = &v
+		}
+		if username.Valid {
+			v := username.String
+			item.Username = &v
+		}
+		if displayName.Valid {
+			v := displayName.String
+			item.DisplayName = &v
+		}
+		if teamName.Valid {
+			v := teamName.String
+			item.TeamName = &v
+		}
+		if problemTitle.Valid {
+			v := problemTitle.String
+			item.ProblemTitle = &v
+		}
+
+		items = append(items, item)
+	}
+
+	return items, total, nil
+}
+
+// ListContestSubmissions 查询赛事提交审计记录。
+func (r *ContestRepository) ListContestSubmissions(contestID string, offset, limit int, userID string, problemID int, result string) ([]*models.ContestSubmissionItem, int, error) {
+	filters := []string{"s.contest_id = ?"}
+	args := []interface{}{contestID}
+
+	if strings.TrimSpace(userID) != "" {
+		filters = append(filters, "s.user_id = ?")
+		args = append(args, strings.TrimSpace(userID))
+	}
+	if problemID > 0 {
+		filters = append(filters, "s.problem_id = ?")
+		args = append(args, problemID)
+	}
+	if strings.EqualFold(result, "correct") {
+		filters = append(filters, "s.is_correct = 1")
+	}
+	if strings.EqualFold(result, "wrong") {
+		filters = append(filters, "s.is_correct = 0")
+	}
+
+	whereSQL := " WHERE " + strings.Join(filters, " AND ")
+
+	countQuery := `SELECT COUNT(1) FROM submissions s` + whereSQL
+	var total int
+	if err := r.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("统计赛事提交审计失败: %w", err)
+	}
+
+	query := `
+		SELECT s.id, s.user_id, s.team_id, s.problem_id, s.contest_id, s.is_correct, s.ip_address, s.created_at,
+		       u.username, u.display_name, t.name, p.title
+		FROM submissions s
+		LEFT JOIN users u ON s.user_id = u.id
+		LEFT JOIN teams t ON s.team_id = t.id
+		LEFT JOIN problems p ON s.problem_id = p.id
+	` + whereSQL + `
+		ORDER BY s.created_at DESC
+		LIMIT ? OFFSET ?
+	`
+
+	queryArgs := make([]interface{}, 0, len(args)+2)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, limit, offset)
+
+	rows, err := r.db.Query(query, queryArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询赛事提交审计失败: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]*models.ContestSubmissionItem, 0, limit)
+	for rows.Next() {
+		item := &models.ContestSubmissionItem{}
+		var userIDVal sql.NullString
+		var teamID sql.NullString
+		var contestIDVal sql.NullString
+		var ipAddress sql.NullString
+		var username sql.NullString
+		var displayName sql.NullString
+		var teamName sql.NullString
+		var problemTitle sql.NullString
+
+		if err := rows.Scan(
+			&item.ID,
+			&userIDVal,
+			&teamID,
+			&item.ProblemID,
+			&contestIDVal,
+			&item.IsCorrect,
+			&ipAddress,
+			&item.CreatedAt,
+			&username,
+			&displayName,
+			&teamName,
+			&problemTitle,
+		); err != nil {
+			return nil, 0, fmt.Errorf("扫描赛事提交审计失败: %w", err)
+		}
+
+		if userIDVal.Valid {
+			v := userIDVal.String
+			item.UserID = &v
+		}
+		if teamID.Valid {
+			v := teamID.String
+			item.TeamID = &v
+		}
+		if contestIDVal.Valid {
+			v := contestIDVal.String
+			item.ContestID = &v
+		}
+		if ipAddress.Valid {
+			v := ipAddress.String
+			item.IPAddress = &v
+		}
+		if username.Valid {
+			v := username.String
+			item.Username = &v
+		}
+		if displayName.Valid {
+			v := displayName.String
+			item.DisplayName = &v
+		}
+		if teamName.Valid {
+			v := teamName.String
+			item.TeamName = &v
+		}
+		if problemTitle.Valid {
+			v := problemTitle.String
+			item.ProblemTitle = &v
+		}
+
+		items = append(items, item)
+	}
+
+	return items, total, nil
+}

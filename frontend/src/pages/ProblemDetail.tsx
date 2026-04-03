@@ -4,8 +4,10 @@ import { Problem, Submission } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { readSafeErrorMessage } from '../utils/error'
+import { useAuth } from '../context/AuthContext'
 
 export default function ProblemDetail() {
+  const { user } = useAuth()
   const { id } = useParams()
   const pid = Number(id)
   const [searchParams] = useSearchParams()
@@ -15,6 +17,7 @@ export default function ProblemDetail() {
   const [flag, setFlag] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
   const [submissions, setSubmissions] = useState<Submission[]>([])
+  const canEditProblem = user?.role === 'root' || user?.role === 'site_admin'
 
   useEffect(() => {
     // 每次进入页面清空提交记录显式（或者是从 backend 拉取）
@@ -78,11 +81,21 @@ export default function ProblemDetail() {
       {contestID && (
         <div className="mb-4 text-sm bg-blue-50 border border-blue-100 text-blue-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
           <span>当前提交将按赛事上下文计分（Contest ID: {contestID}）。</span>
-          <Link to={`/contests/${contestID}`} className="font-semibold hover:underline whitespace-nowrap">返回赛事</Link>
+          <Link to={`/contest/${contestID}`} className="font-semibold hover:underline whitespace-nowrap">返回赛事</Link>
         </div>
       )}
 
-      <h2 className="text-xl font-medium mb-4">{problem.title} · #{problem.id}</h2>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-xl font-medium">{problem.title} · #{problem.id}</h2>
+        {canEditProblem && (
+          <Link
+            to={`/problem/${problem.id}/edit`}
+            className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+          >
+            编辑题目
+          </Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         <section>

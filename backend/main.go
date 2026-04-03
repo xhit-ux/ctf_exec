@@ -74,7 +74,7 @@ func main() {
 	)
 
 	// 初始化提交服务（注入排行榜服务和Redis客户端）
-	contestService := service.NewContestService(contestRepo, teamRepo, leaderboardService)
+	contestService := service.NewContestService(contestRepo, contestAdminRepo, teamRepo, leaderboardService)
 
 	// 初始化提交服务（注入排行榜服务和Redis客户端）
 	submissionService := service.NewSubmissionService(
@@ -93,7 +93,7 @@ func main() {
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService)
 	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client)
-	probHandler := handler.NewProblemHandler(probRepo)
+	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
@@ -197,6 +197,8 @@ func main() {
 			contestAuth.POST(":id/join", contestHandler.JoinContestGin)
 			contestAuth.POST(":id/leave", contestHandler.LeaveContestGin)
 			contestAuth.GET(":id/challenges", contestHandler.GetContestChallengesGin)
+			contestAuth.GET(":id/participants", contestHandler.GetContestParticipantsGin)
+			contestAuth.GET(":id/my-submissions", contestHandler.GetContestMySubmissionsGin)
 		}
 
 		// 提交路由
@@ -237,24 +239,27 @@ func main() {
 
 			adminProblems := admin.Group("/problems")
 			{
-				adminProblems.Use(middleware.RequireSiteAdminOrRoot())
+				adminProblems.GET("", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.ListAdminProblemsGin)
+				adminProblems.GET(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.GetAdminProblemDetailGin)
 				adminProblems.POST("", probHandler.CreateProblemGin)
-				adminProblems.PUT(":id", probHandler.UpdateProblemGin)
-				adminProblems.DELETE(":id", probHandler.DeleteProblemGin)
+				adminProblems.PUT(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.UpdateProblemGin)
+				adminProblems.DELETE(":id", middleware.RequireSiteAdminOrRoot(), probHandler.DeleteProblemGin)
 			}
 
 			adminContests := admin.Group("/contests")
 			{
+				adminContests.GET("", middleware.RequireSiteAdminOrRoot(), contestHandler.ListAdminContestsGin)
 				adminContests.POST("", middleware.RequireSiteAdminOrRoot(), contestHandler.CreateContestGin)
 				adminContests.DELETE(":id", middleware.RequireSiteAdminOrRoot(), contestHandler.DeleteContestGin)
 
-				adminContests.GET(":id/admins", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.ListContestAdminsGin)
+				adminContests.GET(":id/admins", middleware.RequireContestAdminView(userRepo, contestAdminRepo), contestHandler.ListContestAdminsGin)
 				adminContests.POST(":id/admins", middleware.RequireSiteAdminOrRoot(), contestHandler.AddContestAdminGin)
-				adminContests.DELETE(":id/admins/:user_id", middleware.RequireSiteAdminOrRoot(), contestHandler.RemoveContestAdminGin)
+				adminContests.DELETE(":id/admins/:username", middleware.RequireSiteAdminOrRoot(), contestHandler.RemoveContestAdminGin)
 
 				adminContests.PUT(":id", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.UpdateContestGin)
 				adminContests.POST(":id/challenges", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.AddChallengeToContestGin)
 				adminContests.DELETE(":id/challenges/:challengeID", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.RemoveChallengeFromContestGin)
+				adminContests.GET(":id/submissions", middleware.RequireContestAdminView(userRepo, contestAdminRepo), contestHandler.ListContestSubmissionsGin)
 			}
 		}
 

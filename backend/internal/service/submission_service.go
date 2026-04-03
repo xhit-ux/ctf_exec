@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
@@ -81,17 +83,11 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		return nil, err
 	}
 
-	// 获取题目的正确 flag hash
-	correctFlagHash, err := s.problemRepo.GetFlagHashByProblemID(problemID)
-	if err != nil {
-		if errors.Is(err, apperr.ErrNotFound) {
-			return nil, apperr.New(apperr.ErrNotFound, "获取题目 Flag 失败")
-		}
-		return nil, apperr.Wrap(apperr.ErrInternal, "获取题目 Flag Hash 失败", err)
+	// 按 flag_rule 执行判题。
+	isCorrect, evalErr := evaluateSubmittedFlag(flag, problemMeta.FlagHash, problemMeta.FlagRule)
+	if evalErr != nil {
+		return nil, apperr.Wrap(apperr.ErrInternal, "判题规则执行失败", evalErr)
 	}
-
-	// 验证 flag (SHA256 哈希比较)
-	isCorrect := utils.VerifyFlagHash(flag, correctFlagHash)
 
 	var contestScope *models.ContestParticipantScope
 	var contestScore int
@@ -163,6 +159,38 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 	submission.ProblemTitle = problemMeta.Title
 
 	return submission, nil
+}
+
+func evaluateSubmittedFlag(submitted, storedHash, rule string) (bool, error) {
+	normalizedRule := strings.TrimSpace(rule)
+	if normalizedRule == "" {
+		normalizedRule = "exact"
+	}
+
+	switch {
+	case strings.EqualFold(normalizedRule, "exact"):
+		return utils.VerifyFlagHash(submitted, storedHash), nil
+	case strings.EqualFold(normalizedRule, "case_insensitive"):
+		return utils.VerifyFlagHash(strings.ToLower(submitted), storedHash), nil
+	case strings.HasPrefix(strings.ToLower(normalizedRule), "contains:"):
+		needle := strings.TrimSpace(normalizedRule[len("contains:"):])
+		if needle == "" {
+			return false, fmt.Errorf("contains 规则缺少关键词")
+		}
+		return strings.Contains(strings.ToLower(submitted), strings.ToLower(needle)), nil
+	case strings.HasPrefix(strings.ToLower(normalizedRule), "regex:"):
+		pattern := strings.TrimSpace(normalizedRule[len("regex:"):])
+		if pattern == "" {
+			return false, fmt.Errorf("regex 规则缺少表达式")
+		}
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return false, fmt.Errorf("无效 regex 表达式: %w", err)
+		}
+		return re.MatchString(submitted), nil
+	default:
+		return false, fmt.Errorf("不支持的 flag 规则: %s", rule)
+	}
 }
 
 func validateSubmissionInput(problemID int, flag string) error {

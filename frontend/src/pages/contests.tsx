@@ -152,7 +152,7 @@ export default function Contests() {
             return (
               <Link
                 key={contest.id}
-                to={`/contests/${contest.id}`}
+                to={`/contest/${contest.id}`}
                 className="group block rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm hover:shadow-md transition"
               >
                 <div className="h-36 bg-gray-100 overflow-hidden">

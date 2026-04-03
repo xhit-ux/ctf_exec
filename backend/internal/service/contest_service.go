@@ -16,23 +16,25 @@ type ContestService interface {
 	GetContestStatus(contest *models.Contest) string
 	JoinContest(contestID, userID string, teamID *string) error
 	LeaveContest(contestID, userID string, teamID *string) error
-	GetContestChallengesForUser(contestID, userID string) ([]*models.ContestChallengeView, error)
+	GetContestChallengesForUser(contestID, userID, userRole string) ([]*models.ContestChallengeView, error)
 	GetContestScoreboard(contestID, boardType string, limit int) ([]*models.ContestScoreboardEntry, error)
 	ValidateContestSubmission(contestID, userID string, problemID int) (*models.ContestParticipantScope, int, error)
 	ApplyContestSolve(contestID string, scope *models.ContestParticipantScope, score int, solvedAt time.Time) error
 }
 
 type ContestServiceImpl struct {
-	contestRepo    *repository.ContestRepository
-	teamRepo       *repository.TeamRepository
-	leaderboardSvc LeaderboardService
+	contestRepo      *repository.ContestRepository
+	contestAdminRepo repository.ContestAdminRepository
+	teamRepo         *repository.TeamRepository
+	leaderboardSvc   LeaderboardService
 }
 
-func NewContestService(contestRepo *repository.ContestRepository, teamRepo *repository.TeamRepository, leaderboardSvc LeaderboardService) *ContestServiceImpl {
+func NewContestService(contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository, teamRepo *repository.TeamRepository, leaderboardSvc LeaderboardService) *ContestServiceImpl {
 	return &ContestServiceImpl{
-		contestRepo:    contestRepo,
-		teamRepo:       teamRepo,
-		leaderboardSvc: leaderboardSvc,
+		contestRepo:      contestRepo,
+		contestAdminRepo: contestAdminRepo,
+		teamRepo:         teamRepo,
+		leaderboardSvc:   leaderboardSvc,
 	}
 }
 
@@ -100,27 +102,22 @@ func (s *ContestServiceImpl) LeaveContest(contestID, userID string, teamID *stri
 	return s.contestRepo.LeaveContest(contestID, userID, nil)
 }
 
-func (s *ContestServiceImpl) GetContestChallengesForUser(contestID, userID string) ([]*models.ContestChallengeView, error) {
-	if _, err := s.contestRepo.GetContestByID(contestID); err != nil {
-		return nil, err
-	}
-
-	isUserParticipant, err := s.contestRepo.IsParticipant(contestID, userID, nil)
+func (s *ContestServiceImpl) GetContestChallengesForUser(contestID, userID, userRole string) ([]*models.ContestChallengeView, error) {
+	contest, err := s.contestRepo.GetContestByID(contestID)
 	if err != nil {
 		return nil, err
 	}
 
-	if !isUserParticipant {
-		team, teamErr := s.teamRepo.GetTeamByUserID(userID)
-		if teamErr != nil || team == nil {
-			return nil, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
-		}
-		isTeamParticipant, err := s.contestRepo.IsParticipant(contestID, userID, &team.ID)
-		if err != nil {
-			return nil, err
-		}
-		if !isTeamParticipant {
-			return nil, apperr.New(apperr.ErrBadRequest, "未报名该赛事")
+	if s.GetContestStatus(contest) == "upcoming" {
+		role := models.NormalizeRole(userRole)
+		if role != models.RoleRoot && role != models.RoleSiteAdmin {
+			adminRole, err := s.contestAdminRepo.GetContestAdminRole(userID, contestID)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(adminRole) == "" {
+				return nil, apperr.New(apperr.ErrForbidden, "赛事未开始，仅赛事管理员可查看题目")
+			}
 		}
 	}
 

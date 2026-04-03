@@ -12,6 +12,7 @@ type ContestAdmin struct {
 	ID        string    `json:"id"`
 	ContestID string    `json:"contest_id"`
 	UserID    string    `json:"user_id"`
+	Username  string    `json:"username"`
 	Role      string    `json:"role"`
 	GrantedBy *string   `json:"granted_by,omitempty"`
 	GrantedAt time.Time `json:"granted_at"`
@@ -19,6 +20,6 @@ type ContestAdmin struct {
 
 // AddContestAdminRequest 添加赛事管理员请求。
 type AddContestAdminRequest struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	Username string `json:"username"`
+	Role     string `json:"role"`
 }

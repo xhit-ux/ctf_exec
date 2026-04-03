@@ -56,3 +56,48 @@ func RequireContestAdmin(userRepo *repository.UserRepository, contestAdminRepo r
 		c.Next()
 	}
 }
+
+// RequireContestAdminView 要求当前用户拥有赛事管理视图权限（root/site_admin/contest_admin/observer）。
+func RequireContestAdminView(userRepo *repository.UserRepository, contestAdminRepo repository.ContestAdminRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		claims, ok := MustGetClaims(c)
+		if !ok {
+			return
+		}
+
+		contestID := strings.TrimSpace(c.Param("id"))
+		if contestID == "" {
+			contestID = strings.TrimSpace(c.Param("contest_id"))
+		}
+		if contestID == "" {
+			apierror.Write(c, apperr.New(apperr.ErrBadRequest, "缺少赛事ID"), http.StatusBadRequest)
+			c.Abort()
+			return
+		}
+
+		user := &models.User{ID: claims.UserID, Role: claims.Role}
+		if userRepo != nil {
+			dbUser, err := userRepo.GetUserByID(claims.UserID)
+			if err != nil {
+				apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "用户状态异常，请重新登录"), http.StatusUnauthorized)
+				c.Abort()
+				return
+			}
+			user = dbUser
+		}
+
+		allowed, err := authz.CanViewContestAdmin(user, contestID, contestAdminRepo)
+		if err != nil {
+			apierror.Write(c, apperr.Wrap(apperr.ErrInternal, "权限校验失败", err), http.StatusInternalServerError)
+			c.Abort()
+			return
+		}
+		if !allowed {
+			apierror.Write(c, apperr.New(apperr.ErrForbidden, "无权查看该赛事管理信息"), http.StatusForbidden)
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}

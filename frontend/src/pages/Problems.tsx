@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext'
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
 export default function Problems() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth()
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [category, setCategory] = useState<typeof categories[number]>('all')
   const [difficulty, setDifficulty] = useState<'all' | '简单' | '中等' | '困难'>('all')
   const [query, setQuery] = useState('')
@@ -17,6 +17,9 @@ export default function Problems() {
 
   const [problems, setProblems] = useState<Problem[]>([])
   const [loading, setLoading] = useState(true)
+  const isProblemPublisher = user?.role === 'root' || user?.role === 'site_admin' || user?.role === 'contest_admin'
+  const publishEntryPath = user?.role === 'contest_admin' ? '/contests' : '/problem/publish'
+  const publishEntryLabel = user?.role === 'contest_admin' ? '进入赛事发布空间' : '发布题目'
 
   useEffect(() => {
     if (authLoading) return
@@ -74,9 +77,19 @@ export default function Problems() {
     <div className="flex flex-col lg:flex-row gap-8 w-full max-w-7xl mx-auto">
       {/* Main Content Area */}
       <div className="flex-1 min-w-0">
-        <div className="mb-6 flex items-baseline gap-4">
-          <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">题目大厅</h2>
-          <p className="text-gray-500 text-sm font-medium">当前 {filtered.length} 题 / 共 {problems.length} 题</p>
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-baseline gap-4">
+            <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">题目大厅</h2>
+            <p className="text-gray-500 text-sm font-medium">当前 {filtered.length} 题 / 共 {problems.length} 题</p>
+          </div>
+          {isAuthenticated && isProblemPublisher && (
+            <Link
+              to={publishEntryPath}
+              className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              {publishEntryLabel}
+            </Link>
+          )}
         </div>
 
         {/* Mobile Filter Toggle */}

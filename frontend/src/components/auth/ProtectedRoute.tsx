@@ -6,9 +6,11 @@ interface ProtectedRouteProps {
     children: React.ReactNode
     requiredRole?: string
     requiredRoles?: string[]
+    allow?: (role: string, userID: string) => boolean
+    redirectTo?: string
 }
 
-export default function ProtectedRoute({ children, requiredRole, requiredRoles }: ProtectedRouteProps) {
+export default function ProtectedRoute({ children, requiredRole, requiredRoles, allow, redirectTo = '/' }: ProtectedRouteProps) {
     const { user, isAuthenticated, isLoading } = useAuth()
     const location = useLocation()
 
@@ -26,8 +28,15 @@ export default function ProtectedRoute({ children, requiredRole, requiredRoles }
                 ? [requiredRole]
                 : []
 
-        if (roleChecks.length > 0 && !roleChecks.includes(user?.role || '')) {
-        return <Navigate to="/" replace />
+        const role = user?.role || ''
+        const userID = user?.id || ''
+
+        if (roleChecks.length > 0 && !roleChecks.includes(role)) {
+        return <Navigate to={redirectTo} replace />
+    }
+
+    if (allow && !allow(role, userID)) {
+        return <Navigate to={redirectTo} replace />
     }
 
     return <>{children}</>

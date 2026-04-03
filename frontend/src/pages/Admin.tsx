@@ -661,7 +661,12 @@ export default function Admin() {
 
           {activeTab === 'contest' && (
             <form onSubmit={submitContest} className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <h2 className="text-lg font-bold text-gray-900">创建赛事</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-lg font-bold text-gray-900">创建赛事</h2>
+                <a href="/admin/contests" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+                  进入新版赛事管理页
+                </a>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <input value={contestForm.title} onChange={(e) => setContestForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="赛事标题" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
                 <select value={contestForm.scoring_type} onChange={(e) => setContestForm((prev) => ({ ...prev, scoring_type: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
