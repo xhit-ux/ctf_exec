@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../../utils/api'
+import { staticUrl } from '../../utils/api'
 import { UserPreferences } from '../../types/profile'
 
 type BasicProfileLike = {
@@ -35,9 +35,7 @@ export function parseProfilePreferences(preferences?: string): UserPreferences {
 
 export function getProfileAvatarUrl(profile: BasicProfileLike): string {
   if (profile.avatar_url) {
-    return profile.avatar_url.startsWith('http')
-      ? profile.avatar_url
-      : `${API_BASE_URL}${profile.avatar_url}`
+    return staticUrl(profile.avatar_url)
   }
 
   const fallbackName = profile.display_name || profile.username || 'User'

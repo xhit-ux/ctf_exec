@@ -244,7 +244,45 @@ a {
   width: 100%;
 }
 
-@media (min-width: 768px) {
+.header-desktop-nav,
+.header-desktop-meta,
+.header-desktop-logout {
+  display: none;
+}
+
+.header-mobile-menu {
+  display: flex;
+}
+
+.header-mobile-only {
+  display: block;
+}
+
+@media (min-width: 1110px) {
+  .header-desktop-nav {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+  }
+
+  .header-desktop-meta {
+    display: flex;
+  }
+
+  .header-desktop-logout {
+    display: flex;
+  }
+
+  .header-mobile-menu {
+    display: none;
+  }
+
+  .header-mobile-only {
+    display: none !important;
+  }
+}
+
+@media (min-width: 680px) {
   .page-header__actions {
     width: auto;
     margin-left: auto;
@@ -316,7 +354,7 @@ a {
   min-width: 0;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 679px) {
   .scoreboard-search-slot--active {
     flex-basis: 164px;
     width: 164px;
@@ -404,7 +442,7 @@ a {
   background: rgba(255, 255, 255, 0.5);
 }
 
-@media (min-width: 640px) {
+@media (min-width: 680px) {
   .auth-shell__form {
     padding: 2.25rem 1.8rem;
   }
@@ -603,7 +641,7 @@ a {
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 679px) {
   .global-toast-stack {
     left: 12px;
     right: 12px;

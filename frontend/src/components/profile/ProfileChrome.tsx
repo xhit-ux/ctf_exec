@@ -8,6 +8,7 @@ interface ProfileChromeProps {
   profile: UserProfile | null
   currentView: ProfileRouteView
   onFollowChange?: (isFollowing: boolean, newCount?: number) => void
+	onAvatarEdit?: () => void
   heading?: string
   description?: string
   children: React.ReactNode
@@ -17,6 +18,7 @@ export default function ProfileChrome({
 	profile,
 	currentView,
 	onFollowChange,
+	onAvatarEdit,
 	heading,
 	description,
 	children,
@@ -30,6 +32,7 @@ export default function ProfileChrome({
 					profile={profile}
 					onFollowChange={onFollowChange}
 					showOwnEditButton={currentView !== 'edit'}
+					onAvatarEdit={onAvatarEdit}
 				/>
 				<div className="min-w-0">{children}</div>
 			</div>

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import ProfileChrome from '../components/profile/ProfileChrome'
 import ProfilePanel from '../components/profile/ProfilePanel'
+import AvatarUpload from '../components/upload/AvatarUpload'
 import { UpdateProfileRequest, UserProfile } from '../types/profile'
 import { fetchUserProfile, updateProfile } from '../utils/profileApi'
 import { parseProfilePreferences } from '../components/profile/profileUtils'
@@ -19,6 +20,7 @@ export const EditProfile: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [showAvatarModal, setShowAvatarModal] = useState(false)
   const [error, setError] = useState('')
 
   const [formData, setFormData] = useState<UpdateProfileRequest>({
@@ -103,6 +105,18 @@ export const EditProfile: React.FC = () => {
     }
   }
 
+  const handleAvatarUploaded = async (newAvatarUrl: string) => {
+    setProfile((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        avatar_url: newAvatarUrl,
+      }
+    })
+
+    await refreshUser?.()
+  }
+
   const completionStats = useMemo(() => {
     const filled = [
       formData.display_name,
@@ -120,10 +134,24 @@ export const EditProfile: React.FC = () => {
     }
   }, [formData])
 
+  useEffect(() => {
+    if (!showAvatarModal) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowAvatarModal(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showAvatarModal])
+
   return (
     <ProfileChrome
       profile={profile}
       currentView="edit"
+      onAvatarEdit={() => setShowAvatarModal(true)}
       heading="编辑个人资料"
       description="编辑页现在和主页共用同一套 profile 骨架，返回主页、查看关注页时都能保持熟悉的上下文和视觉结构。"
     >
@@ -144,6 +172,7 @@ export const EditProfile: React.FC = () => {
           <div className="h-[36rem] animate-pulse rounded-[28px] glass-card" />
         </div>
       ) : (
+        <>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="rounded-[24px] glass-card px-5 py-5">
@@ -171,7 +200,6 @@ export const EditProfile: React.FC = () => {
 
           <ProfilePanel
             title="基础资料"
-            description="这里是主页最核心的信息来源，提交后会同步刷新当前登录态里的用户信息。"
           >
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="space-y-2">
@@ -320,6 +348,32 @@ export const EditProfile: React.FC = () => {
             </div>
           </div>
         </form>
+
+        {showAvatarModal && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center p-4">
+            <button
+              type="button"
+              className="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px]"
+              onClick={() => setShowAvatarModal(false)}
+              aria-label="关闭头像编辑弹窗"
+            />
+            <div className="relative w-full max-w-xl rounded-2xl border border-amber-100/80 bg-white/95 p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900">修改头像</h3>
+                <button type="button" onClick={() => setShowAvatarModal(false)} className="btn-secondary !px-3 !py-2 text-xs">关闭</button>
+              </div>
+
+              <AvatarUpload
+                currentAvatarUrl={profile?.avatar_url || user?.avatar_url}
+                onUploadSuccess={(nextUrl) => {
+                  void handleAvatarUploaded(nextUrl)
+                  setShowAvatarModal(false)
+                }}
+              />
+            </div>
+          </div>
+        )}
+        </>
       )}
     </ProfileChrome>
   )

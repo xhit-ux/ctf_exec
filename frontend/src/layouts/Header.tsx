@@ -64,7 +64,7 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-[100] border-b border-amber-100/80 bg-white/88 backdrop-blur-xl">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-4">
         <div className="flex justify-between h-16">
           {/* Logo & Desktop Nav */}
           <div className="flex">
@@ -74,7 +74,7 @@ export default function Header() {
                 CTF Platform
               </h1>
             </Link>
-            <nav className="hidden sm:flex sm:space-x-4 sm:items-center">
+            <nav className="header-desktop-nav">
               <NavLinkItem to="/">首页</NavLinkItem>
               <NavLinkItem to="/problem">题目大厅</NavLinkItem>
               <NavLinkItem to="/contests">赛事大厅</NavLinkItem>
@@ -95,7 +95,7 @@ export default function Header() {
           <div className="flex items-center gap-4">
             {isAuthenticated && user ? (
               <div className="relative flex items-center gap-4">
-                <div className="hidden md:flex flex-col items-end">
+                <div className="header-desktop-meta flex-col items-end">
                   <span className="text-sm font-semibold text-gray-700">{user.display_name}</span>
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${level.bg} ${level.color}`}>
@@ -124,7 +124,7 @@ export default function Header() {
                 
                 <button
                   onClick={handleLogout}
-                  className="hidden sm:flex text-sm text-gray-500 hover:text-red-600 transition-colors ml-2"
+                  className="header-desktop-logout text-sm text-gray-500 hover:text-red-600 transition-colors ml-2"
                   title="退出登录"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -150,7 +150,7 @@ export default function Header() {
             )}
             
             {/* Mobile menu button */}
-            <div className="sm:hidden flex items-center">
+            <div className="header-mobile-menu items-center">
               <button
                 onClick={() => setMenuOpen(!menuOpen)}
                 className="text-gray-500 hover:text-gray-700 focus:outline-none rounded-md p-2"
@@ -167,13 +167,13 @@ export default function Header() {
       {/* Mobile nav Drawer */}
       {/* Overlay */}
       <div 
-        className={`mobile-backdrop transition-opacity sm:hidden ${menuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        className={`mobile-backdrop header-mobile-only transition-opacity ${menuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={() => setMenuOpen(false)}
         aria-hidden="true"
       />
       
       {/* Side Panel */}
-      <aside className={`mobile-panel sm:hidden ${menuOpen ? 'translate-x-0 opacity-100' : 'translate-x-[110%] opacity-0 pointer-events-none'}`} aria-hidden={!menuOpen}>
+      <aside className={`mobile-panel header-mobile-only ${menuOpen ? 'translate-x-0 opacity-100' : 'translate-x-[110%] opacity-0 pointer-events-none'}`} aria-hidden={!menuOpen}>
         <div className="flex items-center justify-between px-5 h-14 border-b border-amber-100/80">
           <span className="font-bold text-gray-800 tracking-wide text-base">菜单</span>
           <button onClick={() => setMenuOpen(false)} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 hover:bg-white/80 rounded-full transition-colors" aria-label="关闭菜单">

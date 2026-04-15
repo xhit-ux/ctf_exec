@@ -9,12 +9,14 @@ interface ProfileSidebarProps {
   profile: UserProfile | null
   onFollowChange?: (isFollowing: boolean, newCount?: number) => void
   showOwnEditButton?: boolean
+  onAvatarEdit?: () => void
 }
 
 export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
   profile,
   onFollowChange,
   showOwnEditButton = true,
+  onAvatarEdit,
 }) => {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -87,6 +89,15 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
                 )}
               </div>
             </div>
+            {profile.is_own_profile && onAvatarEdit && (
+              <button
+                type="button"
+                onClick={onAvatarEdit}
+                className="shrink-0 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+              >
+                修改头像
+              </button>
+            )}
           </div>
           <div className="mt-5 space-y-4">
             <div className="space-y-2">

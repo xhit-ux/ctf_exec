@@ -34,7 +34,7 @@ export function apiUrl(path: string): string {
 
 export function staticUrl(path?: string): string {
   if (!path) return ''
-  if (/^https?:\/\//i.test(path)) return path
+  if (/^https?:\/\//i.test(path) || /^data:/i.test(path) || /^blob:/i.test(path)) return path
 
   const normalizedPath = path
     .replace(/\\/g, '/')
