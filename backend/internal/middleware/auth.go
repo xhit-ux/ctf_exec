@@ -16,6 +16,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var accessTokenCookieName = "ctf_access_token"
+
+// SetAccessTokenCookieName 设置 access token 的 Cookie 名称。
+func SetAccessTokenCookieName(name string) {
+	normalized := strings.TrimSpace(name)
+	if normalized == "" {
+		return
+	}
+	accessTokenCookieName = normalized
+}
+
 func extractBearerToken(header string) (string, error) {
 	parts := strings.SplitN(header, " ", 2)
 	if len(parts) != 2 || parts[0] != "Bearer" {
@@ -23,6 +34,20 @@ func extractBearerToken(header string) (string, error) {
 	}
 
 	return parts[1], nil
+}
+
+func extractAccessToken(c *gin.Context) (string, error) {
+	authHeader := c.GetHeader("Authorization")
+	if strings.TrimSpace(authHeader) != "" {
+		return extractBearerToken(authHeader)
+	}
+
+	cookieToken, err := c.Cookie(accessTokenCookieName)
+	if err != nil || strings.TrimSpace(cookieToken) == "" {
+		return "", fmt.Errorf("missing access token")
+	}
+
+	return cookieToken, nil
 }
 
 func ensureClaimsUserValid(claims *utils.Claims, userRepo *repository.UserRepository) error {
@@ -71,16 +96,9 @@ func GinAuthMiddleware() gin.HandlerFunc {
 // GinAuthMiddlewareWithRepo Gin 认证中间件（包含用户状态校验）。
 func GinAuthMiddlewareWithRepo(userRepo *repository.UserRepository, sessionStore *authsession.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "缺少认证信息"), http.StatusUnauthorized)
-			c.Abort()
-			return
-		}
-
-		tokenString, err := extractBearerToken(authHeader)
+		tokenString, err := extractAccessToken(c)
 		if err != nil {
-			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "认证信息格式错误"), http.StatusUnauthorized)
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "缺少认证信息"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
@@ -118,13 +136,7 @@ func GinOptionalAuthMiddleware() gin.HandlerFunc {
 // GinOptionalAuthMiddlewareWithRepo Gin 可选认证中间件（包含用户状态校验，失败时降级为匿名请求）。
 func GinOptionalAuthMiddlewareWithRepo(userRepo *repository.UserRepository, sessionStore *authsession.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.Next()
-			return
-		}
-
-		tokenString, err := extractBearerToken(authHeader)
+		tokenString, err := extractAccessToken(c)
 		if err != nil {
 			c.Next()
 			return

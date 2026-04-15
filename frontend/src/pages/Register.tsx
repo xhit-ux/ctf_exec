@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
-import { apiFetch } from '../utils/authClient'
+import { apiFetch, setAuthTokens } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 import AuthShell from '../components/auth/AuthShell'
@@ -165,8 +165,9 @@ export default function Register() {
 
             const data = await response.json()
 
+            setAuthTokens(data.access_expires_in_secs)
             // 使用 context 的 login 方法更新全局状态
-            login(data.token, data.refresh_token, data.user)
+            login(data.user)
 
             // 重定向到首页
             navigate('/')

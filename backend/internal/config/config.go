@@ -17,11 +17,21 @@ type Config struct {
 	Redis       RedisConfig
 	Server      ServerConfig
 	JWT         JWTConfig
+	AuthCookie  AuthCookieConfig
 	Upload      UploadConfig
 	RateLimit   RateLimitConfig
 	Leaderboard LeaderboardConfig
 	Email       EmailConfig
 	Bot         BotProtectionConfig
+}
+
+// AuthCookieConfig 认证 Cookie 配置。
+type AuthCookieConfig struct {
+	AccessTokenName  string
+	RefreshTokenName string
+	Domain           string
+	Secure           bool
+	SameSite         string
 }
 
 // DatabaseConfig 数据库配置
@@ -152,6 +162,13 @@ func LoadConfig() (*Config, error) {
 			return
 		}
 		cfg.JWT = *jwtConfig
+
+		cookieConfig, err := loadAuthCookieConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载认证 Cookie 配置失败: %w", err)
+			return
+		}
+		cfg.AuthCookie = *cookieConfig
 
 		// 加载上传配置
 		uploadConfig, err := loadUploadConfig()
@@ -300,6 +317,16 @@ func loadJWTConfig() (*JWTConfig, error) {
 func IsWeakJWTSecret(secret string) bool {
 	trimmed := strings.TrimSpace(secret)
 	return trimmed == "" || trimmed == DefaultJWTSecret
+}
+
+func loadAuthCookieConfig() (*AuthCookieConfig, error) {
+	return &AuthCookieConfig{
+		AccessTokenName:  getEnv("AUTH_ACCESS_COOKIE_NAME", "ctf_access_token"),
+		RefreshTokenName: getEnv("AUTH_REFRESH_COOKIE_NAME", "ctf_refresh_token"),
+		Domain:           getEnv("AUTH_COOKIE_DOMAIN", ""),
+		Secure:           getEnvBool("AUTH_COOKIE_SECURE", false),
+		SameSite:         strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
+	}, nil
 }
 
 // loadUploadConfig 加载上传配置

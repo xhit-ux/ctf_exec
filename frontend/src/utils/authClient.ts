@@ -2,14 +2,14 @@ import { apiUrl } from './api'
 import { readSafeErrorMessage } from './error'
 import { publishGlobalHttpError } from './globalErrorBus'
 
-const ACCESS_TOKEN_KEY = 'token'
-const REFRESH_TOKEN_KEY = 'refresh_token'
-const USER_KEY = 'user'
 export const AUTH_REFRESH_FAILED_EVENT = 'auth:refresh-failed'
-export const AUTH_USER_UPDATED_EVENT = 'auth:user-updated'
 
-let refreshInFlight: Promise<string | null> | null = null
+let refreshInFlight: Promise<boolean> | null = null
 let refreshFailureBroadcasted = false
+let proactiveRefreshTimer: number | null = null
+
+const PREEMPTIVE_REFRESH_AHEAD_SECONDS = 180
+const MIN_PREEMPTIVE_REFRESH_DELAY_MS = 30_000
 
 function normalizeUrl(input: RequestInfo | URL): string {
   if (typeof input === 'string') return input
@@ -24,66 +24,64 @@ function shouldBypassAutoRefresh(url: string): boolean {
     url.includes('/api/auth/refresh')
 }
 
-function readAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY)
-}
-
-function readRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY)
-}
-
-function writeTokenPair(accessToken: string, refreshToken: string) {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+function writeTokenPair() {
   refreshFailureBroadcasted = false
 }
 
-function writeStoredUser(user: unknown) {
-  if (!user) return
-  localStorage.setItem(USER_KEY, JSON.stringify(user))
-  window.dispatchEvent(new CustomEvent(AUTH_USER_UPDATED_EVENT, {
-    detail: { user },
-  }))
+function clearProactiveRefreshTimer() {
+  if (proactiveRefreshTimer !== null) {
+    window.clearTimeout(proactiveRefreshTimer)
+    proactiveRefreshTimer = null
+  }
+}
+
+function schedulePreemptiveRefresh(accessExpiresInSecs: number) {
+  if (!Number.isFinite(accessExpiresInSecs) || accessExpiresInSecs <= 0) return
+
+  clearProactiveRefreshTimer()
+
+  const refreshDelayMs = Math.max(
+    (accessExpiresInSecs - PREEMPTIVE_REFRESH_AHEAD_SECONDS) * 1000,
+    MIN_PREEMPTIVE_REFRESH_DELAY_MS,
+  )
+
+  proactiveRefreshTimer = window.setTimeout(() => {
+    void refreshAccessTokenWithLock()
+  }, refreshDelayMs)
 }
 
 function clearTokenPair() {
-  localStorage.removeItem(ACCESS_TOKEN_KEY)
-  localStorage.removeItem(REFRESH_TOKEN_KEY)
+  clearProactiveRefreshTimer()
 }
 
-async function performRefresh(refreshToken: string): Promise<string | null> {
+async function performRefresh(): Promise<boolean> {
   const response = await fetch(apiUrl('/api/auth/refresh'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    credentials: 'include',
   })
 
   if (!response.ok) {
     clearTokenPair()
-    return null
+    return false
   }
 
   const data = await response.json()
-  if (!data?.token || !data?.refresh_token) {
-    clearTokenPair()
-    return null
+  writeTokenPair()
+
+  if (typeof data?.access_expires_in_secs === 'number') {
+    schedulePreemptiveRefresh(data.access_expires_in_secs)
   }
 
-  writeTokenPair(data.token, data.refresh_token)
-  if (data.user) {
-    writeStoredUser(data.user)
-  }
-  return data.token
+  refreshFailureBroadcasted = false
+  return true
 }
 
-export async function refreshAccessTokenWithLock(): Promise<string | null> {
-  const refreshToken = readRefreshToken()
-  if (!refreshToken) return null
-
+export async function refreshAccessTokenWithLock(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = performRefresh(refreshToken).finally(() => {
+    refreshInFlight = performRefresh().finally(() => {
       refreshInFlight = null
     })
   }
@@ -91,8 +89,11 @@ export async function refreshAccessTokenWithLock(): Promise<string | null> {
   return refreshInFlight
 }
 
-export function setAuthTokens(accessToken: string, refreshToken: string) {
-  writeTokenPair(accessToken, refreshToken)
+export function setAuthTokens(accessExpiresInSecs?: number) {
+  writeTokenPair()
+  if (typeof accessExpiresInSecs === 'number') {
+    schedulePreemptiveRefresh(accessExpiresInSecs)
+  }
 }
 
 export function clearAuthTokens() {
@@ -104,6 +105,7 @@ export type ApiFetchOptions = {
   disableRetry401?: boolean
   accessTokenOverride?: string
   disableGlobalError?: boolean
+  suppressRefreshFailedEvent?: boolean
 }
 
 function broadcastRefreshFailed(url: string) {
@@ -121,11 +123,6 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
 
   if (options?.accessTokenOverride && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${options.accessTokenOverride}`)
-  } else if (!options?.disableAuth && !headers.has('Authorization')) {
-    const token = readAccessToken()
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`)
-    }
   }
 
   const execute = (accessToken?: string) => {
@@ -136,6 +133,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
 
     return fetch(input, {
       ...init,
+      credentials: init?.credentials ?? 'include',
       headers: requestHeaders,
     })
   }
@@ -185,13 +183,15 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit, opt
     return response
   }
 
-  const newAccessToken = await refreshAccessTokenWithLock()
-  if (!newAccessToken) {
-    broadcastRefreshFailed(url)
+  const refreshed = await refreshAccessTokenWithLock()
+  if (!refreshed) {
+    if (!options?.suppressRefreshFailedEvent) {
+      broadcastRefreshFailed(url)
+    }
     return response
   }
 
-  const retriedResponse = await executeWithNetworkFallback(newAccessToken, true)
+  const retriedResponse = await executeWithNetworkFallback(undefined, true)
   if (!retriedResponse.ok && retriedResponse.status !== 401 && !options?.disableGlobalError) {
     const message = await readSafeErrorMessage(retriedResponse.clone())
     publishGlobalHttpError({

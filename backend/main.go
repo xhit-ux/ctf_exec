@@ -91,7 +91,7 @@ func main() {
 	teamService := service.NewTeamService(teamRepo)
 
 	// 初始化处理器
-	authHandler := handler.NewAuthHandler(authService, userService)
+	authHandler := handler.NewAuthHandler(authService, userService, cfg.AuthCookie)
 	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client)
 	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
@@ -120,6 +120,7 @@ func main() {
 	}
 
 	// 添加 CORS 中间件（限制为显式允许的前端来源）
+	middleware.SetAccessTokenCookieName(cfg.AuthCookie.AccessTokenName)
 	r.Use(middleware.GinCORSMiddleware(cfg.Server.AllowedOrigins))
 
 	// 健康检查（包含 Redis 与 MySQL 健康检查）

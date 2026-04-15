@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { apiUrl, staticUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
@@ -102,7 +103,8 @@ function asArray<T>(payload: unknown): T[] {
 export default function ContestDetail() {
   const { id } = useParams()
   const contestID = id || ''
-  const hasStoredAuth = Boolean(localStorage.getItem('token') || localStorage.getItem('refresh_token'))
+  const { isAuthenticated } = useAuth()
+  const hasStoredAuth = isAuthenticated
 
   const [contest, setContest] = useState<ContestDetailData | null>(null)
   const [loadingContest, setLoadingContest] = useState(true)
