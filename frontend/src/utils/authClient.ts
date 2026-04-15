@@ -8,6 +8,8 @@ let refreshInFlight: Promise<boolean> | null = null
 let refreshFailureBroadcasted = false
 let proactiveRefreshTimer: number | null = null
 
+const ACCESS_EXPIRES_AT_KEY = 'auth_access_expires_at_ms'
+
 const PREEMPTIVE_REFRESH_AHEAD_SECONDS = 180
 const MIN_PREEMPTIVE_REFRESH_DELAY_MS = 30_000
 
@@ -28,6 +30,30 @@ function writeTokenPair() {
   refreshFailureBroadcasted = false
 }
 
+function persistAccessExpireAt(accessExpiresInSecs: number) {
+  if (!Number.isFinite(accessExpiresInSecs) || accessExpiresInSecs <= 0) return
+  const expiresAtMs = Date.now() + accessExpiresInSecs * 1000
+  window.sessionStorage.setItem(ACCESS_EXPIRES_AT_KEY, String(expiresAtMs))
+}
+
+function clearAccessExpireAt() {
+  window.sessionStorage.removeItem(ACCESS_EXPIRES_AT_KEY)
+}
+
+export function shouldPreRefreshBeforeBootstrap(): boolean {
+  const raw = window.sessionStorage.getItem(ACCESS_EXPIRES_AT_KEY)
+  if (!raw) return false
+
+  const expiresAtMs = Number(raw)
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= 0) {
+    clearAccessExpireAt()
+    return false
+  }
+
+  // 若已进入“提前刷新窗口”则优先 refresh，避免启动时先 hit 到 401。
+  return Date.now() >= expiresAtMs-PREEMPTIVE_REFRESH_AHEAD_SECONDS*1000
+}
+
 function clearProactiveRefreshTimer() {
   if (proactiveRefreshTimer !== null) {
     window.clearTimeout(proactiveRefreshTimer)
@@ -38,6 +64,7 @@ function clearProactiveRefreshTimer() {
 function schedulePreemptiveRefresh(accessExpiresInSecs: number) {
   if (!Number.isFinite(accessExpiresInSecs) || accessExpiresInSecs <= 0) return
 
+  persistAccessExpireAt(accessExpiresInSecs)
   clearProactiveRefreshTimer()
 
   const refreshDelayMs = Math.max(
@@ -52,6 +79,7 @@ function schedulePreemptiveRefresh(accessExpiresInSecs: number) {
 
 function clearTokenPair() {
   clearProactiveRefreshTimer()
+  clearAccessExpireAt()
 }
 
 async function performRefresh(): Promise<boolean> {

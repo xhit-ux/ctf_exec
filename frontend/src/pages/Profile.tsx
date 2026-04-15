@@ -151,8 +151,8 @@ export const Profile: React.FC = () => {
                       <div className="mt-2 text-base font-semibold text-slate-950">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '暂无记录'}</div>
                     </div>
                     <div className="rounded-2xl glass-soft px-4 py-4">
-                      <div className="text-xs uppercase tracking-[0.22em] text-slate-400">最近登录</div>
-                      <div className="mt-2 text-base font-semibold text-slate-950">{formatRelativeTime(profile?.last_login_at)}</div>
+                      <div className="text-xs uppercase tracking-[0.22em] text-slate-400">最近活跃</div>
+                      <div className="mt-2 text-base font-semibold text-slate-950">{formatRelativeTime(profile?.last_active_at)}</div>
                     </div>
                   </div>
                 </section>

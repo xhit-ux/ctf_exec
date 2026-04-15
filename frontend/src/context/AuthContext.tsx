@@ -1,6 +1,6 @@
 import React, { createContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { apiUrl } from '../utils/api'
-import { AUTH_REFRESH_FAILED_EVENT, apiFetch, clearAuthTokens, setAuthTokens } from '../utils/authClient'
+import { AUTH_REFRESH_FAILED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens, shouldPreRefreshBeforeBootstrap } from '../utils/authClient'
 import { readSafeErrorMessage } from '../utils/error'
 import { publishGlobalHttpError } from '../utils/globalErrorBus'
 
@@ -63,6 +63,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try {
         // 迁移清理历史版本遗留的本地用户缓存。
         localStorage.removeItem('user')
+
+        if (shouldPreRefreshBeforeBootstrap()) {
+          await refreshAccessTokenWithLock()
+        }
+
         await refreshUser(true)
       } finally {
         setIsLoading(false)
