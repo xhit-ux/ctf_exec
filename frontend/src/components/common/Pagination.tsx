@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../../utils/tabAccent'
 
 interface PaginationProps {
   total: number
@@ -16,6 +17,7 @@ export default function Pagination({
   onPageSizeChange,
 }: PaginationProps) {
   const [jumpInput, setJumpInput] = useState('')
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const clampedPage = Math.min(Math.max(page, 1), totalPages)
 
@@ -58,6 +60,7 @@ export default function Pagination({
     const target = Math.min(Math.max(nextPage, 1), totalPages)
     if (target !== clampedPage) {
       onPageChange(target)
+      setTabAccent((prev) => randomTabAccent(prev))
     }
   }
 
@@ -68,7 +71,10 @@ export default function Pagination({
     }
     const target = Math.trunc(parsed)
     const clamped = Math.min(Math.max(target, 1), totalPages)
-    onPageChange(clamped)
+    if (clamped !== clampedPage) {
+      onPageChange(clamped)
+      setTabAccent((prev) => randomTabAccent(prev))
+    }
     setJumpInput('')
   }
 
@@ -113,7 +119,8 @@ export default function Pagination({
                 type="button"
                 aria-current={active ? 'page' : undefined}
                 onClick={() => goToPage(item)}
-                className={`${btnBase} ${active ? 'border-blue-600 bg-blue-600 text-white' : 'bg-white hover:bg-gray-100'}`}
+                className={`${btnBase} ${active ? 'tab-pill tab-pill--active border-transparent' : 'bg-white hover:bg-gray-100'}`}
+                style={active ? tabAccentStyle(tabAccent) : undefined}
               >
                 {item}
               </button>

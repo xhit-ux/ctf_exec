@@ -10,7 +10,7 @@ import { parseProfilePreferences } from '../components/profile/profileUtils'
 type FormField = HTMLInputElement | HTMLTextAreaElement
 
 const INPUT_CLASS =
-  'w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-4 focus:ring-sky-100'
+  'glass-input w-full rounded-2xl px-4 py-3 text-sm text-slate-900 placeholder:text-slate-400'
 
 export const EditProfile: React.FC = () => {
   const { user, refreshUser } = useAuth()
@@ -138,27 +138,27 @@ export const EditProfile: React.FC = () => {
         <div className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
             {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="h-28 animate-pulse rounded-[24px] border border-slate-200 bg-white" />
+              <div key={index} className="h-28 animate-pulse rounded-[24px] glass-card" />
             ))}
           </div>
-          <div className="h-[36rem] animate-pulse rounded-[28px] border border-slate-200 bg-white" />
+          <div className="h-[36rem] animate-pulse rounded-[28px] glass-card" />
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]">
+            <div className="rounded-[24px] glass-card px-5 py-5">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">资料完成度</div>
               <div className="mt-3 text-3xl font-semibold text-slate-950">
                 {completionStats.filled}/{completionStats.total}
               </div>
               <div className="mt-2 text-sm text-slate-500">已填写的基础资料字段</div>
             </div>
-            <div className="rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]">
+            <div className="rounded-[24px] glass-card px-5 py-5">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">粉丝可见</div>
               <div className="mt-3 text-3xl font-semibold text-slate-950">{formData.email_public ? '开启' : '关闭'}</div>
               <div className="mt-2 text-sm text-slate-500">邮箱公开状态会同步影响主页资料区</div>
             </div>
-            <div className="rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]">
+            <div className="rounded-[24px] glass-card px-5 py-5">
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">保存去向</div>
               <div className="mt-3 text-3xl font-semibold text-slate-950">@{user?.username}</div>
               <div className="mt-2 text-sm text-slate-500">保存后会直接回到你的个人主页</div>
@@ -275,7 +275,7 @@ export const EditProfile: React.FC = () => {
             title="隐私设置"
             description="当前只保留邮箱公开设置，后续若补更多 profile 偏好也可以直接接在这一块。"
           >
-            <label className="flex cursor-pointer items-start gap-4 rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white">
+            <label className="flex cursor-pointer items-start gap-4 rounded-[24px] glass-soft px-4 py-4 transition hover:border-slate-300 hover:bg-white">
               <div className="relative mt-0.5">
                 <input
                   type="checkbox"
@@ -301,19 +301,19 @@ export const EditProfile: React.FC = () => {
           </ProfilePanel>
 
           <div className="sticky bottom-4 z-10 flex justify-end">
-            <div className="flex w-full items-center justify-between gap-4 rounded-[24px] border border-slate-200/80 bg-white/95 px-5 py-4 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)] backdrop-blur sm:w-auto">
+            <div className="flex w-full items-center justify-between gap-4 rounded-[24px] glass-card px-5 py-4 sm:w-auto">
               <button
                 type="button"
                 onClick={() => navigate(`/profile/${user?.username}`)}
                 disabled={saving}
-                className="rounded-full border border-slate-200 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-60"
+                className="btn-secondary rounded-full disabled:opacity-60"
               >
                 取消
               </button>
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                className="btn-primary rounded-full disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {saving ? '保存中...' : '保存更改'}
               </button>

@@ -21,6 +21,7 @@ node_modules/
 # IDE and Editor
 .vscode/
 .idea/
+.github/
 *.swp
 *.swo
 *~

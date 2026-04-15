@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { fromUnknownError } from '../../utils/error'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../../utils/tabAccent'
 import {
   ContestAdmin as ContestAdminRecord,
   ContestChallenge,
@@ -33,6 +34,7 @@ export default function ContestAdmin() {
   const { contest, isAdmin, adminRole, canEditAdminModules, refreshContest } = useContestContext()
 
   const [tab, setTab] = useState<AdminTab>('info')
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [busy, setBusy] = useState(false)
@@ -104,6 +106,11 @@ export default function ContestAdmin() {
   const resetMsg = () => {
     setError('')
     setSuccess('')
+  }
+
+  const handleTabSwitch = (nextTab: AdminTab) => {
+    setTab(nextTab)
+    setTabAccent((prev) => randomTabAccent(prev))
   }
 
   const saveContestInfo = async () => {
@@ -252,25 +259,25 @@ export default function ContestAdmin() {
   }
 
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+    <section className="glass-card p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-gray-900">赛事管理</h2>
         <div className="flex items-center gap-2">
           <Link
             to={`/problem/publish?contest_id=${contest.id}&scope=contest`}
-            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+            className="btn-secondary text-xs"
           >
             进入赛事发布空间
           </Link>
-          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">当前权限: {adminRole || 'admin'}</span>
+          <span className="rounded-full glass-soft px-3 py-1 text-xs text-gray-600">当前权限: {adminRole || 'admin'}</span>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => setTab('info')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${tab === 'info' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>赛事信息</button>
-        <button type="button" onClick={() => setTab('challenges')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${tab === 'challenges' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>题目编排</button>
-        <button type="button" onClick={() => setTab('admins')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${tab === 'admins' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>管理员</button>
-        <button type="button" onClick={() => setTab('audit')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${tab === 'audit' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'}`}>提交审计</button>
+        <button type="button" onClick={() => handleTabSwitch('info')} className={`tab-pill ${tab === 'info' ? 'tab-pill--active' : ''}`} style={tab === 'info' ? tabAccentStyle(tabAccent) : undefined}>赛事信息</button>
+        <button type="button" onClick={() => handleTabSwitch('challenges')} className={`tab-pill ${tab === 'challenges' ? 'tab-pill--active' : ''}`} style={tab === 'challenges' ? tabAccentStyle(tabAccent) : undefined}>题目编排</button>
+        <button type="button" onClick={() => handleTabSwitch('admins')} className={`tab-pill ${tab === 'admins' ? 'tab-pill--active' : ''}`} style={tab === 'admins' ? tabAccentStyle(tabAccent) : undefined}>管理员</button>
+        <button type="button" onClick={() => handleTabSwitch('audit')} className={`tab-pill ${tab === 'audit' ? 'tab-pill--active' : ''}`} style={tab === 'audit' ? tabAccentStyle(tabAccent) : undefined}>提交审计</button>
       </div>
 
       {error && <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
@@ -278,52 +285,52 @@ export default function ContestAdmin() {
 
       {tab === 'info' && (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="赛事标题" />
-          <input value={form.cover_image} onChange={(event) => setForm((prev) => ({ ...prev, cover_image: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" placeholder="封面地址" />
-          <select value={form.visibility} onChange={(event) => setForm((prev) => ({ ...prev, visibility: event.target.value as 'public' | 'invite_only' | 'private' }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <input value={form.title} onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))} className="glass-input" placeholder="赛事标题" />
+          <input value={form.cover_image} onChange={(event) => setForm((prev) => ({ ...prev, cover_image: event.target.value }))} className="glass-input" placeholder="封面地址" />
+          <select value={form.visibility} onChange={(event) => setForm((prev) => ({ ...prev, visibility: event.target.value as 'public' | 'invite_only' | 'private' }))} className="glass-input">
             <option value="public">public</option>
             <option value="invite_only">invite_only</option>
             <option value="private">private</option>
           </select>
-          <select value={form.scoring_type} onChange={(event) => setForm((prev) => ({ ...prev, scoring_type: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <select value={form.scoring_type} onChange={(event) => setForm((prev) => ({ ...prev, scoring_type: event.target.value }))} className="glass-input">
             <option value="jeopardy">jeopardy</option>
             <option value="dynamic">dynamic</option>
           </select>
-          <input type="datetime-local" value={form.start_time} onChange={(event) => setForm((prev) => ({ ...prev, start_time: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <input type="datetime-local" value={form.end_time} onChange={(event) => setForm((prev) => ({ ...prev, end_time: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <textarea value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} className="md:col-span-2 rounded-lg border border-gray-200 px-3 py-2 text-sm min-h-[120px]" placeholder="赛事描述" />
+          <input type="datetime-local" value={form.start_time} onChange={(event) => setForm((prev) => ({ ...prev, start_time: event.target.value }))} className="glass-input" />
+          <input type="datetime-local" value={form.end_time} onChange={(event) => setForm((prev) => ({ ...prev, end_time: event.target.value }))} className="glass-input" />
+          <textarea value={form.description} onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))} className="md:col-span-2 glass-input min-h-[120px]" placeholder="赛事描述" />
           <div className="md:col-span-2">
-            <button type="button" disabled={!canEditAdminModules || busy} onClick={saveContestInfo} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-50">保存赛事信息</button>
+            <button type="button" disabled={!canEditAdminModules || busy} onClick={saveContestInfo} className="btn-primary disabled:opacity-50">保存赛事信息</button>
           </div>
         </div>
       )}
 
       {tab === 'challenges' && (
         <div className="space-y-4">
-          <div className="rounded-lg border border-blue-100 bg-blue-50/40 p-4 space-y-3">
-            <div className="text-sm font-semibold text-blue-800">发布新题目到当前赛事</div>
+          <div className="glass-soft p-4 space-y-3">
+            <div className="text-sm font-semibold text-amber-800">发布新题目到当前赛事</div>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <input value={newProblem.title} onChange={(event) => setNewProblem((prev) => ({ ...prev, title: event.target.value }))} placeholder="题目标题" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input value={newProblem.category} onChange={(event) => setNewProblem((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类（如 web/pwn/rev）" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input value={String(newProblem.points)} onChange={(event) => setNewProblem((prev) => ({ ...prev, points: Number(event.target.value) || 0 }))} placeholder="分值" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input value={newProblem.difficulty} onChange={(event) => setNewProblem((prev) => ({ ...prev, difficulty: event.target.value }))} placeholder="难度" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-              <input value={newProblem.flag} onChange={(event) => setNewProblem((prev) => ({ ...prev, flag: event.target.value }))} placeholder="Flag（明文，仅提交时哈希）" className="rounded-lg border border-gray-200 px-3 py-2 text-sm md:col-span-2" />
-              <input value={newProblem.tags} onChange={(event) => setNewProblem((prev) => ({ ...prev, tags: event.target.value }))} placeholder="标签（逗号分隔）" className="rounded-lg border border-gray-200 px-3 py-2 text-sm md:col-span-2" />
-              <textarea value={newProblem.description} onChange={(event) => setNewProblem((prev) => ({ ...prev, description: event.target.value }))} placeholder="题目描述" className="rounded-lg border border-gray-200 px-3 py-2 text-sm min-h-[96px] md:col-span-2" />
+              <input value={newProblem.title} onChange={(event) => setNewProblem((prev) => ({ ...prev, title: event.target.value }))} placeholder="题目标题" className="glass-input" />
+              <input value={newProblem.category} onChange={(event) => setNewProblem((prev) => ({ ...prev, category: event.target.value }))} placeholder="分类（如 web/pwn/rev）" className="glass-input" />
+              <input value={String(newProblem.points)} onChange={(event) => setNewProblem((prev) => ({ ...prev, points: Number(event.target.value) || 0 }))} placeholder="分值" className="glass-input" />
+              <input value={newProblem.difficulty} onChange={(event) => setNewProblem((prev) => ({ ...prev, difficulty: event.target.value }))} placeholder="难度" className="glass-input" />
+              <input value={newProblem.flag} onChange={(event) => setNewProblem((prev) => ({ ...prev, flag: event.target.value }))} placeholder="Flag（明文，仅提交时哈希）" className="glass-input md:col-span-2" />
+              <input value={newProblem.tags} onChange={(event) => setNewProblem((prev) => ({ ...prev, tags: event.target.value }))} placeholder="标签（逗号分隔）" className="glass-input md:col-span-2" />
+              <textarea value={newProblem.description} onChange={(event) => setNewProblem((prev) => ({ ...prev, description: event.target.value }))} placeholder="题目描述" className="glass-input min-h-[96px] md:col-span-2" />
             </div>
             <div>
-              <button type="button" disabled={!canEditAdminModules || busy} onClick={handleCreateContestProblem} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">发布到当前赛事</button>
+              <button type="button" disabled={!canEditAdminModules || busy} onClick={handleCreateContestProblem} className="btn-primary disabled:opacity-50">发布到当前赛事</button>
             </div>
           </div>
 
           <div className="text-xs text-gray-500">兼容旧流程：如需将已有题目加入赛事，仍可使用下方按题目 ID 编排。</div>
           <div className="flex flex-wrap items-center gap-2">
-            <input value={newChallengeID} onChange={(event) => setNewChallengeID(event.target.value)} placeholder="题目 ID" className="w-32 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-            <input value={newScoreOverride} onChange={(event) => setNewScoreOverride(event.target.value)} placeholder="覆盖分值(可空)" className="w-40 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-            <button type="button" disabled={!canEditAdminModules || busy} onClick={handleAddChallenge} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-50">添加题目</button>
+            <input value={newChallengeID} onChange={(event) => setNewChallengeID(event.target.value)} placeholder="题目 ID" className="w-32 glass-input" />
+            <input value={newScoreOverride} onChange={(event) => setNewScoreOverride(event.target.value)} placeholder="覆盖分值(可空)" className="w-40 glass-input" />
+            <button type="button" disabled={!canEditAdminModules || busy} onClick={handleAddChallenge} className="btn-primary disabled:opacity-50">添加题目</button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="glass-table-wrap overflow-x-auto">
             <table className="w-full min-w-[680px] text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-500">
@@ -338,7 +345,7 @@ export default function ContestAdmin() {
                   <tr key={item.id} className="border-b border-gray-100 last:border-b-0">
                     <td className="px-3 py-3 text-gray-600">#{item.id}</td>
                     <td className="px-3 py-3 font-semibold text-gray-800">{item.title}</td>
-                    <td className="px-3 py-3 text-center font-bold text-blue-600">{item.score_override ?? item.points ?? 0}</td>
+                    <td className="px-3 py-3 text-center font-bold text-amber-700">{item.score_override ?? item.points ?? 0}</td>
                     <td className="px-3 py-3 text-right"><button type="button" disabled={!canEditAdminModules || busy} onClick={() => handleRemoveChallenge(item.id)} className="text-sm font-semibold text-red-600 disabled:opacity-50">移除</button></td>
                   </tr>
                 ))}
@@ -351,15 +358,15 @@ export default function ContestAdmin() {
       {tab === 'admins' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <input value={newAdminUsername} onChange={(event) => setNewAdminUsername(event.target.value)} placeholder="用户名" className="w-72 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-            <select value={newAdminRole} onChange={(event) => setNewAdminRole(event.target.value as 'admin' | 'observer')} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+            <input value={newAdminUsername} onChange={(event) => setNewAdminUsername(event.target.value)} placeholder="用户名" className="w-72 glass-input" />
+            <select value={newAdminRole} onChange={(event) => setNewAdminRole(event.target.value as 'admin' | 'observer')} className="glass-input w-auto">
               <option value="observer">observer</option>
               <option value="admin">admin</option>
             </select>
-            <button type="button" disabled={!canMutateAdmins || busy} onClick={handleAddAdmin} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold disabled:opacity-50">添加管理员</button>
+            <button type="button" disabled={!canMutateAdmins || busy} onClick={handleAddAdmin} className="btn-primary disabled:opacity-50">添加管理员</button>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="glass-table-wrap overflow-x-auto">
             <table className="w-full min-w-[700px] text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-500">
@@ -372,7 +379,7 @@ export default function ContestAdmin() {
                 {admins.map((item) => (
                   <tr key={item.id} className="border-b border-gray-100 last:border-b-0">
                     <td className="px-3 py-3 text-gray-700">{item.username || item.user_id}</td>
-                    <td className="px-3 py-3 text-center"><span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700">{item.role}</span></td>
+                    <td className="px-3 py-3 text-center"><span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{item.role}</span></td>
                     <td className="px-3 py-3 text-right"><button type="button" disabled={!canMutateAdmins || busy || !(item.username || '').trim()} onClick={() => handleRemoveAdmin(item.username || '')} className="text-sm font-semibold text-red-600 disabled:opacity-50">移除</button></td>
                   </tr>
                 ))}
@@ -383,7 +390,7 @@ export default function ContestAdmin() {
       )}
 
       {tab === 'audit' && (
-        <div className="overflow-x-auto">
+        <div className="glass-table-wrap overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-gray-500">

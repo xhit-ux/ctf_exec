@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { NavLink, Outlet, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { staticUrl } from '../../utils/api'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../../utils/tabAccent'
 import { Contest, ContestAdmin, fetchContestAdmins, fetchContestChallenges, fetchContestDetail } from '../../utils/contestApi'
 
 type ContestContextValue = {
@@ -32,9 +33,7 @@ function formatTime(input?: string | null): string {
 }
 
 function buildTabClass(isActive: boolean): string {
-  return isActive
-    ? 'px-3 py-2 rounded-lg text-sm font-semibold bg-blue-600 text-white'
-    : 'px-3 py-2 rounded-lg text-sm font-semibold text-gray-600 hover:bg-gray-100'
+  return `tab-pill text-sm ${isActive ? 'tab-pill--active' : ''}`
 }
 
 export default function ContestLayout() {
@@ -49,6 +48,11 @@ export default function ContestLayout() {
   const [isParticipant, setIsParticipant] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [adminRole, setAdminRole] = useState<'admin' | 'observer' | null>(null)
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
+
+  const handleNavTabClick = () => {
+    setTabAccent((prev) => randomTabAccent(prev))
+  }
 
   const refreshContest = useCallback(async () => {
     if (!contestId) return
@@ -174,7 +178,7 @@ export default function ContestLayout() {
             {contest.cover_image ? (
               <img src={staticUrl(contest.cover_image)} alt={contest.title} className="h-full w-full object-cover" />
             ) : (
-              <div className="h-full w-full bg-gradient-to-r from-sky-100 to-cyan-100" />
+              <div className="h-full w-full bg-gradient-to-r from-amber-100 to-orange-100" />
             )}
           </div>
 
@@ -184,7 +188,7 @@ export default function ContestLayout() {
                 <h1 className="text-2xl font-extrabold text-gray-900">{contest.title}</h1>
                 <p className="mt-2 text-sm text-gray-600">{contest.description || '暂无赛事描述'}</p>
               </div>
-              <span className="inline-flex w-fit rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-sm text-blue-700">{statusText}</span>
+              <span className="inline-flex w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-sm text-amber-800">{statusText}</span>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -204,14 +208,14 @@ export default function ContestLayout() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <section className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap gap-2">
-            <NavLink to="." end className={({ isActive }) => buildTabClass(isActive)}>概览</NavLink>
-            {(isParticipant || isAdmin) && <NavLink to="problems" className={({ isActive }) => buildTabClass(isActive)}>题目</NavLink>}
-            <NavLink to="board" className={({ isActive }) => buildTabClass(isActive)}>榜单</NavLink>
-            {(isParticipant || isAdmin) && <NavLink to="submissions" className={({ isActive }) => buildTabClass(isActive)}>我的提交</NavLink>}
-            {(isParticipant || isAdmin) && <NavLink to="participants" className={({ isActive }) => buildTabClass(isActive)}>参赛者</NavLink>}
-            {isAdmin && <NavLink to="admin" className={({ isActive }) => buildTabClass(isActive)}>管理</NavLink>}
+            <NavLink to="." end onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>概览</NavLink>
+            {(isParticipant || isAdmin) && <NavLink to="problems" onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>题目</NavLink>}
+            <NavLink to="board" onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>榜单</NavLink>
+            {(isParticipant || isAdmin) && <NavLink to="submissions" onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>我的提交</NavLink>}
+            {(isParticipant || isAdmin) && <NavLink to="participants" onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>参赛者</NavLink>}
+            {isAdmin && <NavLink to="admin" onClick={handleNavTabClick} className={({ isActive }) => buildTabClass(isActive)} style={({ isActive }) => (isActive ? tabAccentStyle(tabAccent) : undefined)}>管理</NavLink>}
           </div>
         </section>
 

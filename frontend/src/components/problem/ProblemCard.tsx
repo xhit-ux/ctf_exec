@@ -16,7 +16,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
       className={`flex flex-col h-full p-6 bg-white border-2 rounded-xl transition-all duration-300 hover:shadow-xl hover:-translate-y-1 cursor-pointer group overflow-hidden relative ${
         p.is_solved
           ? 'border-green-300 bg-gradient-to-br from-white to-green-50'
-          : 'border-gray-200 hover:border-blue-300'
+          : 'border-gray-200 hover:border-amber-300'
       }`}
     >
       {/* Solved overlay gradient */}
@@ -27,7 +27,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
       {/* Header: Title and Solved Badge */}
       <div className="flex items-start justify-between gap-3 mb-3 relative z-10">
         <div className="flex-1">
-          <h3 className="font-bold text-lg text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2">
+          <h3 className="font-bold text-lg text-gray-900 group-hover:text-amber-700 transition-colors line-clamp-2">
             {p.title}
           </h3>
         </div>
@@ -65,7 +65,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
             {tags.slice(0, 3).map((t) => (
               <span
                 key={t}
-                className="text-xs px-2 py-1 rounded-full bg-gradient-to-r from-pink-50 to-rose-50 text-gray-700 border border-pink-100 font-medium"
+                className="text-xs px-2 py-1 rounded-full bg-amber-50 text-gray-700 border border-amber-100 font-medium"
               >
                 #{t}
               </span>
@@ -85,7 +85,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
           {p.is_solved ? '✓ 已解决' : '未解决'}
         </div>
         <div className={`text-base font-bold px-4 py-2 rounded-lg ${
-          p.is_solved ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+          p.is_solved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'
         }`}>
           {p.points}
         </div>

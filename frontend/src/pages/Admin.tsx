@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
 
 type AdminTab =
   | 'overview'
@@ -95,11 +96,16 @@ function roleBadgeClass(role: string): string {
   return 'bg-blue-100 text-blue-700'
 }
 
+const CARD_CLASS = 'glass-card p-6 space-y-4'
+const INPUT_CLASS = 'glass-input'
+const TABLE_WRAP_CLASS = 'glass-table-wrap overflow-x-auto'
+
 export default function Admin() {
   const { user } = useAuth()
   const isRoot = canAccessRootOnly(user?.role)
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview')
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [successHint, setSuccessHint] = useState('')
@@ -590,6 +596,11 @@ export default function Admin() {
     }
   }
 
+  const handleTabSwitch = (nextTab: AdminTab) => {
+    setActiveTab(nextTab)
+    setTabAccent((prev) => randomTabAccent(prev))
+  }
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
@@ -597,19 +608,19 @@ export default function Admin() {
           <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">站点管理中心</h1>
           <p className="text-gray-500 mt-2">site_admin 负责运营管理，root 额外负责用户权限治理与站点全局配置。</p>
         </div>
-        <div className="text-sm text-gray-600 bg-white border border-gray-200 rounded-lg px-4 py-2 w-fit">
+        <div className="text-sm text-gray-600 glass-soft px-4 py-2 w-fit">
           当前身份: <span className="font-semibold text-gray-900">{user?.role || '-'}</span>
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setActiveTab('overview')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'overview' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>概览</button>
-        <button onClick={() => setActiveTab('problem')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'problem' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>新建题目</button>
-        <button onClick={() => setActiveTab('contest')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'contest' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>新建赛事</button>
-        <button onClick={() => setActiveTab('user-status')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'user-status' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'}`}>用户封禁/解封</button>
-        {isRoot && <button onClick={() => setActiveTab('root-users')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'root-users' ? 'bg-red-600 text-white' : 'bg-white text-red-700 border border-red-200 hover:bg-red-50'}`}>Root 角色治理</button>}
-        {isRoot && <button onClick={() => setActiveTab('root-audit')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'root-audit' ? 'bg-red-600 text-white' : 'bg-white text-red-700 border border-red-200 hover:bg-red-50'}`}>角色变更审计</button>}
-        {isRoot && <button onClick={() => setActiveTab('root-site-config')} className={`px-4 py-2 rounded-lg text-sm font-medium ${activeTab === 'root-site-config' ? 'bg-red-600 text-white' : 'bg-white text-red-700 border border-red-200 hover:bg-red-50'}`}>站点配置</button>}
+        <button onClick={() => handleTabSwitch('overview')} className={`tab-pill ${activeTab === 'overview' ? 'tab-pill--active' : ''}`} style={activeTab === 'overview' ? tabAccentStyle(tabAccent) : undefined}>概览</button>
+        <button onClick={() => handleTabSwitch('problem')} className={`tab-pill ${activeTab === 'problem' ? 'tab-pill--active' : ''}`} style={activeTab === 'problem' ? tabAccentStyle(tabAccent) : undefined}>新建题目</button>
+        <button onClick={() => handleTabSwitch('contest')} className={`tab-pill ${activeTab === 'contest' ? 'tab-pill--active' : ''}`} style={activeTab === 'contest' ? tabAccentStyle(tabAccent) : undefined}>新建赛事</button>
+        <button onClick={() => handleTabSwitch('user-status')} className={`tab-pill ${activeTab === 'user-status' ? 'tab-pill--active' : ''}`} style={activeTab === 'user-status' ? tabAccentStyle(tabAccent) : undefined}>用户封禁/解封</button>
+        {isRoot && <button onClick={() => handleTabSwitch('root-users')} className={`tab-pill ${activeTab === 'root-users' ? 'tab-pill--active' : ''}`} style={activeTab === 'root-users' ? tabAccentStyle(tabAccent) : undefined}>Root 角色治理</button>}
+        {isRoot && <button onClick={() => handleTabSwitch('root-audit')} className={`tab-pill ${activeTab === 'root-audit' ? 'tab-pill--active' : ''}`} style={activeTab === 'root-audit' ? tabAccentStyle(tabAccent) : undefined}>角色变更审计</button>}
+        {isRoot && <button onClick={() => handleTabSwitch('root-site-config')} className={`tab-pill ${activeTab === 'root-site-config' ? 'tab-pill--active' : ''}`} style={activeTab === 'root-site-config' ? tabAccentStyle(tabAccent) : undefined}>站点配置</button>}
       </div>
 
       {error && <div className="rounded-lg border border-red-200 bg-red-50 text-red-700 px-4 py-3">{error}</div>}
@@ -617,14 +628,14 @@ export default function Admin() {
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {Array.from({ length: 3 }).map((_, idx) => <div key={idx} className="h-28 rounded-xl border border-gray-100 bg-white animate-pulse" />)}
+          {Array.from({ length: 3 }).map((_, idx) => <div key={idx} className="h-28 rounded-xl glass-card animate-pulse" />)}
         </div>
       ) : (
         <>
           {activeTab === 'overview' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {statCards.map((card) => (
-                <div key={card.title} className="bg-white rounded-xl border border-gray-100 p-5">
+                <div key={card.title} className="glass-card p-5">
                   <div className="text-sm text-gray-500">{card.title}</div>
                   <div className="text-3xl font-extrabold text-gray-900 mt-2">{card.value}</div>
                   <div className="text-xs text-gray-500 mt-3">{card.hint}</div>
@@ -634,69 +645,69 @@ export default function Admin() {
           )}
 
           {activeTab === 'problem' && (
-            <form onSubmit={submitProblem} className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <form onSubmit={submitProblem} className={CARD_CLASS}>
               <h2 className="text-lg font-bold text-gray-900">创建平台题目</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input value={problemForm.title} onChange={(e) => setProblemForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="题目标题" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
-                <input value={problemForm.flag} onChange={(e) => setProblemForm((prev) => ({ ...prev, flag: e.target.value }))} placeholder="Flag（创建后仅存储哈希）" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
-                <select value={problemForm.category} onChange={(e) => setProblemForm((prev) => ({ ...prev, category: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <input value={problemForm.title} onChange={(e) => setProblemForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="题目标题" className={INPUT_CLASS} required />
+                <input value={problemForm.flag} onChange={(e) => setProblemForm((prev) => ({ ...prev, flag: e.target.value }))} placeholder="Flag（创建后仅存储哈希）" className={INPUT_CLASS} required />
+                <select value={problemForm.category} onChange={(e) => setProblemForm((prev) => ({ ...prev, category: e.target.value }))} className={INPUT_CLASS}>
                   <option value="web">web</option>
                   <option value="pwn">pwn</option>
                   <option value="crypto">crypto</option>
                   <option value="reverse">reverse</option>
                   <option value="misc">misc</option>
                 </select>
-                <select value={problemForm.difficulty} onChange={(e) => setProblemForm((prev) => ({ ...prev, difficulty: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <select value={problemForm.difficulty} onChange={(e) => setProblemForm((prev) => ({ ...prev, difficulty: e.target.value }))} className={INPUT_CLASS}>
                   <option value="简单">简单</option>
                   <option value="中等">中等</option>
                   <option value="困难">困难</option>
                 </select>
-                <input type="number" min={0} value={problemForm.points} onChange={(e) => setProblemForm((prev) => ({ ...prev, points: Number(e.target.value) || 0 }))} placeholder="分值" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                <input value={problemForm.tags} onChange={(e) => setProblemForm((prev) => ({ ...prev, tags: e.target.value }))} placeholder="标签（逗号分隔）" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <input type="number" min={0} value={problemForm.points} onChange={(e) => setProblemForm((prev) => ({ ...prev, points: Number(e.target.value) || 0 }))} placeholder="分值" className={INPUT_CLASS} />
+                <input value={problemForm.tags} onChange={(e) => setProblemForm((prev) => ({ ...prev, tags: e.target.value }))} placeholder="标签（逗号分隔）" className={INPUT_CLASS} />
               </div>
-              <textarea value={problemForm.description} onChange={(e) => setProblemForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="题目描述" className="w-full min-h-32 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              <button type="submit" disabled={creatingProblem} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60">{creatingProblem ? '创建中...' : '创建题目'}</button>
+              <textarea value={problemForm.description} onChange={(e) => setProblemForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="题目描述" className={`${INPUT_CLASS} min-h-32`} />
+              <button type="submit" disabled={creatingProblem} className="btn-primary w-fit">{creatingProblem ? '创建中...' : '创建题目'}</button>
             </form>
           )}
 
           {activeTab === 'contest' && (
-            <form onSubmit={submitContest} className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <form onSubmit={submitContest} className={CARD_CLASS}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="text-lg font-bold text-gray-900">创建赛事</h2>
-                <a href="/admin/contests" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+                <a href="/admin/contests" className="text-sm font-semibold text-amber-700 hover:text-amber-800">
                   进入新版赛事管理页
                 </a>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input value={contestForm.title} onChange={(e) => setContestForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="赛事标题" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
-                <select value={contestForm.scoring_type} onChange={(e) => setContestForm((prev) => ({ ...prev, scoring_type: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <input value={contestForm.title} onChange={(e) => setContestForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="赛事标题" className={INPUT_CLASS} required />
+                <select value={contestForm.scoring_type} onChange={(e) => setContestForm((prev) => ({ ...prev, scoring_type: e.target.value }))} className={INPUT_CLASS}>
                   {contestScoringTypes.map((item) => <option value={item} key={item}>{item}</option>)}
                 </select>
-                <input value={contestForm.cover_image} onChange={(e) => setContestForm((prev) => ({ ...prev, cover_image: e.target.value }))} placeholder="封面路径（可选）" className="px-3 py-2 border border-gray-300 rounded-lg text-sm md:col-span-2" />
-                <input type="datetime-local" value={contestForm.start_time} onChange={(e) => setContestForm((prev) => ({ ...prev, start_time: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                <input type="datetime-local" value={contestForm.end_time} onChange={(e) => setContestForm((prev) => ({ ...prev, end_time: e.target.value }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <input value={contestForm.cover_image} onChange={(e) => setContestForm((prev) => ({ ...prev, cover_image: e.target.value }))} placeholder="封面路径（可选）" className={`${INPUT_CLASS} md:col-span-2`} />
+                <input type="datetime-local" value={contestForm.start_time} onChange={(e) => setContestForm((prev) => ({ ...prev, start_time: e.target.value }))} className={INPUT_CLASS} />
+                <input type="datetime-local" value={contestForm.end_time} onChange={(e) => setContestForm((prev) => ({ ...prev, end_time: e.target.value }))} className={INPUT_CLASS} />
               </div>
-              <textarea value={contestForm.description} onChange={(e) => setContestForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="赛事描述" className="w-full min-h-32 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-              <button type="submit" disabled={creatingContest} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60">{creatingContest ? '创建中...' : '创建赛事'}</button>
+              <textarea value={contestForm.description} onChange={(e) => setContestForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="赛事描述" className={`${INPUT_CLASS} min-h-32`} />
+              <button type="submit" disabled={creatingContest} className="btn-primary w-fit">{creatingContest ? '创建中...' : '创建赛事'}</button>
             </form>
           )}
 
           {activeTab === 'user-status' && (
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <div className={CARD_CLASS}>
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <h2 className="text-lg font-bold text-gray-900">用户封禁/解封（site_admin）</h2>
                 <input
                   value={statusKeyword}
                   onChange={(e) => { setStatusPage(1); setStatusKeyword(e.target.value) }}
                   placeholder="搜索用户名/显示名/邮箱"
-                  className="w-full lg:w-72 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                  className="w-full lg:w-72 glass-input"
                 />
               </div>
 
               {statusLoading ? (
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : (
-                <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <div className={TABLE_WRAP_CLASS}>
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
@@ -716,7 +727,7 @@ export default function Admin() {
                           </td>
                           <td className="px-3 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${roleBadgeClass(item.role)}`}>{item.role}</span></td>
                           <td className="px-3 py-3">{item.is_active ? <span className="text-emerald-700">启用</span> : <span className="text-red-700">封禁</span>}</td>
-                          <td className="px-3 py-3"><input value={statusReasonDraft[item.id] || ''} onChange={(e) => setStatusReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} placeholder="可选原因" className="px-2 py-1 border border-gray-300 rounded-md w-52" /></td>
+                          <td className="px-3 py-3"><input value={statusReasonDraft[item.id] || ''} onChange={(e) => setStatusReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} placeholder="可选原因" className="glass-input w-52" /></td>
                           <td className="px-3 py-3">
                             <button onClick={() => updateUserActiveStatus(item, !item.is_active)} disabled={statusUpdatingUserID === item.id} className={`px-3 py-1.5 rounded-md text-xs font-semibold text-white ${item.is_active ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:opacity-60`}>
                               {statusUpdatingUserID === item.id ? '提交中...' : (item.is_active ? '封禁' : '解封')}
@@ -732,24 +743,24 @@ export default function Admin() {
               <div className="flex items-center justify-between">
                 <div className="text-xs text-gray-500">第 {statusPage} / {statusTotalPages} 页</div>
                 <div className="flex gap-2">
-                  <button onClick={() => setStatusPage((prev) => Math.max(1, prev - 1))} disabled={statusPage <= 1} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">上一页</button>
-                  <button onClick={() => setStatusPage((prev) => Math.min(statusTotalPages, prev + 1))} disabled={statusPage >= statusTotalPages} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">下一页</button>
+                  <button onClick={() => setStatusPage((prev) => Math.max(1, prev - 1))} disabled={statusPage <= 1} className="btn-secondary disabled:opacity-50">上一页</button>
+                  <button onClick={() => setStatusPage((prev) => Math.min(statusTotalPages, prev + 1))} disabled={statusPage >= statusTotalPages} className="btn-secondary disabled:opacity-50">下一页</button>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'root-users' && isRoot && (
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <div className={CARD_CLASS}>
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <h2 className="text-lg font-bold text-gray-900">Root 用户角色治理（已过滤当前登录账户）</h2>
-                <input value={roleKeyword} onChange={(e) => { setRolePage(1); setRoleKeyword(e.target.value) }} placeholder="搜索用户名/显示名/邮箱" className="w-full lg:w-72 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                <input value={roleKeyword} onChange={(e) => { setRolePage(1); setRoleKeyword(e.target.value) }} placeholder="搜索用户名/显示名/邮箱" className="w-full lg:w-72 glass-input" />
               </div>
 
               {roleLoading ? (
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : (
-                <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <div className={TABLE_WRAP_CLASS}>
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
@@ -769,12 +780,12 @@ export default function Admin() {
                           </td>
                           <td className="px-3 py-3"><span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${roleBadgeClass(item.role)}`}>{item.role}</span></td>
                           <td className="px-3 py-3">
-                            <select value={roleDraft[item.id] || item.role} onChange={(e) => setRoleDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} className="px-2 py-1 border border-gray-300 rounded-md">
+                            <select value={roleDraft[item.id] || item.role} onChange={(e) => setRoleDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} className="glass-input !w-auto !py-1">
                               <option value="site_admin">site_admin</option>
                               <option value="user">user</option>
                             </select>
                           </td>
-                          <td className="px-3 py-3"><input value={roleReasonDraft[item.id] || ''} onChange={(e) => setRoleReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} placeholder="可选原因" className="px-2 py-1 border border-gray-300 rounded-md w-52" /></td>
+                          <td className="px-3 py-3"><input value={roleReasonDraft[item.id] || ''} onChange={(e) => setRoleReasonDraft((prev) => ({ ...prev, [item.id]: e.target.value }))} placeholder="可选原因" className="glass-input w-52 !py-1" /></td>
                           <td className="px-3 py-3"><button onClick={() => updateUserRole(item)} disabled={updatingRoleUserID === item.id} className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60">{updatingRoleUserID === item.id ? '提交中...' : '更新角色'}</button></td>
                         </tr>
                       ))}
@@ -786,22 +797,22 @@ export default function Admin() {
               <div className="flex items-center justify-between">
                 <div className="text-xs text-gray-500">第 {rolePage} / {roleTotalPages} 页</div>
                 <div className="flex gap-2">
-                  <button onClick={() => setRolePage((prev) => Math.max(1, prev - 1))} disabled={rolePage <= 1} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">上一页</button>
-                  <button onClick={() => setRolePage((prev) => Math.min(roleTotalPages, prev + 1))} disabled={rolePage >= roleTotalPages} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">下一页</button>
+                  <button onClick={() => setRolePage((prev) => Math.max(1, prev - 1))} disabled={rolePage <= 1} className="btn-secondary disabled:opacity-50">上一页</button>
+                  <button onClick={() => setRolePage((prev) => Math.min(roleTotalPages, prev + 1))} disabled={rolePage >= roleTotalPages} className="btn-secondary disabled:opacity-50">下一页</button>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'root-audit' && isRoot && (
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <div className={CARD_CLASS}>
               <h2 className="text-lg font-bold text-gray-900">角色变更历史（审计日志）</h2>
               {logsLoading ? (
                 <div className="text-sm text-gray-500">加载中...</div>
               ) : roleLogs.length === 0 ? (
                 <div className="text-sm text-gray-500 border border-gray-200 rounded-lg p-4">暂无角色变更记录</div>
               ) : (
-                <div className="overflow-x-auto border border-gray-100 rounded-lg">
+                <div className={TABLE_WRAP_CLASS}>
                   <table className="min-w-full text-sm">
                     <thead className="bg-gray-50 text-gray-600">
                       <tr>
@@ -832,15 +843,15 @@ export default function Admin() {
               <div className="flex items-center justify-between">
                 <div className="text-xs text-gray-500">第 {logsPage} / {logsTotalPages} 页</div>
                 <div className="flex gap-2">
-                  <button onClick={() => setLogsPage((prev) => Math.max(1, prev - 1))} disabled={logsPage <= 1} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">上一页</button>
-                  <button onClick={() => setLogsPage((prev) => Math.min(logsTotalPages, prev + 1))} disabled={logsPage >= logsTotalPages} className="px-3 py-1.5 rounded-md border border-gray-300 text-sm disabled:opacity-50">下一页</button>
+                  <button onClick={() => setLogsPage((prev) => Math.max(1, prev - 1))} disabled={logsPage <= 1} className="btn-secondary disabled:opacity-50">上一页</button>
+                  <button onClick={() => setLogsPage((prev) => Math.min(logsTotalPages, prev + 1))} disabled={logsPage >= logsTotalPages} className="btn-secondary disabled:opacity-50">下一页</button>
                 </div>
               </div>
             </div>
           )}
 
           {activeTab === 'root-site-config' && isRoot && (
-            <form onSubmit={saveSiteConfig} className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+            <form onSubmit={saveSiteConfig} className={CARD_CLASS}>
               <h2 className="text-lg font-bold text-gray-900">站点配置（root）</h2>
               <p className="text-sm text-gray-600">对应 RBAC 规则中的“修改站点配置”。当前配置写入数据库 `site_settings`，并记录审计日志。</p>
 
@@ -849,19 +860,19 @@ export default function Admin() {
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <input value={siteConfig.site_name} onChange={(e) => setSiteConfig((prev) => ({ ...prev, site_name: e.target.value }))} placeholder="站点名称" className="px-3 py-2 border border-gray-300 rounded-lg text-sm" required />
-                    <select value={siteConfig.default_contest_visibility} onChange={(e) => setSiteConfig((prev) => ({ ...prev, default_contest_visibility: e.target.value as SiteConfig['default_contest_visibility'] }))} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                    <input value={siteConfig.site_name} onChange={(e) => setSiteConfig((prev) => ({ ...prev, site_name: e.target.value }))} placeholder="站点名称" className={INPUT_CLASS} required />
+                    <select value={siteConfig.default_contest_visibility} onChange={(e) => setSiteConfig((prev) => ({ ...prev, default_contest_visibility: e.target.value as SiteConfig['default_contest_visibility'] }))} className={INPUT_CLASS}>
                       <option value="public">public</option>
                       <option value="invite_only">invite_only</option>
                       <option value="private">private</option>
                     </select>
                   </div>
-                  <textarea value={siteConfig.site_notice} onChange={(e) => setSiteConfig((prev) => ({ ...prev, site_notice: e.target.value }))} placeholder="站点公告" className="w-full min-h-28 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                  <textarea value={siteConfig.site_notice} onChange={(e) => setSiteConfig((prev) => ({ ...prev, site_notice: e.target.value }))} placeholder="站点公告" className={`${INPUT_CLASS} min-h-28`} />
                   <div className="flex flex-wrap gap-4">
                     <label className="inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={siteConfig.registration_enabled} onChange={(e) => setSiteConfig((prev) => ({ ...prev, registration_enabled: e.target.checked }))} />允许新用户注册</label>
                     <label className="inline-flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={siteConfig.email_verification_required} onChange={(e) => setSiteConfig((prev) => ({ ...prev, email_verification_required: e.target.checked }))} />要求邮箱验证</label>
                   </div>
-                  <button type="submit" disabled={configSaving} className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">{configSaving ? '保存中...' : '保存站点配置'}</button>
+                  <button type="submit" disabled={configSaving} className="btn-primary w-fit">{configSaving ? '保存中...' : '保存站点配置'}</button>
                 </>
               )}
             </form>

@@ -137,8 +137,8 @@ export default function TeamProfile() {
 
     return (
         <div className="max-w-6xl mx-auto space-y-8 p-4 lg:p-8">
-            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <div className="h-auto sm:h-48 bg-gradient-to-br from-pink-300/70 via-rose-200/70 to-pink-100/70 p-6 sm:p-8 relative">
+            <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="h-auto sm:h-48 bg-white/30 p-6 sm:p-8 relative border-b border-amber-100/70">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-start items-center text-rose-950 gap-6 sm:gap-0">
                         <div className="space-y-3 w-full sm:w-auto flex flex-col items-center sm:items-start text-center sm:text-left">
                             {isEditing ? (
@@ -147,13 +147,13 @@ export default function TeamProfile() {
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="text-2xl sm:text-3xl font-black bg-white/40 border border-white/50 rounded px-2 py-1 outline-none focus:bg-white/60 transition text-rose-950 placeholder-rose-950/50 w-[200px] sm:w-auto text-center sm:text-left"
+                                        className="text-2xl sm:text-3xl font-black glass-input rounded px-2 py-1 transition text-rose-950 placeholder-rose-950/50 w-[200px] sm:w-auto text-center sm:text-left"
                                         autoFocus
                                     />
                                     <button
                                         type="submit"
                                         disabled={isProcessing}
-                                        className="bg-white text-blue-700 px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm hover:bg-gray-100 transition"
+                                        className="btn-primary"
                                     >
                                         保存
                                     </button>
@@ -171,7 +171,7 @@ export default function TeamProfile() {
                                     {isLeader && (
                                         <button
                                             onClick={() => setIsEditing(true)}
-                                            className="px-2 py-1 bg-white/40 hover:bg-white/60 rounded text-xs font-bold transition flex items-center gap-1 mt-2 sm:mt-0"
+                                            className="px-2 py-1 glass-soft rounded text-xs font-bold transition flex items-center gap-1 mt-2 sm:mt-0"
                                         >
                                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -183,18 +183,18 @@ export default function TeamProfile() {
                             )}
                             <div className="flex flex-wrap justify-center sm:justify-start items-center gap-4 text-rose-900/80">
                                 {team.invite_code && (
-                                    <div className="bg-white/40 border border-white/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 backdrop-blur-sm">
+                                    <div className="glass-soft px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2">
                                         邀请码: <span className="text-rose-600 font-mono tracking-widest">{team.invite_code}</span>
                                     </div>
                                 )}
-                                <div className="text-sm font-bold bg-white/30 px-3 py-1 rounded-full">
+                                <div className="text-sm font-bold glass-soft px-3 py-1 rounded-full">
                                     成员数: {team.members.length} / 5
                                 </div>
                             </div>
                         </div>
 
                         <div className="w-full sm:w-auto text-center sm:text-right mt-2 sm:mt-0">
-                            <div className="bg-white/40 backdrop-blur-md rounded-2xl p-4 border border-rose-200/50 inline-block w-full sm:w-auto">
+                            <div className="glass-soft rounded-2xl p-4 inline-block w-full sm:w-auto">
                                 <p className="text-4xl font-black leading-none mb-1 text-rose-950">{team.score}</p>
                                 <p className="text-[10px] font-black uppercase tracking-widest opacity-60 text-rose-900">团队总积分</p>
                             </div>
@@ -215,7 +215,7 @@ export default function TeamProfile() {
                             <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-6">团队成员</h3>
                             <div className="grid grid-cols-1 gap-4">
                                 {team.members.map((member) => (
-                                    <div key={member.id} className="flex items-center gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 transition-colors group">
+                                    <div key={member.id} className="flex items-center gap-4 p-5 glass-soft rounded-2xl hover:border-amber-200 transition-colors group">
                                         <div className="relative">
                                             <div className="w-14 h-14 rounded-2xl overflow-hidden bg-white border border-gray-200 shadow-sm">
                                                 {member.avatar_url ? (
@@ -271,14 +271,14 @@ export default function TeamProfile() {
                         </div>
 
                         <div className="space-y-6">
-                            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-6">
+                            <div className="glass-soft rounded-2xl p-6">
                                 <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">解题战报</h3>
                                 <div className="space-y-4">
-                                    <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
+                                    <div className="flex justify-between items-center glass-soft p-3 rounded-xl">
                                         <span className="text-sm font-medium text-gray-500">累计解题</span>
                                         <span className="text-lg font-black text-gray-900">{team.solved_count}</span>
                                     </div>
-                                    <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100">
+                                    <div className="flex justify-between items-center glass-soft p-3 rounded-xl">
                                         <span className="text-sm font-medium text-gray-500">人均贡献</span>
                                         <span className="text-lg font-black text-blue-600">
                                             {(team.score / (team.members.length || 1)).toFixed(1)}
@@ -287,7 +287,7 @@ export default function TeamProfile() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3 p-4 bg-blue-50/50 rounded-2xl border border-blue-100/50">
+                            <div className="flex items-center gap-3 p-4 glass-soft rounded-2xl border-amber-100/50">
                                 <div className="p-2 bg-blue-100 text-blue-600 rounded-xl">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -314,7 +314,7 @@ export default function TeamProfile() {
 
             <div className="flex justify-between items-center text-gray-400 text-sm italic px-4">
                 <p>只有队长可以修改队伍名称或移除队员。邀请码仅对本队成员可见。</p>
-                <Link to="/scoreboard" className="font-bold hover:text-blue-600 transition">← 返回排行榜</Link>
+                <Link to="/scoreboard" className="font-bold hover:text-amber-700 transition">← 返回排行榜</Link>
             </div>
         </div>
     )

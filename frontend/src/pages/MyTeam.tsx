@@ -235,7 +235,7 @@ export default function MyTeam() {
             </div>
 
             {message.text && (
-                <div className={`p-4 rounded-xl flex items-center gap-3 shadow-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
+                <div className={`p-4 rounded-xl flex items-center gap-3 shadow-sm glass-soft ${message.type === 'success' ? 'text-green-700 border-green-100' : 'text-red-700 border-red-100'
                     }`}>
                     <span>{message.text}</span>
                 </div>
@@ -244,7 +244,7 @@ export default function MyTeam() {
             {!team ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* 创建队伍 */}
-                    <div className="bg-white border rounded-xl p-8 shadow-sm">
+                    <div className="glass-card p-8">
                         <h2 className="text-xl font-semibold mb-4 text-gray-900">创建新队伍</h2>
                         <form onSubmit={handleCreateTeam} className="space-y-4">
                             <div>
@@ -253,14 +253,14 @@ export default function MyTeam() {
                                     type="text"
                                     value={createName}
                                     onChange={(e) => setCreateName(e.target.value)}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="glass-input"
                                     placeholder="给你的队伍起个响亮的名字"
                                 />
                             </div>
                             <button
                                 type="submit"
                                 disabled={isProcessing || !createName}
-                                className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50"
+                                className="btn-primary w-full"
                             >
                                 {isProcessing ? '处理中...' : '立即创建'}
                             </button>
@@ -268,7 +268,7 @@ export default function MyTeam() {
                     </div>
 
                     {/* 加入队伍 */}
-                    <div className="bg-white border rounded-xl p-8 shadow-sm">
+                    <div className="glass-card p-8">
                         <h2 className="text-xl font-semibold mb-4 text-gray-900">加入已有队伍</h2>
                         <form onSubmit={handleJoinTeam} className="space-y-4">
                             <div>
@@ -277,14 +277,14 @@ export default function MyTeam() {
                                     type="text"
                                     value={inviteCode}
                                     onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="glass-input"
                                     placeholder="输入 8 位邀请码"
                                 />
                             </div>
                             <button
                                 type="submit"
                                 disabled={isProcessing || !inviteCode}
-                                className="w-full bg-gray-800 text-white py-2 rounded-lg font-medium hover:bg-gray-900 transition disabled:opacity-50"
+                                className="btn-secondary w-full"
                             >
                                 {isProcessing ? '处理中...' : '加入队伍'}
                             </button>
@@ -292,8 +292,8 @@ export default function MyTeam() {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white border rounded-xl overflow-hidden shadow-sm">
-                    <div className="p-8 bg-gradient-to-r from-pink-300/70 to-rose-200/70 text-rose-950 relative">
+                <div className="glass-card overflow-hidden">
+                        <div className="p-8 bg-white/30 text-rose-950 relative border-b border-amber-100/70">
                         <div className="flex justify-between items-start">
                             <div>
                                 <h2 className="text-3xl font-black mb-1">{team.name}</h2>
@@ -333,21 +333,21 @@ export default function MyTeam() {
                         </div>
 
                         {isEditing && (
-                            <form onSubmit={handleUpdateName} className="mb-8 p-6 bg-blue-50 rounded-xl border border-blue-100 animate-in fade-in slide-in-from-top-2">
+                            <form onSubmit={handleUpdateName} className="mb-8 p-6 glass-soft animate-in fade-in slide-in-from-top-2">
                                 <label className="block text-sm font-bold text-blue-700 mb-2">更新团队名称</label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         value={editName}
                                         onChange={(e) => setEditName(e.target.value)}
-                                        className="flex-1 px-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                        className="flex-1 glass-input"
                                         placeholder="输入新的队名"
                                         autoFocus
                                     />
                                     <button
                                         type="submit"
                                         disabled={isProcessing || !editName || editName === team.name}
-                                        className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition disabled:opacity-50"
+                                        className="btn-primary"
                                     >
                                         保存
                                     </button>
@@ -364,7 +364,7 @@ export default function MyTeam() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {team.members?.map((member) => (
-                                <div key={member.id} className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100 hover:border-blue-100 transition-colors group">
+                                <div key={member.id} className="flex items-center gap-4 p-4 glass-soft rounded-xl hover:border-amber-200 transition-colors group">
                                     <div className="relative">
                                         <div className="w-12 h-12 rounded-full overflow-hidden bg-white border border-gray-200">
                                             {member.avatar_url ? (
@@ -420,7 +420,7 @@ export default function MyTeam() {
                                 <button
                                     onClick={handleDissolveTeam}
                                     disabled={isProcessing}
-                                    className="px-6 py-2 bg-red-50 text-red-600 rounded-lg font-bold hover:bg-red-100 transition border border-red-100"
+                                    className="btn-danger"
                                 >
                                     解散队伍
                                 </button>
@@ -428,7 +428,7 @@ export default function MyTeam() {
                                 <button
                                     onClick={handleLeaveTeam}
                                     disabled={isProcessing}
-                                    className="px-6 py-2 bg-orange-50 text-orange-600 rounded-lg font-bold hover:bg-orange-100 transition border border-orange-100"
+                                    className="btn-secondary"
                                 >
                                     退出队伍
                                 </button>

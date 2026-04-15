@@ -5,6 +5,8 @@ import { Problem } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { useAuth } from '../context/AuthContext'
+import PageHeader from '../components/common/PageHeader'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
@@ -14,6 +16,7 @@ export default function Problems() {
   const [difficulty, setDifficulty] = useState<'all' | '简单' | '中等' | '困难'>('all')
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
 
   const [problems, setProblems] = useState<Problem[]>([])
   const [loading, setLoading] = useState(true)
@@ -71,29 +74,40 @@ export default function Problems() {
     })
   }, [category, difficulty, query, selectedTag, problems])
 
+  const handleCategoryChange = (nextCategory: typeof categories[number]) => {
+    setCategory(nextCategory)
+    setTabAccent((prev) => randomTabAccent(prev))
+  }
+
+  const handleTagToggle = (nextTag: string) => {
+    setSelectedTag((prev) => (prev === nextTag ? null : nextTag))
+    setTabAccent((prev) => randomTabAccent(prev))
+  }
+
   if (authLoading || loading) return <div className="p-10 text-center font-medium text-gray-600">加载中...</div>
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 w-full max-w-7xl mx-auto">
       {/* Main Content Area */}
       <div className="flex-1 min-w-0">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-baseline gap-4">
-            <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">题目大厅</h2>
-            <p className="text-gray-500 text-sm font-medium">当前 {filtered.length} 题 / 共 {problems.length} 题</p>
-          </div>
-          {isAuthenticated && isProblemPublisher && (
-            <Link
-              to={publishEntryPath}
-              className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-            >
-              {publishEntryLabel}
-            </Link>
-          )}
-        </div>
+        <PageHeader
+          title="题目大厅"
+          subtitle={`当前 ${filtered.length} 题 / 共 ${problems.length} 题`}
+          actions={
+            isAuthenticated && isProblemPublisher ? (
+              <Link
+                to={publishEntryPath}
+                className="btn-secondary"
+                style={{ marginBottom: '20px' }}
+              >
+                {publishEntryLabel}
+              </Link>
+            ) : null
+          }
+        />
 
         {/* Mobile Filter Toggle */}
-        <div className="lg:hidden mb-6 p-5 bg-white rounded-xl shadow-sm border border-gray-100 transition-all">
+        <div className="lg:hidden mb-6 p-5 bg-white rounded-xl shadow-sm border border-amber-100 transition-all">
           <div className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
             <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
@@ -106,8 +120,9 @@ export default function Problems() {
                 {categories.map((c) => (
                   <button
                     key={c}
-                    onClick={() => setCategory(c)}
-                    className={`px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors ${category === c ? 'bg-indigo-600 text-white shadow' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                    onClick={() => handleCategoryChange(c)}
+                    className={`tab-pill text-xs uppercase tracking-wider ${category === c ? 'tab-pill--active' : ''}`}
+                    style={category === c ? tabAccentStyle(tabAccent) : undefined}
                   >
                     {c === 'all' ? '全部' : c}
                   </button>
@@ -118,7 +133,7 @@ export default function Problems() {
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value as any)}
-                className="flex-1 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
+                className="field-select flex-1"
               >
                 <option value="all">全部难度</option>
                 <option value="简单">简单</option>
@@ -129,7 +144,7 @@ export default function Problems() {
                 placeholder="搜索题目..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="flex-2 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow w-full"
+                className="field-input flex-2 w-full"
               />
             </div>
           </div>
@@ -148,7 +163,7 @@ export default function Problems() {
             <div className="mt-6">
               <Link
                 to="/login"
-                className="inline-flex items-center px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
+                className="btn-primary"
               >
                 前往登录
               </Link>
@@ -176,9 +191,9 @@ export default function Problems() {
 
       {/* Desktop Filter Sidebar */}
       <div className="hidden lg:block w-72 shrink-0">
-        <div className="sticky top-24 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+        <div className="sticky top-24 bg-white p-6 rounded-2xl shadow-sm border border-amber-100">
           <div className="flex items-center gap-2 mb-6 text-gray-800">
-            <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
             </svg>
             <h3 className="text-lg font-bold">题目筛选</h3>
@@ -191,12 +206,9 @@ export default function Problems() {
                 {categories.map((c) => (
                   <button
                     key={c}
-                    onClick={() => setCategory(c)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-                      category === c
-                        ? 'bg-indigo-600 text-white shadow-md'
-                        : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'
-                    }`}
+                    onClick={() => handleCategoryChange(c)}
+                    className={`tab-pill text-sm ${category === c ? 'tab-pill--active' : ''}`}
+                    style={category === c ? tabAccentStyle(tabAccent) : undefined}
                   >
                     {c === 'all' ? '全部领域' : c.toUpperCase()}
                   </button>
@@ -210,12 +222,12 @@ export default function Problems() {
                 <select
                   value={difficulty}
                   onChange={(e) => setDifficulty(e.target.value as any)}
-                  className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2.5 px-4 pr-8 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 text-gray-700 py-2.5 px-4 pr-8 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-shadow"
                 >
-                  <option value="all">👑 所有难度</option>
-                  <option value="简单">🟢 简单 (Easy)</option>
-                  <option value="中等">🟡 中等 (Medium)</option>
-                  <option value="困难">🔴 困难 (Hard)</option>
+                  <option value="all">所有难度</option>
+                  <option value="简单">简单 (Easy)</option>
+                  <option value="中等">中等 (Medium)</option>
+                  <option value="困难">困难 (Hard)</option>
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
                   <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -235,7 +247,7 @@ export default function Problems() {
                   placeholder="搜索题目名称、描述、标签"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow"
+                  className="w-full pl-9 pr-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-shadow"
                 />
               </div>
             </div>
@@ -247,12 +259,9 @@ export default function Problems() {
                   {allTags.map((t) => (
                     <button
                       key={t}
-                      onClick={() => setSelectedTag(selectedTag === t ? null : t)}
-                      className={`text-xs px-2.5 py-1 rounded-md font-medium transition-all ${
-                        selectedTag === t
-                          ? 'bg-gray-800 text-white shadow'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                      }`}
+                      onClick={() => handleTagToggle(t)}
+                      className={`tab-pill text-xs ${selectedTag === t ? 'tab-pill--active' : ''}`}
+                      style={selectedTag === t ? tabAccentStyle(tabAccent) : undefined}
                     >
                       # {t}
                     </button>

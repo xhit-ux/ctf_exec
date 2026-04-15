@@ -53,10 +53,10 @@ export default function ContestProblems() {
   }, [category, items])
 
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+    <section className="glass-card p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-gray-900">赛事题目</h2>
-        <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+        <select value={category} onChange={(event) => setCategory(event.target.value)} className="glass-input w-auto">
           {categories.map((name) => <option key={name} value={name}>{name === 'all' ? '全部分类' : name}</option>)}
         </select>
       </div>
@@ -70,7 +70,7 @@ export default function ContestProblems() {
       ) : filtered.length === 0 ? (
         <div className="text-sm text-gray-500">暂无题目</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="glass-table-wrap overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-gray-500">
@@ -88,9 +88,9 @@ export default function ContestProblems() {
                   <td className="px-3 py-3 font-semibold text-gray-800">{item.title}</td>
                   <td className="px-3 py-3 text-gray-600">{item.category || '-'}</td>
                   <td className="px-3 py-3 text-gray-600">{item.difficulty || '-'}</td>
-                  <td className="px-3 py-3 text-center font-bold text-blue-600">{item.score_override ?? item.points ?? 0}</td>
+                  <td className="px-3 py-3 text-center font-bold text-amber-700">{item.score_override ?? item.points ?? 0}</td>
                   <td className="px-3 py-3 text-center">{item.is_solved ? <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">已解出</span> : <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">未解出</span>}</td>
-                  <td className="px-3 py-3 text-right"><Link className="font-semibold text-blue-600 hover:text-blue-700" to={`/problem/${item.id}?contest_id=${contest.id}`}>进入题目</Link></td>
+                  <td className="px-3 py-3 text-right"><Link className="font-semibold text-amber-700 hover:text-amber-800" to={`/problem/${item.id}?contest_id=${contest.id}`}>进入题目</Link></td>
                 </tr>
               ))}
             </tbody>

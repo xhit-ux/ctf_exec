@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { fromUnknownError } from '../../utils/error'
 import { ContestParticipantItem, fetchContestParticipants } from '../../utils/contestApi'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../../utils/tabAccent'
 import { useContestContext } from './ContestLayout'
 
 function formatTime(input?: string): string {
@@ -17,6 +18,7 @@ export default function ContestParticipants() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [kind, setKind] = useState<'all' | 'user' | 'team'>('all')
+  const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
 
   useEffect(() => {
     let active = true
@@ -52,14 +54,19 @@ export default function ContestParticipants() {
     return rows.filter((item) => !!item.user_id)
   }, [kind, rows])
 
+  const handleKindChange = (nextKind: 'all' | 'user' | 'team') => {
+    setKind(nextKind)
+    setTabAccent((prev) => randomTabAccent(prev))
+  }
+
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+    <section className="glass-card p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-gray-900">参赛者列表</h2>
-        <div className="inline-flex rounded-lg bg-gray-100 p-1">
-          <button type="button" onClick={() => setKind('all')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${kind === 'all' ? 'bg-white text-blue-600 shadow' : 'text-gray-600'}`}>全部</button>
-          <button type="button" onClick={() => setKind('user')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${kind === 'user' ? 'bg-white text-blue-600 shadow' : 'text-gray-600'}`}>个人</button>
-          <button type="button" onClick={() => setKind('team')} className={`px-3 py-1.5 rounded-md text-sm font-semibold ${kind === 'team' ? 'bg-white text-blue-600 shadow' : 'text-gray-600'}`}>团队</button>
+        <div className="inline-flex rounded-lg glass-soft p-1 gap-1">
+          <button type="button" onClick={() => handleKindChange('all')} className={`tab-pill ${kind === 'all' ? 'tab-pill--active' : ''}`} style={kind === 'all' ? tabAccentStyle(tabAccent) : undefined}>全部</button>
+          <button type="button" onClick={() => handleKindChange('user')} className={`tab-pill ${kind === 'user' ? 'tab-pill--active' : ''}`} style={kind === 'user' ? tabAccentStyle(tabAccent) : undefined}>个人</button>
+          <button type="button" onClick={() => handleKindChange('team')} className={`tab-pill ${kind === 'team' ? 'tab-pill--active' : ''}`} style={kind === 'team' ? tabAccentStyle(tabAccent) : undefined}>团队</button>
         </div>
       </div>
 
@@ -72,7 +79,7 @@ export default function ContestParticipants() {
       ) : filteredRows.length === 0 ? (
         <div className="text-sm text-gray-500">暂无参赛者</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="glass-table-wrap overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-gray-500">
@@ -87,7 +94,7 @@ export default function ContestParticipants() {
                 <tr key={row.id} className="border-b border-gray-100 last:border-b-0">
                   <td className="px-3 py-3 font-semibold text-gray-800">{row.team_name || row.display_name || row.username || row.team_id || row.user_id || '-'}</td>
                   <td className="px-3 py-3 text-gray-600">{row.team_id ? '团队' : '个人'}</td>
-                  <td className="px-3 py-3 text-center"><span className="rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">{row.status}</span></td>
+                  <td className="px-3 py-3 text-center"><span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{row.status}</span></td>
                   <td className="px-3 py-3 text-right text-gray-500">{formatTime(row.registered_at)}</td>
                 </tr>
               ))}

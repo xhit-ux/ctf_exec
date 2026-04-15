@@ -21,7 +21,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
 
   if (!profile) {
     return (
-      <aside className="space-y-4 xl:sticky xl:top-6">
+      <aside className="space-y-4 xl:sticky xl:top-[calc(var(--mobile-panel-top)+1rem)] xl:max-h-[calc(100dvh-var(--mobile-panel-top)-1.5rem)] xl:overflow-y-auto xl:pr-1">
         <div className="animate-pulse overflow-hidden rounded-[28px] border border-slate-200 bg-white">
           <div className="h-28 bg-slate-100" />
           <div className="px-5 pb-6">
@@ -61,7 +61,7 @@ export const ProfileSidebar: React.FC<ProfileSidebarProps> = ({
   ].filter((item): item is { label: string; value: string; href: string } => Boolean(item))
 
   return (
-    <aside className="space-y-4 xl:sticky xl:top-6">
+    <aside className="space-y-4 xl:sticky xl:top-[calc(var(--mobile-panel-top)+1rem)] xl:max-h-[calc(100dvh-var(--mobile-panel-top)-1.5rem)] xl:overflow-y-auto xl:pr-1">
       <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]">
         <div className="h-24 bg-[linear-gradient(135deg,rgba(14,165,233,0.16),rgba(249,115,22,0.18),rgba(15,23,42,0.08))]" />
 

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
+import AuthShell from '../components/auth/AuthShell'
 
 function resolveTurnstileErrorMessage(reason: string): string {
     const host = window.location.hostname || 'unknown-host'
@@ -177,46 +178,22 @@ export default function Register() {
     }
 
     return (
-        <div className="max-w-5xl mx-auto mt-16 bg-white border border-gray-100 rounded-3xl shadow-xl overflow-hidden flex flex-col md:flex-row">
-            {/* 左侧装饰区域 */}
-            <div className="hidden md:flex md:w-1/2 bg-gradient-to-br from-pink-300/70 to-rose-200/70 p-12 flex-col justify-between text-gray-900 relative overflow-hidden backdrop-blur-sm">
-                <div className="relative z-10">
-                    <h1 className="text-4xl font-extrabold mb-4 text-rose-950">注册账号<br/>成为我们的用户</h1>
-                    <p className="text-rose-900/80 text-lg leading-relaxed font-medium">
-                        从入门到精通，CTF 学习平台为您提供各种难度阶梯的真题实战。注册账号，开启属于您的极客之路。
-                    </p>
-                </div>
-                <div className="relative z-10 text-sm text-rose-800/60 font-medium">
-                    &copy; 2026 CTF Platform. All rights reserved.
-                </div>
-                
-                {/* 装饰用光效和几何图形 */}
-                <div className="absolute -top-24 -right-24 w-96 h-96 bg-white opacity-40 rounded-full blur-3xl"></div>
-                <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-pink-400 opacity-20 rounded-full blur-2xl"></div>
-            </div>
+        <AuthShell
+            heading="创建账号，进入实战训练"
+            title="创建新账号"
+            description="注册后可参与题目练习、比赛与团队协作，并持续追踪你的解题成长。"
+            switchText="已有账号？"
+            switchLabel="立即登录"
+            switchTo="/login"
+        >
+            {error && <div className="mb-4 soft-card p-3 text-sm text-red-700 border-red-200">{error}</div>}
 
-            {/* 右侧表单区域 */}
-            <div className="w-full md:w-1/2 p-10 md:p-14 flex flex-col justify-center bg-white">
-                <div className="mb-10">
-                    <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">创建新账号</h2>
-                    <p className="text-gray-500 mt-2">加入 CTF 练习平台，开始您的学习之旅</p>
-                </div>
-
-                {error && (
-                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm flex items-center gap-2">
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {error}
-                </div>
-            )}
-
-            <form onSubmit={handleRegister} className="space-y-5">
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">用户名</label>
+            <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">用户名</label>
                     <input
                         type="text"
-                        className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                        className="field-input"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         disabled={loading}
@@ -224,12 +201,12 @@ export default function Register() {
                         required
                     />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">邮箱</label>
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">邮箱</label>
                     <div className="flex gap-2">
                         <input
                             type="email"
-                            className="flex-1 px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                            className="field-input"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             disabled={loading || sendingCode}
@@ -240,17 +217,17 @@ export default function Register() {
                             type="button"
                             onClick={handleSendCode}
                             disabled={loading || sendingCode || codeCooldown > 0}
-                            className="px-4 py-3 rounded-lg border border-indigo-200 text-indigo-600 font-semibold bg-indigo-50 hover:bg-indigo-100 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="btn-secondary whitespace-nowrap"
                         >
                             {sendingCode ? '发送中' : codeCooldown > 0 ? `${codeCooldown}s` : '发送验证码'}
                         </button>
                     </div>
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">邮箱验证码</label>
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">邮箱验证码</label>
                     <input
                         type="text"
-                        className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                        className="field-input"
                         value={emailCode}
                         onChange={(e) => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         disabled={loading}
@@ -259,7 +236,7 @@ export default function Register() {
                     />
                 </div>
                 {showTurnstile && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <div className="soft-card p-3">
                         <div className="text-xs text-gray-500 mb-2">完成人机验证后会自动发送验证码</div>
                         {turnstileSiteKey ? (
                         <TurnstileWidget
@@ -286,17 +263,17 @@ export default function Register() {
                         />
                         ) : (
                             <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                Turnstile 未配置，请设置前端环境变量 `VITE_TURNSTILE_SITE_KEY`
+                                Turnstile 未配置，请设置前端环境变量 VITE_TURNSTILE_SITE_KEY
                             </div>
                         )}
                         {captchaError && <div className="text-xs text-red-600 mt-2">{captchaError}</div>}
                     </div>
                 )}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">密码</label>
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">密码</label>
                     <input
                         type="password"
-                        className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                        className="field-input"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         disabled={loading}
@@ -304,11 +281,11 @@ export default function Register() {
                         required
                     />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">确认密码</label>
+                <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700">确认密码</label>
                     <input
                         type="password"
-                        className="w-full px-4 py-3 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                        className="field-input"
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         disabled={loading}
@@ -318,20 +295,12 @@ export default function Register() {
                 </div>
                 <button
                     type="submit"
-                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-bold text-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+                    className="btn-primary w-full !py-3"
                     disabled={loading}
                 >
                     {loading ? '注册中...' : '注册'}
                 </button>
             </form>
-
-            <div className="mt-8 pt-6 border-t border-gray-100 text-center text-gray-500">
-                已有账号？{' '}
-                <Link to="/login" className="font-semibold text-indigo-600 hover:text-indigo-500 transition-colors">
-                    立即登录
-                </Link>
-            </div>
-            </div>
-        </div>
+        </AuthShell>
     )
 }

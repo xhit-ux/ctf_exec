@@ -4,6 +4,8 @@ import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import Pagination from '../components/common/Pagination'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
+import PageHeader from '../components/common/PageHeader'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
 
 interface LeaderboardUser {
     rank: number
@@ -34,6 +36,7 @@ export default function Scoreboard() {
     const [userRankings, setUserRankings] = useState<LeaderboardUser[]>([])
     const [teamRankings, setTeamRankings] = useState<LeaderboardTeam[]>([])
     const [activeTab, setActiveTab] = useState<'user' | 'team'>('user')
+    const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
     const [userPage, setUserPage] = useState(1)
     const [teamPage, setTeamPage] = useState(1)
     const [userPageSize, setUserPageSize] = useState(5)
@@ -129,6 +132,11 @@ export default function Scoreboard() {
         setSearchError('')
     }
 
+    const handleTabSwitch = (nextTab: 'user' | 'team') => {
+        setActiveTab(nextTab)
+        setTabAccent((prev) => randomTabAccent(prev))
+    }
+
     const goToPage = (page: number) => {
         if (activeTab === 'user') {
             setUserPage(page)
@@ -139,30 +147,31 @@ export default function Scoreboard() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">排行榜</h1>
-                    <p className="text-gray-500 text-sm">看看谁才是最强练习者</p>
-                </div>
-
-                <div className="flex flex-col items-stretch md:items-end gap-3">
-                    <div className="flex bg-gray-100 p-1 rounded-lg">
+            <PageHeader
+                title="排行榜"
+                subtitle="查看个人与团队的实时积分表现"
+                actions={(
+                <div className="scoreboard-header-tools">
+                    <div className="scoreboard-header-row">
+                        <div className="scoreboard-tab-group">
                         <button
-                            onClick={() => setActiveTab('user')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${activeTab === 'user' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            onClick={() => handleTabSwitch('user')}
+                            className={`tab-pill ${activeTab === 'user' ? 'tab-pill--active' : ''}`}
+                            style={activeTab === 'user' ? tabAccentStyle(tabAccent) : undefined}
                         >
                             个人排行
                         </button>
                         <button
-                            onClick={() => setActiveTab('team')}
-                            className={`px-4 py-1.5 rounded-md text-sm font-bold transition ${activeTab === 'team' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                            onClick={() => handleTabSwitch('team')}
+                            className={`tab-pill ${activeTab === 'team' ? 'tab-pill--active' : ''}`}
+                            style={activeTab === 'team' ? tabAccentStyle(tabAccent) : undefined}
                         >
                             团队排行
                         </button>
-                    </div>
+                        </div>
 
-                    {activeTab === 'user' && (
-                        <div className="w-full md:w-auto flex gap-2">
+                    <div className={`scoreboard-search-slot ${activeTab === 'user' ? 'scoreboard-search-slot--active' : ''}`}>
+                        <div className="scoreboard-search-inner">
                             <input
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
@@ -172,34 +181,39 @@ export default function Scoreboard() {
                                     }
                                 }}
                                 placeholder="检索用户名并置顶"
-                                className="w-full md:w-56 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="field-input scoreboard-search-input"
+                                disabled={activeTab !== 'user'}
+                                aria-hidden={activeTab !== 'user'}
                             />
                             <button
                                 onClick={handleSearchUser}
-                                disabled={searchLoading}
-                                className="px-3 py-2 text-sm font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                                disabled={searchLoading || activeTab !== 'user'}
+                                className="btn-primary whitespace-nowrap"
+                                aria-hidden={activeTab !== 'user'}
                             >
                                 {searchLoading ? '检索中' : '搜索'}
                             </button>
                         </div>
-                    )}
+                    </div>
+                    </div>
                 </div>
-            </div>
+                )}
+            />
 
             {error && <div className="p-4 bg-red-50 text-red-600 rounded-lg">{error}</div>}
             {activeTab === 'user' && searchError && <div className="p-3 bg-amber-50 text-amber-700 rounded-lg text-sm">{searchError}</div>}
 
             {activeTab === 'user' && pinnedUser && (
-                <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/50 p-4">
+                <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 p-4">
                     <div className="flex items-center justify-between gap-4">
                         <div>
-                            <p className="text-xs uppercase tracking-wider text-blue-500 font-black">已选中用户</p>
+                            <p className="text-xs uppercase tracking-wider text-amber-700 font-black">已选中用户</p>
                             <div className="mt-1 flex items-center gap-3">
-                                <Link to={`/profile/${pinnedUser.username}`} className="font-bold text-gray-900 hover:text-blue-600">
+                                <Link to={`/profile/${pinnedUser.username}`} className="font-bold text-gray-900 hover:text-amber-700">
                                     {pinnedUser.display_name || pinnedUser.username}
                                 </Link>
                                 <span className="text-xs text-gray-500">@{pinnedUser.username}</span>
-                                <span className="text-xs font-black text-blue-600">第 {pinnedUser.rank} 名</span>
+                                <span className="text-xs font-black text-amber-700">第 {pinnedUser.rank} 名</span>
                             </div>
                         </div>
                         <button
@@ -212,7 +226,7 @@ export default function Scoreboard() {
                 </div>
             )}
 
-            <div className="relative bg-white border rounded-xl overflow-hidden shadow-sm min-h-[400px] flex flex-col pb-8">
+            <div className="relative bg-white border border-amber-100 rounded-xl overflow-hidden shadow-sm min-h-[400px] flex flex-col pb-8">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[600px]">
                         <thead>
@@ -229,7 +243,7 @@ export default function Scoreboard() {
                                 userRankings.map((entry) => (
                                     <tr
                                         key={entry.rank}
-                                        className={`transition-colors ${pinnedUser?.username === entry.username ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                        className={`transition-colors ${pinnedUser?.username === entry.username ? 'bg-amber-50' : 'hover:bg-gray-50'}`}
                                     >
                                         <td className="px-6 py-4">
                                             <span className={`flex items-center justify-center w-8 h-8 rounded-lg font-black ${entry.rank === 1 ? 'bg-yellow-100 text-yellow-700' :
@@ -241,12 +255,12 @@ export default function Scoreboard() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <Link to={`/profile/${entry.username}`} className="font-bold text-gray-900 hover:text-blue-600 transition">
+                                            <Link to={`/profile/${entry.username}`} className="font-bold text-gray-900 hover:text-amber-700 transition">
                                                 {entry.display_name || entry.username}
                                             </Link>
                                             <p className="text-xs text-gray-400 font-medium">@{entry.username}</p>
                                         </td>
-                                        <td className="px-6 py-4 text-center font-black text-blue-600">{entry.score}</td>
+                                        <td className="px-6 py-4 text-center font-black text-amber-700">{entry.score}</td>
                                         <td className="px-6 py-4 text-center font-bold text-gray-500">{entry.solved_count}</td>
                                     </tr>
                                 ))

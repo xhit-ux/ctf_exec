@@ -51,10 +51,10 @@ export default function ContestMySubmissions() {
   }, [resultFilter, rows])
 
   return (
-    <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+    <section className="glass-card p-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-gray-900">我的提交</h2>
-        <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value as 'all' | 'correct' | 'wrong')} className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm">
+        <select value={resultFilter} onChange={(event) => setResultFilter(event.target.value as 'all' | 'correct' | 'wrong')} className="glass-input w-auto">
           <option value="all">全部</option>
           <option value="correct">正确</option>
           <option value="wrong">错误</option>
@@ -70,7 +70,7 @@ export default function ContestMySubmissions() {
       ) : filteredRows.length === 0 ? (
         <div className="text-sm text-gray-500">暂无提交记录</div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="glass-table-wrap overflow-x-auto">
           <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-gray-500">

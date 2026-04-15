@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { apiUrl, staticUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { MOCK_CONTESTS } from '../data/mockContests'
+import PageHeader from '../components/common/PageHeader'
 
 type ContestItem = {
   id: string
@@ -107,35 +108,34 @@ export default function Contests() {
   }, [contests, query, statusFilter])
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-gray-900">赛事中心</h1>
-          <p className="text-gray-500 mt-2">查看赛事详情、报名状态和比赛时间窗口</p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+    <div className="space-y-6">
+      <PageHeader
+        title="赛事中心"
+        subtitle="查看赛事详情、报名状态和比赛时间窗口"
+        actions={(
+          <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索赛事标题或简介"
-            className="w-full sm:w-72 bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="field-input w-full sm:w-72"
           />
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as 'all' | ContestStatus)}
-            className="bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+            className="field-select sm:w-[136px]"
           >
             <option value="all">全部状态</option>
             <option value="upcoming">未开始</option>
             <option value="running">进行中</option>
             <option value="ended">已结束</option>
           </select>
-        </div>
-      </div>
+          </div>
+        )}
+      />
 
-      {error && <div className="p-4 rounded-lg border border-red-100 bg-red-50 text-red-600">{error}</div>}
-      {usingMock && <div className="p-3 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 text-sm">当前为演示模式，数据来自本地 Mock。</div>}
+      {error && <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-700">{error}</div>}
+      {usingMock && <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-sm">当前为演示模式，数据来自本地 Mock。</div>}
 
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -144,7 +144,7 @@ export default function Contests() {
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center text-gray-500">暂无符合条件的赛事</div>
+        <div className="section-card p-10 text-center text-gray-500">暂无符合条件的赛事</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {filtered.map((contest) => {
@@ -153,7 +153,7 @@ export default function Contests() {
               <Link
                 key={contest.id}
                 to={`/contest/${contest.id}`}
-                className="group block rounded-2xl overflow-hidden border border-gray-100 bg-white shadow-sm hover:shadow-md transition"
+                className="group block rounded-2xl overflow-hidden border border-amber-100 bg-white shadow-sm hover:shadow-md transition"
               >
                 <div className="h-36 bg-gray-100 overflow-hidden">
                   {contest.cover_image ? (
@@ -163,7 +163,7 @@ export default function Contests() {
                       className="h-full w-full object-cover group-hover:scale-105 transition duration-300"
                     />
                   ) : (
-                    <div className="h-full w-full bg-gradient-to-r from-blue-100 to-cyan-100" />
+                    <div className="h-full w-full bg-gradient-to-r from-amber-100 to-orange-100" />
                   )}
                 </div>
 

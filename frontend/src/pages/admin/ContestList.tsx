@@ -109,18 +109,18 @@ export default function ContestList() {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+      <section className="glass-card p-6 space-y-4">
         <h1 className="text-2xl font-extrabold text-gray-900">全站赛事管理</h1>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="关键词" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <select value={visibility} onChange={(event) => setVisibility(event.target.value as '' | 'public' | 'invite_only' | 'private')} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="关键词" className="glass-input" />
+          <select value={visibility} onChange={(event) => setVisibility(event.target.value as '' | 'public' | 'invite_only' | 'private')} className="glass-input">
             <option value="">全部可见性</option>
             <option value="public">public</option>
             <option value="invite_only">invite_only</option>
             <option value="private">private</option>
           </select>
-          <button type="button" onClick={load} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white">筛选</button>
+          <button type="button" onClick={load} className="btn-primary">筛选</button>
         </div>
 
         {error && <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>}
@@ -128,7 +128,7 @@ export default function ContestList() {
         {loading ? (
           <div className="text-sm text-gray-500">加载中...</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="glass-table-wrap overflow-x-auto">
             <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-500">
@@ -146,8 +146,8 @@ export default function ContestList() {
                     <td className="px-3 py-3 text-gray-600">{row.scoring_type || 'jeopardy'}</td>
                     <td className="px-3 py-3 text-right">
                       <div className="inline-flex gap-2">
-                        <Link to={`/admin/contests/${row.id}/edit`} className="text-sm font-semibold text-blue-600">编辑</Link>
-                        <Link to={`/contest/${row.id}/admin`} className="text-sm font-semibold text-emerald-600">赛事管理</Link>
+                        <Link to={`/admin/contests/${row.id}/edit`} className="text-sm font-semibold text-amber-700">编辑</Link>
+                        <Link to={`/contest/${row.id}/admin`} className="text-sm font-semibold text-emerald-700">赛事管理</Link>
                       </div>
                     </td>
                   </tr>
@@ -158,35 +158,35 @@ export default function ContestList() {
         )}
       </section>
 
-      <section className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
+      <section className="glass-card p-6 space-y-4">
         <h2 className="text-xl font-bold text-gray-900">创建赛事</h2>
 
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input value={draft.title} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} placeholder="标题" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <input value={draft.cover_image} onChange={(event) => setDraft((prev) => ({ ...prev, cover_image: event.target.value }))} placeholder="封面路径" className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <select value={draft.visibility} onChange={(event) => setDraft((prev) => ({ ...prev, visibility: event.target.value as 'public' | 'invite_only' | 'private' }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <input value={draft.title} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} placeholder="标题" className="glass-input" />
+          <input value={draft.cover_image} onChange={(event) => setDraft((prev) => ({ ...prev, cover_image: event.target.value }))} placeholder="封面路径" className="glass-input" />
+          <select value={draft.visibility} onChange={(event) => setDraft((prev) => ({ ...prev, visibility: event.target.value as 'public' | 'invite_only' | 'private' }))} className="glass-input">
             <option value="public">public</option>
             <option value="invite_only">invite_only</option>
             <option value="private">private</option>
           </select>
-          <select value={draft.scoring_type} onChange={(event) => setDraft((prev) => ({ ...prev, scoring_type: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+          <select value={draft.scoring_type} onChange={(event) => setDraft((prev) => ({ ...prev, scoring_type: event.target.value }))} className="glass-input">
             <option value="jeopardy">jeopardy</option>
             <option value="dynamic">dynamic</option>
           </select>
-          <input type="datetime-local" value={draft.start_time} onChange={(event) => setDraft((prev) => ({ ...prev, start_time: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <input type="datetime-local" value={draft.end_time} onChange={(event) => setDraft((prev) => ({ ...prev, end_time: event.target.value }))} className="rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-          <textarea value={draft.description} onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))} placeholder="描述" className="md:col-span-2 min-h-[100px] rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+          <input type="datetime-local" value={draft.start_time} onChange={(event) => setDraft((prev) => ({ ...prev, start_time: event.target.value }))} className="glass-input" />
+          <input type="datetime-local" value={draft.end_time} onChange={(event) => setDraft((prev) => ({ ...prev, end_time: event.target.value }))} className="glass-input" />
+          <textarea value={draft.description} onChange={(event) => setDraft((prev) => ({ ...prev, description: event.target.value }))} placeholder="描述" className="md:col-span-2 min-h-[100px] glass-input" />
         </div>
 
         <div className="space-y-2">
           <h3 className="text-sm font-semibold text-gray-800">指定赛事管理员（可选）</h3>
           <div className="flex flex-wrap gap-2">
-            <input value={pendingAdminUsername} onChange={(event) => setPendingAdminUsername(event.target.value)} placeholder="username" className="w-80 rounded-lg border border-gray-200 px-3 py-2 text-sm" />
-            <select value={pendingAdminRole} onChange={(event) => setPendingAdminRole(event.target.value as 'admin' | 'observer')} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
+            <input value={pendingAdminUsername} onChange={(event) => setPendingAdminUsername(event.target.value)} placeholder="username" className="w-80 glass-input" />
+            <select value={pendingAdminRole} onChange={(event) => setPendingAdminRole(event.target.value as 'admin' | 'observer')} className="glass-input w-auto">
               <option value="admin">admin</option>
               <option value="observer">observer</option>
             </select>
-            <button type="button" onClick={addPendingAdmin} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-700">添加到待提交列表</button>
+            <button type="button" onClick={addPendingAdmin} className="btn-secondary">添加到待提交列表</button>
           </div>
 
           {draftAdmins.length > 0 && (
@@ -201,7 +201,7 @@ export default function ContestList() {
           )}
         </div>
 
-        <button type="button" disabled={creating} onClick={handleCreate} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{creating ? '创建中...' : '创建赛事'}</button>
+        <button type="button" disabled={creating} onClick={handleCreate} className="btn-primary disabled:opacity-50">{creating ? '创建中...' : '创建赛事'}</button>
         {createMsg && <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{createMsg}</div>}
       </section>
     </div>

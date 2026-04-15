@@ -9,9 +9,6 @@ import { UserProfile } from '../types/profile'
 import { fetchUserProfile } from '../utils/profileApi'
 import { formatRelativeTime, normalizeLink, parseProfilePreferences } from '../components/profile/profileUtils'
 
-const statCardClass =
-  'rounded-[24px] border border-slate-200/80 bg-white px-5 py-5 shadow-[0_20px_60px_-45px_rgba(15,23,42,0.45)]'
-
 export const Profile: React.FC = () => {
   const { username } = useParams<{ username?: string }>()
   const { user } = useAuth()
@@ -105,108 +102,98 @@ export const Profile: React.FC = () => {
       onFollowChange={handleFollowChange}
     >
       {error ? (
-        <ProfilePanel
-          title="资料加载失败"
-          description="接口返回异常或用户不存在时会显示这里，保留当前页面壳子避免跳到完全陌生的空白页。"
-        >
+        <ProfilePanel title="资料加载失败">
           <div className="rounded-[24px] border border-rose-100 bg-rose-50 px-5 py-4 text-sm text-rose-600">{error}</div>
         </ProfilePanel>
       ) : loading && !profile ? (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <div key={index} className={`${statCardClass} animate-pulse`}>
-                <div className="h-3 w-20 rounded-full bg-slate-200" />
-                <div className="mt-4 h-8 w-24 rounded-full bg-slate-100" />
-              </div>
-            ))}
-          </div>
+          <div className="h-[26rem] animate-pulse rounded-[28px] glass-card" />
           <div className="grid gap-6 lg:grid-cols-2">
-            <div className="h-64 animate-pulse rounded-[28px] border border-slate-200 bg-white" />
-            <div className="h-64 animate-pulse rounded-[28px] border border-slate-200 bg-white" />
+            <div className="h-64 animate-pulse rounded-[28px] glass-card" />
+            <div className="h-64 animate-pulse rounded-[28px] glass-card" />
           </div>
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className={statCardClass}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">总积分</div>
-              <div className="mt-3 text-3xl font-semibold text-slate-950">{profile?.score ?? 0}</div>
-            </div>
-            <div className={statCardClass}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">全站排名</div>
-              <div className="mt-3 text-3xl font-semibold text-sky-700">
-                {profile?.rank_num ? `#${profile.rank_num}` : '-'}
+          <ProfilePanel title="资料总览">
+            <div className="space-y-6">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-2xl glass-soft px-4 py-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">总积分</div>
+                  <div className="mt-2 text-3xl font-semibold text-slate-950">{profile?.score ?? 0}</div>
+                </div>
+                <div className="rounded-2xl glass-soft px-4 py-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">全站排名</div>
+                  <div className="mt-2 text-3xl font-semibold text-sky-700">{profile?.rank_num ? `#${profile.rank_num}` : '-'}</div>
+                </div>
+                <div className="rounded-2xl glass-soft px-4 py-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">总解题</div>
+                  <div className="mt-2 text-3xl font-semibold text-slate-950">{profile?.solved_count ?? 0}</div>
+                </div>
+                <div className="rounded-2xl glass-soft px-4 py-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">赛事参与</div>
+                  <div className="mt-2 text-3xl font-semibold text-orange-600">{profile?.stats.contests_participated ?? 0}</div>
+                </div>
               </div>
-            </div>
-            <div className={statCardClass}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">总解题</div>
-              <div className="mt-3 text-3xl font-semibold text-slate-950">{profile?.solved_count ?? 0}</div>
-            </div>
-            <div className={statCardClass}>
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">赛事参与</div>
-              <div className="mt-3 text-3xl font-semibold text-orange-600">{profile?.stats.contests_participated ?? 0}</div>
-            </div>
-          </div>
 
-          <div className="space-y-6">
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr),minmax(0,0.85fr)]">
-              <ProfilePanel title="资料摘要">
-                <div className="space-y-5">
-                  {profile?.bio && <p className="text-sm leading-7 text-slate-600">{profile.bio}</p>}
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr),minmax(0,0.8fr)]">
+                <section className="space-y-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">资料摘要</h3>
+                  {profile?.bio ? (
+                    <div className="rounded-2xl glass-soft px-4 py-4 text-sm leading-7 text-slate-600">{profile.bio}</div>
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-slate-200/90 glass-soft px-4 py-6 text-sm text-slate-500">暂无个人简介</div>
+                  )}
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                    <div className="rounded-2xl glass-soft px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.22em] text-slate-400">注册时间</div>
-                      <div className="mt-2 text-base font-semibold text-slate-950">
-                        {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '暂无记录'}
-                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-950">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString('zh-CN') : '暂无记录'}</div>
                     </div>
-                    <div className="rounded-2xl bg-slate-50 px-4 py-4">
+                    <div className="rounded-2xl glass-soft px-4 py-4">
                       <div className="text-xs uppercase tracking-[0.22em] text-slate-400">最近登录</div>
-                      <div className="mt-2 text-base font-semibold text-slate-950">
-                        {formatRelativeTime(profile?.last_login_at)}
-                      </div>
+                      <div className="mt-2 text-base font-semibold text-slate-950">{formatRelativeTime(profile?.last_login_at)}</div>
                     </div>
                   </div>
-                </div>
-              </ProfilePanel>
+                </section>
 
-              <ProfilePanel title="公开资料">
-                {publicLinks.length > 0 ? (
-                  <div className="space-y-3">
-                    {publicLinks.map((item) => (
-                      <a
-                        key={`${item.label}-${item.href}`}
-                        href={item.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm transition hover:border-slate-300 hover:bg-white"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium text-slate-950">{item.label}</div>
-                          <div className="truncate text-slate-500">{item.value}</div>
-                        </div>
-                        <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5m0 0v5m0-5L10 14m-1 5H5a2 2 0 01-2-2v-4" />
-                        </svg>
-                      </a>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
-                    暂无公开链接
-                  </div>
-                )}
-              </ProfilePanel>
+                <section className="space-y-4">
+                  <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-slate-400">公开资料</h3>
+                  {publicLinks.length > 0 ? (
+                    <div className="space-y-3">
+                      {publicLinks.map((item) => (
+                        <a
+                          key={`${item.label}-${item.href}`}
+                          href={item.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-between gap-3 rounded-2xl glass-soft px-4 py-4 text-sm transition hover:border-slate-300 hover:bg-white"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium text-slate-950">{item.label}</div>
+                            <div className="truncate text-slate-500">{item.value}</div>
+                          </div>
+                          <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5h5m0 0v5m0-5L10 14m-1 5H5a2 2 0 01-2-2v-4" />
+                          </svg>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-[24px] border border-dashed border-slate-200/90 glass-soft px-4 py-8 text-center text-sm text-slate-500">
+                      暂无公开链接
+                    </div>
+                  )}
+                </section>
+              </div>
             </div>
+          </ProfilePanel>
 
-            <SubmissionHeatmap />
+          <SubmissionHeatmap />
 
-            <ProfilePanel title="赛事履历">
-              <ContestHistory embedded />
-            </ProfilePanel>
-          </div>
+          <ProfilePanel title="赛事履历">
+            <ContestHistory embedded />
+          </ProfilePanel>
         </div>
       )}
     </ProfileChrome>

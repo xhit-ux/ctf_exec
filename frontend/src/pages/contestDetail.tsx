@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { apiUrl, staticUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
+import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
 import {
   MOCK_CONTESTS,
   MOCK_CONTEST_CHALLENGES,
@@ -109,6 +110,7 @@ export default function ContestDetail() {
   const [usingMock, setUsingMock] = useState(false)
 
   const [joinType, setJoinType] = useState<'user' | 'team'>('user')
+  const [joinAccent, setJoinAccent] = useState(TAB_ACCENT_PALETTE[0])
   const [team, setTeam] = useState<TeamBasic | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -118,10 +120,21 @@ export default function ContestDetail() {
   const [challengeError, setChallengeError] = useState('')
 
   const [scoreType, setScoreType] = useState<'user' | 'team'>('user')
+  const [scoreAccent, setScoreAccent] = useState(TAB_ACCENT_PALETTE[1])
   const [scoreLoading, setScoreLoading] = useState(false)
   const [scoreError, setScoreError] = useState('')
   const [userScores, setUserScores] = useState<ContestScoreUser[]>([])
   const [teamScores, setTeamScores] = useState<ContestScoreTeam[]>([])
+
+  const handleJoinTypeChange = (nextType: 'user' | 'team') => {
+    setJoinType(nextType)
+    setJoinAccent((prev) => randomTabAccent(prev))
+  }
+
+  const handleScoreTypeChange = (nextType: 'user' | 'team') => {
+    setScoreType(nextType)
+    setScoreAccent((prev) => randomTabAccent(prev))
+  }
 
   const contestStatus = useMemo(() => {
     return getContestStatus(contest?.start_time, contest?.end_time)
@@ -404,15 +417,17 @@ export default function ContestDetail() {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setJoinType('user')}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${joinType === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}
+                  onClick={() => handleJoinTypeChange('user')}
+                  className={`tab-pill ${joinType === 'user' ? 'tab-pill--active' : ''}`}
+                  style={joinType === 'user' ? tabAccentStyle(joinAccent) : undefined}
                 >
                   个人
                 </button>
                 <button
-                  onClick={() => setJoinType('team')}
+                  onClick={() => handleJoinTypeChange('team')}
                   disabled={!team}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${joinType === 'team' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-600'} ${!team ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`tab-pill ${joinType === 'team' ? 'tab-pill--active' : ''} ${!team ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  style={joinType === 'team' ? tabAccentStyle(joinAccent) : undefined}
                 >
                   团队
                 </button>
@@ -523,14 +538,16 @@ export default function ContestDetail() {
           <h2 className="text-xl font-bold text-gray-900">赛事榜单</h2>
           <div className="inline-flex bg-gray-100 rounded-lg p-1 w-fit">
             <button
-              onClick={() => setScoreType('user')}
-              className={`px-4 py-1.5 rounded-md text-sm font-semibold ${scoreType === 'user' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}
+              onClick={() => handleScoreTypeChange('user')}
+              className={`tab-pill ${scoreType === 'user' ? 'tab-pill--active' : ''}`}
+              style={scoreType === 'user' ? tabAccentStyle(scoreAccent) : undefined}
             >
               个人榜
             </button>
             <button
-              onClick={() => setScoreType('team')}
-              className={`px-4 py-1.5 rounded-md text-sm font-semibold ${scoreType === 'team' ? 'bg-white shadow text-blue-600' : 'text-gray-600'}`}
+              onClick={() => handleScoreTypeChange('team')}
+              className={`tab-pill ${scoreType === 'team' ? 'tab-pill--active' : ''}`}
+              style={scoreType === 'team' ? tabAccentStyle(scoreAccent) : undefined}
             >
               团队榜
             </button>
