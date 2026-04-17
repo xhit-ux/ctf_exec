@@ -11,7 +11,7 @@ export default function PageHeader({ title, subtitle, actions }: PageHeaderProps
     <div className="page-header">
       <div className="page-header__main">
         <h1>{title}</h1>
-        {subtitle ? <p className="page-header__subtitle">{subtitle}</p> : null}
+        {subtitle ? <p className="page-header__subtitle" style={{ paddingBottom: '20px' }}>{subtitle}</p> : null}
       </div>
       {actions ? <div className="page-header__actions">{actions}</div> : null}
     </div>
