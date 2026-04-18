@@ -17,12 +17,18 @@ type Config struct {
 	Redis       RedisConfig
 	Server      ServerConfig
 	JWT         JWTConfig
+	Init        InitConfig
 	AuthCookie  AuthCookieConfig
 	Upload      UploadConfig
 	RateLimit   RateLimitConfig
 	Leaderboard LeaderboardConfig
 	Email       EmailConfig
 	Bot         BotProtectionConfig
+}
+
+// InitConfig 启动初始化配置。
+type InitConfig struct {
+	RootDefaultPassword string
 }
 
 // AuthCookieConfig 认证 Cookie 配置。
@@ -162,6 +168,13 @@ func LoadConfig() (*Config, error) {
 			return
 		}
 		cfg.JWT = *jwtConfig
+
+		initConfig, err := loadInitConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载初始化配置失败: %w", err)
+			return
+		}
+		cfg.Init = *initConfig
 
 		cookieConfig, err := loadAuthCookieConfig()
 		if err != nil {
@@ -317,6 +330,12 @@ func loadJWTConfig() (*JWTConfig, error) {
 func IsWeakJWTSecret(secret string) bool {
 	trimmed := strings.TrimSpace(secret)
 	return trimmed == "" || trimmed == DefaultJWTSecret
+}
+
+func loadInitConfig() (*InitConfig, error) {
+	return &InitConfig{
+		RootDefaultPassword: getEnv("ROOT_DEFAULT_PASSWORD", ""),
+	}, nil
 }
 
 func loadAuthCookieConfig() (*AuthCookieConfig, error) {

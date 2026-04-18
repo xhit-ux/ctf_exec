@@ -207,11 +207,39 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash, r
 	}, nil
 }
 
+// EnsureRootUser 若数据库中不存在 root 角色用户，则创建默认 root 用户。
+func (r *UserRepository) EnsureRootUser(passwordHash string) (bool, error) {
+	now := time.Now()
+	query := `
+		INSERT INTO users (
+			id, username, email, password_hash, role, display_name,
+			is_active, is_verified, created_at, updated_at
+		)
+		SELECT ?, 'root', NULL, ?, 'root', 'root', 1, 1, ?, ?
+		FROM DUAL
+		WHERE NOT EXISTS (
+			SELECT 1 FROM users WHERE role = 'root' LIMIT 1
+		)
+	`
+
+	result, err := r.db.Exec(query, uuid.New().String(), passwordHash, now, now)
+	if err != nil {
+		return false, fmt.Errorf("创建默认 root 用户失败: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("获取默认 root 创建结果失败: %w", err)
+	}
+
+	return rows > 0, nil
+}
+
 // GetUserByUsername 通过用户名获取用户
 func (r *UserRepository) GetUserByUsername(username string) (*models.User, error) {
 	user := &models.User{}
 	query := `
-		SELECT id, username, email, password_hash, role, display_name, 
+		SELECT id, username, COALESCE(email, ''), password_hash, role, display_name,
 		       COALESCE(avatar_url, ''), COALESCE(bio, ''),
 		       COALESCE(website_url, ''), COALESCE(organization, ''), COALESCE(country, ''),
 		       score, solved_count, is_active, is_verified, rank_num,
@@ -243,7 +271,7 @@ func (r *UserRepository) GetUserByUsername(username string) (*models.User, error
 func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	user := &models.User{}
 	query := `
-		SELECT id, username, email, password_hash, role, display_name, 
+		SELECT id, username, COALESCE(email, ''), password_hash, role, display_name,
 		       COALESCE(avatar_url, ''), COALESCE(bio, ''),
 		       COALESCE(website_url, ''), COALESCE(organization, ''), COALESCE(country, ''),
 		       score, solved_count, is_active, is_verified, rank_num,

@@ -58,6 +58,9 @@ func main() {
 	contestRepo := repository.NewContestRepository(sqlDB)
 	contestAdminRepo := repository.NewContestAdminRepository(sqlDB)
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
+	if err := service.EnsureDefaultRootUser(userRepo, cfg.Init.RootDefaultPassword); err != nil {
+		log.Fatalf("初始化 root 用户失败: %v", err)
+	}
 
 	// 初始化服务层
 	sessionStore := authsession.NewStore(redisClient.Client, sqlDB)

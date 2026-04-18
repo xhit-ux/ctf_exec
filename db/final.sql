@@ -31,9 +31,13 @@ DROP TABLE IF EXISTS contest_participants;
 DROP TABLE IF EXISTS contest_challenges;
 DROP TABLE IF EXISTS leaderboard_global;
 DROP TABLE IF EXISTS contests;
+DROP TABLE IF EXISTS image_build_tasks;
+DROP TABLE IF EXISTS problem_containers;
+DROP TABLE IF EXISTS problem_flags;
 DROP TABLE IF EXISTS docker_images;
 DROP TABLE IF EXISTS attachments;
 DROP TABLE IF EXISTS challenge_instances;
+DROP TABLE IF EXISTS problem_tags;
 DROP TABLE IF EXISTS challenge_tags;
 DROP TABLE IF EXISTS submissions;
 DROP TABLE IF EXISTS problems;
@@ -236,79 +240,115 @@ CREATE TABLE contests (
 -- ==========================================================
 
 CREATE TABLE problems (
-    id            INT          NOT NULL AUTO_INCREMENT,
-    short_id      INT          NULL,
+    id                 CHAR(36)      NOT NULL,
+    title              VARCHAR(128)  NOT NULL,
+    category           VARCHAR(32)   NOT NULL,
+    type               VARCHAR(16)   NOT NULL DEFAULT 'static',
+    description        TEXT          NULL,
+    base_score         INT           NOT NULL DEFAULT 0,
+    is_dynamic_score   TINYINT(1)    NOT NULL DEFAULT 0,
+    difficulty         VARCHAR(16)   NOT NULL,
 
-    title         VARCHAR(255) NOT NULL,
-    category      VARCHAR(32)  NOT NULL,
-    type          VARCHAR(32)  NOT NULL DEFAULT 'static',  -- 'static' | 'dynamic'
+    status             VARCHAR(16)   NOT NULL DEFAULT 'draft',
+    created_by         CHAR(36)      NULL,
 
-    points        INT          NOT NULL DEFAULT 0,
-    difficulty    VARCHAR(16)  NOT NULL,                   -- '简单' | '中等' | '困难'
+    visible_from       DATETIME      NULL,
+    visible_to         DATETIME      NULL,
 
-    description   TEXT         NULL,
-
-    -- Store hash only; never store raw flag in DB
-    flag_hash     VARCHAR(255) NOT NULL,
-    flag_rule     VARCHAR(255) NULL,
-    flag_example  VARCHAR(255) NULL,
-
-    docker_image  VARCHAR(255) NULL,
-    run_command   TEXT         NULL,
-
-    -- Creator (site_admin or contest_admin)
-    created_by    CHAR(36)     NULL,
-
-    -- Scope controls visibility domain
-    -- 'platform' : public practice library, managed by site_admin
-    -- 'contest'  : scoped to one contest, auto-archived after end_time
-    scope         VARCHAR(16)  NOT NULL DEFAULT 'platform',
-
-    -- Populated only when scope = 'contest'
-    contest_id    CHAR(36)     NULL,
-
-    -- Publication lifecycle
-    -- 'draft'     : visible to creator only
-    -- 'review'    : pending site_admin approval
-    -- 'published' : visible to eligible users
-    -- 'archived'  : hidden, read-only
-    status        VARCHAR(16)  NOT NULL DEFAULT 'published',
-
-    -- Effective window for platform-scope problems (ignored for contest-scope)
-    visible_from  DATETIME     NULL,
-    visible_to    DATETIME     NULL,
-
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
-                                   ON UPDATE CURRENT_TIMESTAMP,
+    created_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                            ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    UNIQUE KEY uniq_problems_short_id (short_id),
 
-    CONSTRAINT chk_problem_scope  CHECK (scope  IN ('platform', 'contest')),
-    CONSTRAINT chk_problem_status CHECK (status IN ('draft', 'review', 'published', 'archived')),
+    CONSTRAINT chk_problem_type   CHECK (type IN ('static', 'container')),
+    CONSTRAINT chk_problem_status CHECK (status IN ('draft', 'ready', 'hidden')),
 
     FOREIGN KEY fk_problems_created_by (created_by)
-        REFERENCES users(id)    ON DELETE SET NULL,
-    FOREIGN KEY fk_problems_contest_id (contest_id)
-        REFERENCES contests(id) ON DELETE CASCADE
+        REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
-CREATE INDEX idx_problems_scope      ON problems(scope);
-CREATE INDEX idx_problems_status     ON problems(status);
-CREATE INDEX idx_problems_created_by ON problems(created_by);
+CREATE INDEX idx_problems_status   ON problems(status);
+CREATE INDEX idx_problems_category ON problems(category);
+CREATE INDEX idx_problems_created  ON problems(created_by);
 
 -- ----------------------------------------------------------
--- 5.1 Challenge Tags
+-- 5.1 Problem Flags
 -- ----------------------------------------------------------
 
-CREATE TABLE challenge_tags (
-    challenge_id INT         NOT NULL,
-    tag          VARCHAR(64) NOT NULL,
+CREATE TABLE problem_flags (
+    problem_id      CHAR(36)      NOT NULL,
 
-    PRIMARY KEY (challenge_id, tag),
+    flag_hash       VARCHAR(255)  NULL,
+    flag_rule       VARCHAR(32)   NOT NULL DEFAULT 'exact',
+    flag_example    VARCHAR(255)  NULL,
 
-    FOREIGN KEY fk_challenge_tags_problem (challenge_id)
+    flag_type       VARCHAR(16)   NOT NULL DEFAULT 'static',
+    flag_handler    VARCHAR(16)   NULL,
+    flag_path_key   VARCHAR(128)  NULL,
+
+    PRIMARY KEY (problem_id),
+
+    CONSTRAINT chk_flag_type    CHECK (flag_type IN ('static', 'dynamic')),
+    CONSTRAINT chk_flag_handler CHECK (flag_handler IN ('env', 'file')),
+    CONSTRAINT chk_flag_rule    CHECK (flag_rule IN ('exact', 'case_insensitive')),
+    CONSTRAINT chk_flag_hash_nullable CHECK (
+        (flag_type = 'static' AND flag_hash IS NOT NULL)
+        OR (flag_type = 'dynamic' AND flag_hash IS NULL)
+    ),
+
+    CONSTRAINT fk_pf_problem FOREIGN KEY (problem_id)
+        REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- 5.2 Problem Containers
+-- ----------------------------------------------------------
+
+CREATE TABLE problem_containers (
+    problem_id        CHAR(36)      NOT NULL,
+
+    image_name        VARCHAR(255)  NOT NULL,
+    image_repo        VARCHAR(255)  NULL,
+    image_tag         VARCHAR(128)  NULL,
+
+    internal_port     INT           NOT NULL DEFAULT 80,
+    access_type       VARCHAR(16)   NOT NULL DEFAULT 'ingress',
+
+    cpu_limit         VARCHAR(32)   NOT NULL DEFAULT '500m',
+    memory_limit      VARCHAR(32)   NOT NULL DEFAULT '512Mi',
+
+    env               JSON          NULL,
+    command           JSON          NULL,
+    args              JSON          NULL,
+
+    deployment_mode   VARCHAR(16)   NOT NULL DEFAULT 'per_user',
+    ttl_seconds       INT           NOT NULL DEFAULT 3600,
+    namespace_prefix  VARCHAR(64)   NOT NULL DEFAULT 'ctf',
+
+    enable_sidecar    TINYINT(1)    NOT NULL DEFAULT 0,
+    sidecar_config    JSON          NULL,
+
+    PRIMARY KEY (problem_id),
+
+    CONSTRAINT chk_access_type     CHECK (access_type IN ('ingress', 'nodeport')),
+    CONSTRAINT chk_deployment_mode CHECK (deployment_mode IN ('per_user', 'shared')),
+
+    CONSTRAINT fk_pc_problem FOREIGN KEY (problem_id)
+        REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- 5.3 Problem Tags
+-- ----------------------------------------------------------
+
+CREATE TABLE problem_tags (
+    problem_id  CHAR(36)    NOT NULL,
+    tag         VARCHAR(64) NOT NULL,
+
+    PRIMARY KEY (problem_id, tag),
+
+    CONSTRAINT fk_pt_problem FOREIGN KEY (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -320,7 +360,8 @@ CREATE TABLE submissions (
     id              CHAR(36)     NOT NULL,
     user_id         CHAR(36)     NULL,
     team_id         CHAR(36)     NULL,
-    problem_id      INT          NOT NULL,
+    problem_id      CHAR(36)     NOT NULL,
+    instance_id     CHAR(36)     NULL,
     contest_id      CHAR(36)     NULL,   -- NULL = practice (non-contest) submission
 
     flag            VARCHAR(1024) NULL,
@@ -328,7 +369,6 @@ CREATE TABLE submissions (
     score_awarded   INT          NOT NULL DEFAULT 0,
 
     ip_address      VARCHAR(45)  NULL,
-    run_instance_id CHAR(36)     NULL,
     meta            JSON         NULL,
 
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -343,6 +383,7 @@ CREATE TABLE submissions (
 -- User / problem lookup
 CREATE INDEX idx_sub_user          ON submissions(user_id);
 CREATE INDEX idx_sub_problem       ON submissions(problem_id);
+CREATE INDEX idx_sub_instance      ON submissions(instance_id);
 -- Fast "has user solved this problem?" check
 CREATE INDEX idx_sub_user_problem  ON submissions(user_id, problem_id);
 -- First-blood queries
@@ -394,61 +435,100 @@ CREATE TABLE refresh_tokens (
 -- ==========================================================
 
 CREATE TABLE challenge_instances (
-    id             CHAR(36)    NOT NULL,
-    challenge_id   INT         NOT NULL,
-    owner_user_id  CHAR(36)    NULL,
-    owner_team_id  CHAR(36)    NULL,
+    id                  CHAR(36)      NOT NULL,
+    user_id             CHAR(36)      NOT NULL,
+    problem_id          CHAR(36)      NOT NULL,
 
-    pod_name       VARCHAR(255) NULL,
-    job_id         VARCHAR(255) NULL,
-    status         VARCHAR(32)  NOT NULL DEFAULT 'running',
-    address        VARCHAR(255) NULL,
+    instance_flag_hash  VARCHAR(255)  NULL,
 
-    created_at     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    destroyed_at   DATETIME    NULL,
-    meta           JSON        NULL,
+    pod_name            VARCHAR(255)  NULL,
+    namespace           VARCHAR(128)  NULL,
+
+    access_url          VARCHAR(512)  NULL,
+    node_port           INT           NULL,
+
+    status              VARCHAR(16)   NOT NULL DEFAULT 'pending',
+    k8s_status          JSON          NULL,
+
+    expired_at          DATETIME      NULL,
+
+    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    destroyed_at        DATETIME      NULL,
 
     PRIMARY KEY (id),
+    UNIQUE KEY uniq_node_port (node_port),
 
-    FOREIGN KEY fk_ci_challenge  (challenge_id)  REFERENCES problems(id) ON DELETE CASCADE,
-    FOREIGN KEY fk_ci_owner_user (owner_user_id) REFERENCES users(id)    ON DELETE SET NULL,
-    FOREIGN KEY fk_ci_owner_team (owner_team_id) REFERENCES teams(id)    ON DELETE SET NULL
+    CONSTRAINT chk_instance_status CHECK (status IN ('pending', 'running', 'stopping', 'destroyed', 'failed', 'crashed')),
+
+    FOREIGN KEY fk_ci_user    (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+    FOREIGN KEY fk_ci_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE INDEX idx_ci_user_status         ON challenge_instances(user_id, status);
+CREATE INDEX idx_ci_problem_status      ON challenge_instances(problem_id, status);
+CREATE INDEX idx_ci_expired             ON challenge_instances(expired_at, status);
+CREATE INDEX idx_ci_user_problem_active ON challenge_instances(user_id, problem_id, status);
 
 -- ==========================================================
 -- 8. Attachments
 -- ==========================================================
 
 CREATE TABLE attachments (
-    id            CHAR(36)      NOT NULL,
-    challenge_id  INT           NOT NULL,
-    file_name     VARCHAR(255)  NULL,
-    storage_path  VARCHAR(1024) NULL,
-    file_type     VARCHAR(50)   NULL,
-    created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id              CHAR(36)      NOT NULL,
+    problem_id      CHAR(36)      NOT NULL,
+    file_name       VARCHAR(255)  NOT NULL,
+    storage_path    VARCHAR(1024) NOT NULL,
+    cdn_url         VARCHAR(512)  NULL,
+    file_type       VARCHAR(50)   NULL,
+    file_size       BIGINT        NOT NULL DEFAULT 0,
+    sha256          CHAR(64)      NULL,
+    is_public       TINYINT(1)    NOT NULL DEFAULT 1,
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
+    UNIQUE KEY uniq_problem_attachment (problem_id),
 
-    FOREIGN KEY fk_attachments_problem (challenge_id)
+    FOREIGN KEY fk_attachments_problem (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ==========================================================
--- 9. Docker Images
+-- 9. Image Build Tasks
 -- ==========================================================
 
-CREATE TABLE docker_images (
-    id            CHAR(36)     NOT NULL,
-    challenge_id  INT          NOT NULL,
-    image_name    VARCHAR(255) NOT NULL,
-    image_tag     VARCHAR(128) NULL,
-    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE image_build_tasks (
+    id              CHAR(36)      NOT NULL,
+    problem_id      CHAR(36)      NOT NULL,
+
+    file_path       VARCHAR(512)  NOT NULL,
+    file_size       BIGINT        NOT NULL DEFAULT 0,
+
+    status          VARCHAR(16)   NOT NULL DEFAULT 'pending',
+    current_step    VARCHAR(32)   NOT NULL DEFAULT 'uploading',
+
+    image_repo      VARCHAR(255)  NULL,
+    image_tag       VARCHAR(128)  NULL,
+    error_log       TEXT          NULL,
+
+    retry_count     INT           NOT NULL DEFAULT 0,
+    max_retry       INT           NOT NULL DEFAULT 3,
+
+    worker_id       VARCHAR(64)   NULL,
+    claimed_at      DATETIME      NULL,
+
+    started_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at     DATETIME      NULL,
 
     PRIMARY KEY (id),
 
-    FOREIGN KEY fk_docker_images_problem (challenge_id)
+    CONSTRAINT chk_build_status CHECK (status IN ('pending', 'running', 'success', 'failed')),
+
+    CONSTRAINT fk_ibt_problem FOREIGN KEY (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE INDEX idx_ibt_problem ON image_build_tasks(problem_id);
+CREATE INDEX idx_ibt_status  ON image_build_tasks(status);
 
 -- ==========================================================
 -- 10. Contest Admins (Resource-level RBAC)
@@ -489,8 +569,8 @@ CREATE INDEX idx_contest_admins_user    ON contest_admins(user_id);
 
 CREATE TABLE contest_challenges (
     contest_id     CHAR(36) NOT NULL,
-    challenge_id   INT      NOT NULL,
-    score_override INT      NULL,   -- NULL = use problems.points
+    challenge_id   CHAR(36) NOT NULL,
+    score_override INT      NULL,   -- NULL = use problems.base_score
 
     PRIMARY KEY (contest_id, challenge_id),
 
@@ -663,211 +743,6 @@ CREATE TABLE user_follows (
     CONSTRAINT fk_follow_followee FOREIGN KEY (followee_id)
         REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
-
-
--- ==========================================================
--- Demo Data
--- ==========================================================
-
--- ----------------------------------------------------------
--- Users
--- All demo passwords = "password" (bcrypt, cost 10)
--- ----------------------------------------------------------
-
-INSERT INTO users
-    (id, username, email, password_hash, role,
-     display_name, bio, organization, country,
-     is_active, is_verified)
-VALUES
-    ('00000000-0000-0000-0000-000000000001',
-     'root', 'root@ctf.local',
-     '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
-     'root', 'Root', 'Default root account',
-     'CTF Platform', 'CN', 1, 1),
-
-    ('11111111-1111-1111-1111-111111111111',
-     'alice', 'alice@example.com',
-     '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
-     'site_admin', 'Alice', 'Demo site_admin Alice',
-     'University A', 'CN', 1, 1),
-
-    ('22222222-2222-2222-2222-222222222222',
-     'bob', 'bob@example.com',
-     '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe',
-     'user', 'Bob', 'Demo user Bob',
-     'University B', 'US', 1, 1);
-
-INSERT INTO users
-    (id, username, email, password_hash, role,
-     display_name, bio, organization, country,
-     is_active, is_verified)
-VALUES
-    ('30000000-0000-0000-0000-000000000003', 'user03', 'user03@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User03', 'Demo user 03', 'University C', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000004', 'user04', 'user04@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User04', 'Demo user 04', 'University C', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000005', 'user05', 'user05@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User05', 'Demo user 05', 'University D', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000006', 'user06', 'user06@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User06', 'Demo user 06', 'University D', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000007', 'user07', 'user07@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User07', 'Demo user 07', 'University E', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000008', 'user08', 'user08@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User08', 'Demo user 08', 'University E', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000009', 'user09', 'user09@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User09', 'Demo user 09', 'University F', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000010', 'user10', 'user10@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User10', 'Demo user 10', 'University F', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000011', 'user11', 'user11@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User11', 'Demo user 11', 'University G', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000012', 'user12', 'user12@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User12', 'Demo user 12', 'University G', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000013', 'user13', 'user13@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User13', 'Demo user 13', 'University H', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000014', 'user14', 'user14@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User14', 'Demo user 14', 'University H', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000015', 'user15', 'user15@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User15', 'Demo user 15', 'University I', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000016', 'user16', 'user16@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User16', 'Demo user 16', 'University I', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000017', 'user17', 'user17@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User17', 'Demo user 17', 'University J', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000018', 'user18', 'user18@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User18', 'Demo user 18', 'University J', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000019', 'user19', 'user19@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User19', 'Demo user 19', 'University K', 'CN', 1, 1),
-    ('30000000-0000-0000-0000-000000000020', 'user20', 'user20@example.com', '$2a$10$fxXO7SQMxuwppXDth8.3reqW5H6Tj5E/aExSB19Fa2p4/yH0FG/pe', 'user', 'User20', 'Demo user 20', 'University K', 'CN', 1, 1);
-
--- ----------------------------------------------------------
--- Teams
--- ----------------------------------------------------------
-
-INSERT INTO teams (id, name, invite_code, leader_id)
-VALUES
-    ('5be521ef-1d35-11f1-a099-da2caeb72bcd', 'Team Phoenix', 'PHOENIX8', '11111111-1111-1111-1111-111111111111'),
-    ('6be521ef-1d35-11f1-a099-da2caeb72bcd', 'Red Team',     'REDTEAM1', '22222222-2222-2222-2222-222222222222');
-
-INSERT INTO teams (id, name, invite_code, leader_id)
-VALUES
-    ('70000000-0000-0000-0000-000000000003', 'Team 03', 'TEAM0003', '30000000-0000-0000-0000-000000000003'),
-    ('70000000-0000-0000-0000-000000000004', 'Team 04', 'TEAM0004', '30000000-0000-0000-0000-000000000004'),
-    ('70000000-0000-0000-0000-000000000005', 'Team 05', 'TEAM0005', '30000000-0000-0000-0000-000000000005'),
-    ('70000000-0000-0000-0000-000000000006', 'Team 06', 'TEAM0006', '30000000-0000-0000-0000-000000000006'),
-    ('70000000-0000-0000-0000-000000000007', 'Team 07', 'TEAM0007', '30000000-0000-0000-0000-000000000007'),
-    ('70000000-0000-0000-0000-000000000008', 'Team 08', 'TEAM0008', '30000000-0000-0000-0000-000000000008'),
-    ('70000000-0000-0000-0000-000000000009', 'Team 09', 'TEAM0009', '30000000-0000-0000-0000-000000000009'),
-    ('70000000-0000-0000-0000-000000000010', 'Team 10', 'TEAM0010', '30000000-0000-0000-0000-000000000010'),
-    ('70000000-0000-0000-0000-000000000011', 'Team 11', 'TEAM0011', '30000000-0000-0000-0000-000000000011'),
-    ('70000000-0000-0000-0000-000000000012', 'Team 12', 'TEAM0012', '30000000-0000-0000-0000-000000000012'),
-    ('70000000-0000-0000-0000-000000000013', 'Team 13', 'TEAM0013', '30000000-0000-0000-0000-000000000013'),
-    ('70000000-0000-0000-0000-000000000014', 'Team 14', 'TEAM0014', '30000000-0000-0000-0000-000000000014'),
-    ('70000000-0000-0000-0000-000000000015', 'Team 15', 'TEAM0015', '30000000-0000-0000-0000-000000000015'),
-    ('70000000-0000-0000-0000-000000000016', 'Team 16', 'TEAM0016', '30000000-0000-0000-0000-000000000016'),
-    ('70000000-0000-0000-0000-000000000017', 'Team 17', 'TEAM0017', '30000000-0000-0000-0000-000000000017'),
-    ('70000000-0000-0000-0000-000000000018', 'Team 18', 'TEAM0018', '30000000-0000-0000-0000-000000000018'),
-    ('70000000-0000-0000-0000-000000000019', 'Team 19', 'TEAM0019', '30000000-0000-0000-0000-000000000019'),
-    ('70000000-0000-0000-0000-000000000020', 'Team 20', 'TEAM0020', '30000000-0000-0000-0000-000000000020');
-
--- ----------------------------------------------------------
--- Team Members
--- ----------------------------------------------------------
-
-INSERT INTO team_members (team_id, user_id, role_in_team, joined_at)
-VALUES
-    ('5be521ef-1d35-11f1-a099-da2caeb72bcd', '11111111-1111-1111-1111-111111111111', 'leader', CURRENT_TIMESTAMP),
-    ('6be521ef-1d35-11f1-a099-da2caeb72bcd', '22222222-2222-2222-2222-222222222222', 'leader', CURRENT_TIMESTAMP);
-
-INSERT INTO team_members (team_id, user_id, role_in_team, joined_at)
-VALUES
-    ('70000000-0000-0000-0000-000000000003', '30000000-0000-0000-0000-000000000003', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000004', '30000000-0000-0000-0000-000000000004', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000005', '30000000-0000-0000-0000-000000000005', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000006', '30000000-0000-0000-0000-000000000006', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000007', '30000000-0000-0000-0000-000000000007', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000008', '30000000-0000-0000-0000-000000000008', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000009', '30000000-0000-0000-0000-000000000009', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000010', '30000000-0000-0000-0000-000000000010', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000011', '30000000-0000-0000-0000-000000000011', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000012', '30000000-0000-0000-0000-000000000012', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000013', '30000000-0000-0000-0000-000000000013', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000014', '30000000-0000-0000-0000-000000000014', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000015', '30000000-0000-0000-0000-000000000015', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000016', '30000000-0000-0000-0000-000000000016', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000017', '30000000-0000-0000-0000-000000000017', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000018', '30000000-0000-0000-0000-000000000018', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000019', '30000000-0000-0000-0000-000000000019', 'leader', CURRENT_TIMESTAMP),
-    ('70000000-0000-0000-0000-000000000020', '30000000-0000-0000-0000-000000000020', 'leader', CURRENT_TIMESTAMP);
-
--- ----------------------------------------------------------
--- Problems
--- All demo flags = flag{demo}
--- flag_hash = SHA256('flag{demo}')
--- ----------------------------------------------------------
-
-INSERT INTO problems
-    (id, short_id, title, category, points, difficulty,
-     description, flag_hash, scope, status, created_by)
-VALUES
-    (1,  1,  'Hello Web',              'web',     100, '简单', '一个简单的 Web 入门题',   '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (2,  2,  'babyheap',               'pwn',     300, '困难', '经典 heap 漏洞利用',      '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (3,  3,  'easycrypto',             'crypto',  150, '中等', 'RSA 入门题',              '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (4,  4,  'reverse-me',             'reverse', 200, '中等', '简单逆向分析',             '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (5,  5,  'misc-challenge',         'misc',    120, '简单', '基础 Misc 题',             '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (6,  6,  'web-login-bypass',       'web',     130, '简单', '登录绕过基础题',           '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (7,  7,  'web-template-injection', 'web',     220, '中等', '模板注入利用',             '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (8,  8,  'pwn-ret2libc',           'pwn',     260, '中等', 'ret2libc 基础利用',       '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (9,  9,  'pwn-uaf-training',       'pwn',     340, '困难', 'Use-After-Free 训练题',  '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (10, 10, 'crypto-shift',           'crypto',  110, '简单', '古典密码位移分析',         '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (11, 11, 'crypto-rsa-common-mod',  'crypto',  240, '中等', 'RSA 共模攻击',            '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (12, 12, 'crypto-lcg-break',       'crypto',  320, '困难', '线性同余生成器预测',       '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (13, 13, 'reverse-crackme-1',      'reverse', 140, '简单', 'CrackMe 入门',            '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (14, 14, 'reverse-vm-disasm',      'reverse', 280, '中等', '虚拟机指令逆向',           '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (15, 15, 'reverse-anti-debug',     'reverse', 360, '困难', '反调试绕过分析',           '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (16, 16, 'misc-forensics-disk',    'misc',    160, '中等', '磁盘取证基础题',           '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (17, 17, 'misc-stego-audio',       'misc',    180, '中等', '音频隐写分析',             '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (18, 18, 'misc-pcap-hunt',         'misc',    210, '中等', '流量包线索提取',           '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (19, 19, 'web-race-condition',     'web',     310, '困难', '竞态条件漏洞利用',         '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111'),
-    (20, 20, 'pwn-srop-lab',           'pwn',     400, '困难', 'SROP 技术实验题',         '9e3b2d1b1f9c3c9a8f8c0a8d6a9b9b9f4f2c0b1f6cbbd6c8f7b9e7f1c1d9e0e4', 'platform', 'published', '11111111-1111-1111-1111-111111111111');
-
--- ----------------------------------------------------------
--- Challenge Tags
--- ----------------------------------------------------------
-
-INSERT INTO challenge_tags (challenge_id, tag)
-VALUES
-    (1, 'web'),     (1, 'http'),          (1, 'beginner'),
-    (2, 'pwn'),     (2, 'heap'),          (2, 'glibc'),
-    (3, 'crypto'),  (3, 'rsa'),           (3, 'number-theory'),
-    (4, 'reverse'), (4, 'binary'),        (4, 'x86'),
-    (5, 'misc'),    (5, 'forensics'),     (5, 'steganography');
-
--- ----------------------------------------------------------
--- Contests
--- created_by = alice (site_admin demo)
--- ----------------------------------------------------------
-
-INSERT INTO contests
-    (id, title, description, cover_image,
-     start_time, end_time, scoring_type, visibility, created_by)
-VALUES
-    ('90000000-0000-0000-0000-000000000001', '2026 Spring Warmup',         'Spring warmup contest for newcomers and team collaboration.',     '/static/covers/contest_01.jpg', '2026-03-01 10:00:00', '2026-03-01 18:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000002', 'Weekly Practice #01',        'Weekly practice focused on web and misc basics.',                 '/static/covers/contest_02.jpg', '2026-03-03 19:30:00', '2026-03-03 22:30:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000003', 'Weekly Practice #02',        'Second weekly practice with crypto and reverse challenges.',      '/static/covers/contest_03.jpg', '2026-03-05 19:30:00', '2026-03-05 22:30:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000004', 'Weekend Mini CTF #01',       'Short weekend event with mixed categories.',                      '/static/covers/contest_04.jpg', '2026-03-07 14:00:00', '2026-03-07 18:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000005', 'Reverse Monthly Challenge',  'Monthly reverse engineering challenge set.',                      '/static/covers/contest_05.jpg', '2026-03-10 09:00:00', '2026-03-31 23:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000006', 'Crypto Drill Camp',          'Crypto drill camp with progressive RSA and lattice tasks.',       '/static/covers/contest_06.jpg', '2026-03-12 18:00:00', '2026-03-13 23:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000007', 'Web Security Sprint',        'Fast-paced web vulnerabilities sprint.',                          '/static/covers/contest_07.jpg', '2026-03-14 10:00:00', '2027-03-14 20:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000008', 'Pwn Intro Battle',           'Introductory pwn contest for stack and heap basics.',             '/static/covers/contest_08.jpg', '2026-03-15 09:30:00', '2027-03-15 17:30:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000009', 'Campus Joint Training',      'Inter-university joint training event.',                          '/static/covers/contest_09.jpg', '2026-03-16 13:00:00', '2027-03-16 21:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000010', 'Night Owl CTF #01',          'Night-time short challenge event.',                               '/static/covers/contest_10.jpg', '2026-03-17 20:00:00', '2027-03-18 00:30:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000011', 'Night Owl CTF #02',          'Second night event with advanced tasks.',                         '/static/covers/contest_11.jpg', '2026-03-19 20:00:00', '2027-03-20 00:30:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000012', 'University Selection Round A','Selection round A for school team candidates.',                  '/static/covers/contest_12.jpg', '2026-03-22 09:00:00', '2027-03-22 18:00:00', 'jeopardy', 'invite_only', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000013', 'University Selection Round B','Selection round B with stricter scoring.',                       '/static/covers/contest_13.jpg', '2026-03-24 09:00:00', '2027-03-24 18:00:00', 'jeopardy', 'invite_only', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000014', 'Attack Surface Workshop CTF','Workshop-themed contest focused on service hardening.',           '/static/covers/contest_14.jpg', '2027-03-26 14:00:00', '2027-03-26 22:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000015', 'Beginner Friendly CTF',      'Friendly event for first-time participants.',                     '/static/covers/contest_15.jpg', '2027-03-28 10:00:00', '2027-03-28 19:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000016', 'April Monthly Open',         'Open monthly contest for all registered users.',                  '/static/covers/contest_16.jpg', '2027-04-02 09:00:00', '2027-04-02 23:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000017', 'Weekend Mini CTF #02',       'Second weekend mini CTF with mixed difficulty.',                  '/static/covers/contest_17.jpg', '2027-04-05 14:00:00', '2027-04-05 18:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000018', 'Blue Team Simulation Day',   'Defense-focused simulation and analysis tasks.',                  '/static/covers/contest_18.jpg', '2027-04-08 09:00:00', '2028-04-08 17:00:00', 'jeopardy', 'private', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000019', 'Capture Spring Finals',      'Final spring contest with cumulative ranking.',                   '/static/covers/contest_19.jpg', '2027-04-12 10:00:00', '2028-04-12 20:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111'),
-    ('90000000-0000-0000-0000-000000000020', 'Preparation Cup 2026',       'Preparation cup for upcoming provincial CTF.',                    '/static/covers/contest_20.jpg', '2027-04-15 10:00:00', '2028-04-15 18:00:00', 'jeopardy', 'public', '11111111-1111-1111-1111-111111111111');
-
--- ----------------------------------------------------------
--- Demo Contest Admins
--- bob (user) is assigned as contest_admin for contest #1
--- granted by alice (site_admin)
--- ----------------------------------------------------------
-
-INSERT INTO contest_admins (id, contest_id, user_id, role, granted_by, granted_at)
-VALUES
-    ('ca000000-0000-0000-0000-000000000001',
-     '90000000-0000-0000-0000-000000000001',
-     '22222222-2222-2222-2222-222222222222',
-     'admin',
-     '11111111-1111-1111-1111-111111111111',
-     CURRENT_TIMESTAMP);
 
 -- ==========================================================
 -- End of script
