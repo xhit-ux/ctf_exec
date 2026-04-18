@@ -340,6 +340,42 @@ a {
   pointer-events: auto;
 }
 
+@keyframes ppNodeBreath {
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.24);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.0);
+  }
+}
+
+.pp-step-node--active {
+  animation: ppNodeBreath 2.2s ease-out infinite;
+}
+
+.pp-step-segment {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.0) 0%,
+    rgba(245, 158, 11, 0.92) 50%,
+    rgba(245, 158, 11, 0.0) 100%
+  );
+}
+
+.pp-step-segment-glow {
+  background: linear-gradient(
+    to bottom,
+    rgba(245, 158, 11, 0.0) 0%,
+    rgba(245, 158, 11, 0.18) 50%,
+    rgba(245, 158, 11, 0.0) 100%
+  );
+  filter: blur(3px);
+  opacity: 0.9;
+}
+
 .scoreboard-search-inner {
   width: clamp(208px, 31vw, 340px);
   transform: scale(0.8);
