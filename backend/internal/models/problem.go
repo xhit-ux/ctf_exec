@@ -1,87 +1,143 @@
 package models
 
-import "time"
+import "encoding/json"
 
-// Problem 题目模型 (用于API返回，不包含Flag)
 type Problem struct {
-	ID          int      `json:"id"`
-	Title       string   `json:"title"`
-	Category    string   `json:"category"`
-	Type        string   `json:"type,omitempty"`
-	Points      int      `json:"points"`
-	Difficulty  string   `json:"difficulty"`
-	Tags        []string `json:"tags"` // 标签数组
-	Description string   `json:"description"`
-	IsSolved    bool     `json:"is_solved"`
-	Scope       string   `json:"scope,omitempty"`
-	ContestID   *string  `json:"contest_id,omitempty"`
-	Status      string   `json:"status,omitempty"`
-	FlagRule    string   `json:"flag_rule,omitempty"`
-	FlagExample string   `json:"flag_example,omitempty"`
-	DockerImage string   `json:"docker_image,omitempty"`
-	RunCommand  string   `json:"run_command,omitempty"`
-	CreatedBy   string   `json:"created_by,omitempty"`
-	VisibleFrom *string  `json:"visible_from,omitempty"`
-	VisibleTo   *string  `json:"visible_to,omitempty"`
+	ID          string            `json:"id"`
+	Title       string            `json:"title"`
+	Category    string            `json:"category"`
+	Type        string            `json:"type"`
+	Description *string           `json:"description,omitempty"`
+	BaseScore   int               `json:"base_score"`
+	Difficulty  string            `json:"difficulty"`
+	DeployMode  string            `json:"deploy_mode"`
+	UseKata     bool              `json:"use_kata"`
+	Status      string            `json:"status"`
+	CreatedBy   *string           `json:"created_by,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
+	IsSolved    bool              `json:"is_solved,omitempty"`
+	Flag        *ProblemFlag      `json:"flag,omitempty"`
+	Container   *ProblemContainer `json:"container,omitempty"`
 }
 
-// ProblemDetail 题目详情 (内部包括Flag，用于验证)
-type ProblemDetail struct {
-	Problem
-	FlagHash string `json:"-"` // 不序列化
+type ProblemFlag struct {
+	ProblemID          string  `json:"problem_id"`
+	FlagRule           string  `json:"flag_rule"`
+	FlagHash           *string `json:"-"`
+	FlagExample        *string `json:"flag_example,omitempty"`
+	FlagType           string  `json:"flag_type"`
+	FlagInject         string  `json:"flag_inject"`
+	FlagEnvKey         string  `json:"flag_env_key"`
+	FlagSidecarPattern *string `json:"flag_sidecar_pattern,omitempty"`
 }
 
-// CreateProblemRequest 创建题目请求
+type ProblemContainer struct {
+	ProblemID      string          `json:"problem_id"`
+	ImageName      string          `json:"image_name"`
+	ImageTag       string          `json:"image_tag"`
+	ChallengePort  int             `json:"challenge_port"`
+	SidecarImage   string          `json:"sidecar_image"`
+	SidecarPort    int             `json:"sidecar_port"`
+	CPULimit       string          `json:"cpu_limit"`
+	MemoryLimit    string          `json:"memory_limit"`
+	Env            json.RawMessage `json:"env,omitempty"`
+	TTLSeconds     int             `json:"ttl_seconds"`
+	IngressHostTpl *string         `json:"ingress_host_tpl,omitempty"`
+}
+
 type CreateProblemRequest struct {
-	Title       string     `json:"title"`
-	Category    string     `json:"category"`
-	Type        string     `json:"type"`
-	Points      int        `json:"points"`
-	Difficulty  string     `json:"difficulty"`
-	Description string     `json:"description"`
-	Tags        []string   `json:"tags"`
-	Flag        string     `json:"flag"`
-	FlagRule    string     `json:"flag_rule"`
-	FlagExample string     `json:"flag_example"`
-	DockerImage string     `json:"docker_image"`
-	RunCommand  string     `json:"run_command"`
-	Scope       string     `json:"scope"`
-	ContestID   string     `json:"contest_id"`
-	Status      string     `json:"status"`
-	VisibleFrom *time.Time `json:"visible_from"`
-	VisibleTo   *time.Time `json:"visible_to"`
-	CreatedBy   string     `json:"-"`
+	Title       string                  `json:"title"`
+	Category    string                  `json:"category"`
+	Type        string                  `json:"type"`
+	Description string                  `json:"description"`
+	BaseScore   int                     `json:"base_score"`
+	Difficulty  string                  `json:"difficulty"`
+	DeployMode  string                  `json:"deploy_mode"`
+	UseKata     bool                    `json:"use_kata"`
+	Status      string                  `json:"status"`
+	Tags        []string                `json:"tags"`
+	Flag        CreateFlagRequest       `json:"flag"`
+	Container   *CreateContainerRequest `json:"container,omitempty"`
+	CreatedBy   string                  `json:"-"`
 }
 
-// UpdateProblemRequest 更新题目请求
 type UpdateProblemRequest struct {
-	Title       string     `json:"title"`
-	Category    string     `json:"category"`
-	Type        string     `json:"type"`
-	Points      int        `json:"points"`
-	Difficulty  string     `json:"difficulty"`
-	Description string     `json:"description"`
-	Tags        []string   `json:"tags"`
-	Flag        string     `json:"flag"`
-	FlagRule    string     `json:"flag_rule"`
-	FlagExample string     `json:"flag_example"`
-	DockerImage string     `json:"docker_image"`
-	RunCommand  string     `json:"run_command"`
-	Status      string     `json:"status"`
-	VisibleFrom *time.Time `json:"visible_from"`
-	VisibleTo   *time.Time `json:"visible_to"`
+	Title       string                  `json:"title"`
+	Category    string                  `json:"category"`
+	Type        string                  `json:"type"`
+	Description string                  `json:"description"`
+	BaseScore   int                     `json:"base_score"`
+	Difficulty  string                  `json:"difficulty"`
+	DeployMode  string                  `json:"deploy_mode"`
+	UseKata     bool                    `json:"use_kata"`
+	Status      string                  `json:"status"`
+	Tags        []string                `json:"tags"`
+	Flag        CreateFlagRequest       `json:"flag"`
+	Container   *CreateContainerRequest `json:"container,omitempty"`
 }
 
-// ProblemSubmissionMeta 提交场景下的题目元数据。
+type CreateFlagRequest struct {
+	FlagPlain          string  `json:"flag_plain"`
+	FlagRule           string  `json:"flag_rule"`
+	FlagExample        *string `json:"flag_example"`
+	FlagType           string  `json:"flag_type"`
+	FlagInject         string  `json:"flag_inject"`
+	FlagEnvKey         string  `json:"flag_env_key"`
+	FlagSidecarPattern *string `json:"flag_sidecar_pattern"`
+}
+
+type CreateContainerRequest struct {
+	ImageName      string          `json:"image_name"`
+	ImageTag       string          `json:"image_tag"`
+	ChallengePort  int             `json:"challenge_port"`
+	SidecarImage   string          `json:"sidecar_image"`
+	SidecarPort    int             `json:"sidecar_port"`
+	CPULimit       string          `json:"cpu_limit"`
+	MemoryLimit    string          `json:"memory_limit"`
+	Env            json.RawMessage `json:"env"`
+	TTLSeconds     int             `json:"ttl_seconds"`
+	IngressHostTpl *string         `json:"ingress_host_tpl"`
+}
+
+type CreateProblemDraftRequest struct {
+	Category string `json:"category"`
+	Type     string `json:"type"`
+}
+
+type UpdateProblemBasicRequest struct {
+	Title       string `json:"title"`
+	Category    string `json:"category"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	BaseScore   int    `json:"base_score"`
+	Difficulty  string `json:"difficulty"`
+	DeployMode  string `json:"deploy_mode"`
+	UseKata     bool   `json:"use_kata"`
+}
+
 type ProblemSubmissionMeta struct {
-	ID          int
-	Title       string
-	Points      int
-	Scope       string
-	Status      string
-	FlagHash    string
-	FlagRule    string
-	ContestID   *string
-	VisibleFrom *time.Time
-	VisibleTo   *time.Time
+	ID       string
+	Title    string
+	Points   int
+	Status   string
+	FlagHash string
+	FlagRule string
+	FlagType string
+}
+
+type ImageBuildTask struct {
+	ID          string  `json:"id"`
+	ProblemID   string  `json:"problem_id"`
+	FilePath    string  `json:"file_path"`
+	FileSize    int64   `json:"file_size"`
+	Status      string  `json:"status"`
+	CurrentStep string  `json:"current_step"`
+	ImageRepo   *string `json:"image_repo,omitempty"`
+	ImageTag    *string `json:"image_tag,omitempty"`
+	ErrorLog    *string `json:"error_log,omitempty"`
+	RetryCount  int     `json:"retry_count"`
+	MaxRetry    int     `json:"max_retry"`
+	WorkerID    *string `json:"worker_id,omitempty"`
+	StartedAt   string  `json:"started_at"`
+	FinishedAt  *string `json:"finished_at,omitempty"`
 }

@@ -8,7 +8,7 @@ type Submission struct {
 	UserID       string    `json:"user_id"`
 	TeamID       *string   `json:"team_id,omitempty"`
 	ContestID    *string   `json:"contest_id,omitempty"`
-	ProblemID    int       `json:"problem_id"`
+	ProblemID    string    `json:"problem_id"`
 	Flag         string    `json:"flag"`
 	IsCorrect    bool      `json:"is_correct"`
 	IPAddress    string    `json:"ip_address,omitempty"`
@@ -18,7 +18,7 @@ type Submission struct {
 
 // CreateSubmissionRequest 创建提交请求
 type CreateSubmissionRequest struct {
-	ProblemID int     `json:"problem_id"`
+	ProblemID string  `json:"problem_id"`
 	Flag      string  `json:"flag"`
 	TeamID    *string `json:"team_id,omitempty"`
 	ContestID *string `json:"contest_id,omitempty"`

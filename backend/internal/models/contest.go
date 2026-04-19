@@ -41,8 +41,8 @@ type UpdateContestRequest struct {
 
 // ContestChallengeBindRequest 赛事题目编排请求。
 type ContestChallengeBindRequest struct {
-	ChallengeID   int  `json:"challenge_id"`
-	ScoreOverride *int `json:"score_override"`
+	ChallengeID   string `json:"challenge_id"`
+	ScoreOverride *int   `json:"score_override"`
 }
 
 // JoinContestRequest 报名赛事请求。
@@ -57,7 +57,7 @@ type LeaveContestRequest struct {
 
 // ContestChallengeView 赛事题目展示结构。
 type ContestChallengeView struct {
-	ID            int    `json:"id"`
+	ID            string `json:"id"`
 	Title         string `json:"title"`
 	Category      string `json:"category"`
 	Difficulty    string `json:"difficulty"`
@@ -103,7 +103,7 @@ type ContestSubmissionItem struct {
 	ID           string    `json:"id"`
 	UserID       *string   `json:"user_id,omitempty"`
 	TeamID       *string   `json:"team_id,omitempty"`
-	ProblemID    int       `json:"problem_id"`
+	ProblemID    string    `json:"problem_id"`
 	ContestID    *string   `json:"contest_id,omitempty"`
 	IsCorrect    bool      `json:"is_correct"`
 	IPAddress    *string   `json:"ip_address,omitempty"`

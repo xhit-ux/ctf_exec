@@ -33,6 +33,7 @@ DROP TABLE IF EXISTS leaderboard_global;
 DROP TABLE IF EXISTS contests;
 DROP TABLE IF EXISTS image_build_tasks;
 DROP TABLE IF EXISTS problem_containers;
+DROP TABLE IF EXISTS flag_mappings;
 DROP TABLE IF EXISTS problem_flags;
 DROP TABLE IF EXISTS docker_images;
 DROP TABLE IF EXISTS attachments;
@@ -246,14 +247,12 @@ CREATE TABLE problems (
     type               VARCHAR(16)   NOT NULL DEFAULT 'static',
     description        TEXT          NULL,
     base_score         INT           NOT NULL DEFAULT 0,
-    is_dynamic_score   TINYINT(1)    NOT NULL DEFAULT 0,
     difficulty         VARCHAR(16)   NOT NULL,
+    deploy_mode        VARCHAR(16)   NOT NULL DEFAULT 'shared',
+    use_kata           TINYINT(1)    NOT NULL DEFAULT 0,
 
     status             VARCHAR(16)   NOT NULL DEFAULT 'draft',
     created_by         CHAR(36)      NULL,
-
-    visible_from       DATETIME      NULL,
-    visible_to         DATETIME      NULL,
 
     created_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -261,8 +260,9 @@ CREATE TABLE problems (
 
     PRIMARY KEY (id),
 
-    CONSTRAINT chk_problem_type   CHECK (type IN ('static', 'container')),
-    CONSTRAINT chk_problem_status CHECK (status IN ('draft', 'ready', 'hidden')),
+    CONSTRAINT chk_problem_type        CHECK (type IN ('static', 'container_web', 'container_tcp')),
+    CONSTRAINT chk_problem_deploy_mode CHECK (deploy_mode IN ('shared', 'per_user')),
+    CONSTRAINT chk_problem_status      CHECK (status IN ('draft', 'ready', 'hidden')),
 
     FOREIGN KEY fk_problems_created_by (created_by)
         REFERENCES users(id) ON DELETE SET NULL
@@ -277,22 +277,21 @@ CREATE INDEX idx_problems_created  ON problems(created_by);
 -- ----------------------------------------------------------
 
 CREATE TABLE problem_flags (
-    problem_id      CHAR(36)      NOT NULL,
-
-    flag_hash       VARCHAR(255)  NULL,
-    flag_rule       VARCHAR(32)   NOT NULL DEFAULT 'exact',
-    flag_example    VARCHAR(255)  NULL,
-
-    flag_type       VARCHAR(16)   NOT NULL DEFAULT 'static',
-    flag_handler    VARCHAR(16)   NULL,
-    flag_path_key   VARCHAR(128)  NULL,
+    problem_id            CHAR(36)      NOT NULL,
+    flag_rule             VARCHAR(32)   NOT NULL DEFAULT 'exact',
+    flag_hash             VARCHAR(255)  NULL,
+    flag_example          VARCHAR(255)  NULL,
+    flag_type             VARCHAR(16)   NOT NULL DEFAULT 'static',
+    flag_inject           VARCHAR(16)   NOT NULL DEFAULT 'env',
+    flag_env_key          VARCHAR(64)   NOT NULL DEFAULT 'FLAG',
+    flag_sidecar_pattern  VARCHAR(255)  NULL,
 
     PRIMARY KEY (problem_id),
 
-    CONSTRAINT chk_flag_type    CHECK (flag_type IN ('static', 'dynamic')),
-    CONSTRAINT chk_flag_handler CHECK (flag_handler IN ('env', 'file')),
     CONSTRAINT chk_flag_rule    CHECK (flag_rule IN ('exact', 'case_insensitive')),
-    CONSTRAINT chk_flag_hash_nullable CHECK (
+    CONSTRAINT chk_flag_type    CHECK (flag_type IN ('static', 'dynamic')),
+    CONSTRAINT chk_flag_inject  CHECK (flag_inject IN ('env', 'sidecar')),
+    CONSTRAINT chk_flag_hash_nn CHECK (
         (flag_type = 'static' AND flag_hash IS NOT NULL)
         OR (flag_type = 'dynamic' AND flag_hash IS NULL)
     ),
@@ -302,44 +301,48 @@ CREATE TABLE problem_flags (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
--- 5.2 Problem Containers
+-- 5.2 Dynamic Flag Mappings
+-- ----------------------------------------------------------
+
+CREATE TABLE flag_mappings (
+    id          CHAR(36)      NOT NULL,
+    user_id     CHAR(36)      NOT NULL,
+    problem_id  CHAR(36)      NOT NULL,
+    flag_value  VARCHAR(255)  NOT NULL,
+    created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uniq_fm_user_problem (user_id, problem_id),
+
+    FOREIGN KEY fk_fm_user    (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+    FOREIGN KEY fk_fm_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- 5.3 Problem Containers
 -- ----------------------------------------------------------
 
 CREATE TABLE problem_containers (
     problem_id        CHAR(36)      NOT NULL,
-
     image_name        VARCHAR(255)  NOT NULL,
-    image_repo        VARCHAR(255)  NULL,
-    image_tag         VARCHAR(128)  NULL,
-
-    internal_port     INT           NOT NULL DEFAULT 80,
-    access_type       VARCHAR(16)   NOT NULL DEFAULT 'ingress',
-
+    image_tag         VARCHAR(128)  NOT NULL DEFAULT 'latest',
+    challenge_port    INT           NOT NULL,
+    sidecar_image     VARCHAR(255)  NOT NULL,
+    sidecar_port      INT           NOT NULL,
     cpu_limit         VARCHAR(32)   NOT NULL DEFAULT '500m',
     memory_limit      VARCHAR(32)   NOT NULL DEFAULT '512Mi',
-
     env               JSON          NULL,
-    command           JSON          NULL,
-    args              JSON          NULL,
-
-    deployment_mode   VARCHAR(16)   NOT NULL DEFAULT 'per_user',
     ttl_seconds       INT           NOT NULL DEFAULT 3600,
-    namespace_prefix  VARCHAR(64)   NOT NULL DEFAULT 'ctf',
-
-    enable_sidecar    TINYINT(1)    NOT NULL DEFAULT 0,
-    sidecar_config    JSON          NULL,
+    ingress_host_tpl  VARCHAR(255)  NULL,
 
     PRIMARY KEY (problem_id),
-
-    CONSTRAINT chk_access_type     CHECK (access_type IN ('ingress', 'nodeport')),
-    CONSTRAINT chk_deployment_mode CHECK (deployment_mode IN ('per_user', 'shared')),
 
     CONSTRAINT fk_pc_problem FOREIGN KEY (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
--- 5.3 Problem Tags
+-- 5.4 Problem Tags
 -- ----------------------------------------------------------
 
 CREATE TABLE problem_tags (
@@ -438,27 +441,20 @@ CREATE TABLE challenge_instances (
     id                  CHAR(36)      NOT NULL,
     user_id             CHAR(36)      NOT NULL,
     problem_id          CHAR(36)      NOT NULL,
-
-    instance_flag_hash  VARCHAR(255)  NULL,
-
     pod_name            VARCHAR(255)  NULL,
     namespace           VARCHAR(128)  NULL,
-
     access_url          VARCHAR(512)  NULL,
     node_port           INT           NULL,
-
     status              VARCHAR(16)   NOT NULL DEFAULT 'pending',
-    k8s_status          JSON          NULL,
-
+    flag_value          VARCHAR(255)  NULL,
+    started_at          DATETIME      NULL,
     expired_at          DATETIME      NULL,
-
-    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     destroyed_at        DATETIME      NULL,
 
     PRIMARY KEY (id),
-    UNIQUE KEY uniq_node_port (node_port),
+    UNIQUE KEY uniq_active_instance (user_id, problem_id),
 
-    CONSTRAINT chk_instance_status CHECK (status IN ('pending', 'running', 'stopping', 'destroyed', 'failed', 'crashed')),
+    CONSTRAINT chk_instance_status CHECK (status IN ('pending', 'running', 'stopping', 'destroyed', 'failed')),
 
     FOREIGN KEY fk_ci_user    (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
     FOREIGN KEY fk_ci_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
@@ -477,16 +473,13 @@ CREATE TABLE attachments (
     id              CHAR(36)      NOT NULL,
     problem_id      CHAR(36)      NOT NULL,
     file_name       VARCHAR(255)  NOT NULL,
-    storage_path    VARCHAR(1024) NOT NULL,
-    cdn_url         VARCHAR(512)  NULL,
-    file_type       VARCHAR(50)   NULL,
+    bucket_name     VARCHAR(128)  NOT NULL,
+    object_key      VARCHAR(512)  NOT NULL,
     file_size       BIGINT        NOT NULL DEFAULT 0,
     sha256          CHAR(64)      NULL,
-    is_public       TINYINT(1)    NOT NULL DEFAULT 1,
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    UNIQUE KEY uniq_problem_attachment (problem_id),
 
     FOREIGN KEY fk_attachments_problem (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE

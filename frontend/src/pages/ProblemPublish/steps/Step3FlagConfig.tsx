@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useProblemPublish } from '../ProblemPublishContext';
+import { saveProblemFlag } from '../../../utils/problemPublishApi';
 // A mock sha256 function to simulate the frontend hashing preview
 const sha256 = async (message: string) => {
   if (!message) return '';
@@ -10,7 +11,7 @@ const sha256 = async (message: string) => {
 };
 
 export default function Step3FlagConfig() {
-  const { state, updateState, nextStep, prevStep } = useProblemPublish();
+  const { state, updateState, nextStep, prevStep, setSubmitting } = useProblemPublish();
   const [hashPreview, setHashPreview] = useState('');
 
   useEffect(() => {
@@ -21,9 +22,29 @@ export default function Step3FlagConfig() {
     }
   }, [state.staticFlag, state.flagType]);
 
-  const handleNext = () => {
-    console.log('Mock: 保存 Flag 配置');
-    nextStep();
+  const handleNext = async () => {
+    if (!state.problemId) {
+      window.alert('请先完成基础信息并创建草稿');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await saveProblemFlag(state.problemId, {
+        flag_plain: state.flagType === 'static' ? (state.staticFlag || '') : '',
+        flag_rule: state.staticFlagMatchMode === 'ignore_case' ? 'case_insensitive' : 'exact',
+        flag_type: state.flagType,
+        flag_inject: state.dynamicFlagInjection === 'file' ? 'sidecar' : 'env',
+        flag_env_key: state.dynamicFlagEnvName || 'FLAG',
+        flag_example: state.flagType === 'static' ? (state.staticFlag || undefined) : undefined,
+        flag_sidecar_pattern: state.dynamicFlagFilePath || undefined,
+      });
+      nextStep();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '保存 Flag 配置失败';
+      window.alert(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ctf_exec/backend/internal/models"
-	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/google/uuid"
 )
 
@@ -30,9 +29,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	storedFlag := utils.HashFlag(req.Flag)
-
-	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, storedFlag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
+	_, err := r.db.Exec(query, submissionID, userID, req.TeamID, req.ProblemID, req.ContestID, req.Flag, req.IsCorrect, normalizeIPAddress(req.IPAddress), now)
 	if err != nil {
 		return nil, fmt.Errorf("创建提交记录失败: %w", err)
 	}
@@ -43,7 +40,7 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		TeamID:    req.TeamID,
 		ContestID: req.ContestID,
 		ProblemID: req.ProblemID,
-		Flag:      storedFlag,
+		Flag:      req.Flag,
 		IsCorrect: req.IsCorrect,
 		IPAddress: normalizeIPAddress(req.IPAddress),
 		CreatedAt: now,
@@ -94,7 +91,7 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 }
 
 // HasCorrectSubmissionInContest 校验用户在赛事中是否已正确解过该题。
-func (r *SubmissionRepository) HasCorrectSubmissionInContest(userID, contestID string, problemID int) (bool, error) {
+func (r *SubmissionRepository) HasCorrectSubmissionInContest(userID, contestID string, problemID string) (bool, error) {
 	var cnt int
 	err := r.db.QueryRow(`
 		SELECT COUNT(1)
@@ -109,7 +106,7 @@ func (r *SubmissionRepository) HasCorrectSubmissionInContest(userID, contestID s
 }
 
 // HasCorrectSubmissionByUserProblem 校验用户是否已正确解出该题（全局维度）。
-func (r *SubmissionRepository) HasCorrectSubmissionByUserProblem(userID string, problemID int) (bool, error) {
+func (r *SubmissionRepository) HasCorrectSubmissionByUserProblem(userID string, problemID string) (bool, error) {
 	var cnt int
 	err := r.db.QueryRow(`
 		SELECT COUNT(1)

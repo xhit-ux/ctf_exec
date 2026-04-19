@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"fmt"
+	"log"
 	"net/http"
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
@@ -18,10 +20,19 @@ type ProblemHandler struct {
 	contestAdminRepo repository.ContestAdminRepository
 }
 
-// CreateProblemGin 管理端创建题目。
+func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository) *ProblemHandler {
+	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo}
+}
+
 func (h *ProblemHandler) CreateProblemGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
+		return
+	}
+
+	role := models.NormalizeRole(claims.Role)
+	if role != models.RoleRoot && role != models.RoleSiteAdmin {
+		writeForbidden(c, "仅 site_admin/root 可创建题目")
 		return
 	}
 
@@ -31,112 +42,257 @@ func (h *ProblemHandler) CreateProblemGin(c *gin.Context) {
 		return
 	}
 
+	if err := validateProblemCreateUpdate(&req); err != nil {
+		writeBadRequest(c, err.Error())
+		return
+	}
+	req.CreatedBy = claims.UserID
+
+	item, err := h.repo.CreateProblem(&req)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusCreated, item)
+}
+
+func (h *ProblemHandler) CreateProblemDraftGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	role := models.NormalizeRole(claims.Role)
+	if role != models.RoleRoot && role != models.RoleSiteAdmin {
+		writeForbidden(c, "仅 site_admin/root 可创建草稿")
+		return
+	}
+
+	var req models.CreateProblemDraftRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if strings.TrimSpace(req.Category) == "" {
+		writeBadRequest(c, "category 不能为空")
+		return
+	}
+	req.Type = normalizeProblemType(req.Type)
+	if req.Type == "" {
+		writeBadRequest(c, "type 仅支持 static/container_web/container_tcp")
+		return
+	}
+	id, err := h.repo.CreateProblemDraft(&req, claims.UserID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"problem_id": id})
+}
+
+func (h *ProblemHandler) SaveProblemBasicGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req models.UpdateProblemBasicRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	req.Type = normalizeProblemType(req.Type)
+	req.DeployMode = normalizeDeployMode(req.DeployMode)
+	if req.Type == "" || req.DeployMode == "" {
+		writeBadRequest(c, "type/deploy_mode 不合法")
+		return
+	}
 	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
 		writeBadRequest(c, "title/category/difficulty 不能为空")
 		return
 	}
-	if req.Points < 0 {
-		writeBadRequest(c, "points 不能为负数")
+	if req.BaseScore < 0 {
+		writeBadRequest(c, "base_score 不能为负数")
 		return
 	}
-	if strings.TrimSpace(req.Flag) == "" {
-		writeBadRequest(c, "flag 不能为空")
+	if err := h.repo.UpdateProblemBasic(id, &req); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
+	c.JSON(http.StatusOK, gin.H{"message": "基础信息保存成功"})
+}
 
-	req.Type = normalizeProblemType(req.Type)
+func (h *ProblemHandler) SaveProblemFlagGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req models.CreateFlagRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
 	req.FlagRule = normalizeFlagRule(req.FlagRule)
-	req.Status = normalizeProblemStatus(req.Status)
+	req.FlagType = normalizeFlagFlagType(req.FlagType)
+	req.FlagInject = normalizeFlagInject(req.FlagInject)
+	if req.FlagRule == "" || req.FlagType == "" || req.FlagInject == "" {
+		writeBadRequest(c, "flag_rule/flag_type/flag_inject 不合法")
+		return
+	}
+	if req.FlagType == "static" && strings.TrimSpace(req.FlagPlain) == "" {
+		writeBadRequest(c, "static flag 不能为空")
+		return
+	}
+	if err := h.repo.UpsertProblemFlag(id, &req); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Flag 配置保存成功"})
+}
 
-	if !isSupportedFlagRule(req.FlagRule) {
-		writeBadRequest(c, "flag_rule 不合法")
+func (h *ProblemHandler) SaveProblemContainerGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req models.CreateContainerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if strings.TrimSpace(req.ImageName) == "" || strings.TrimSpace(req.SidecarImage) == "" {
+		writeBadRequest(c, "image_name/sidecar_image 不能为空")
+		return
+	}
+	if req.ChallengePort <= 0 || req.SidecarPort <= 0 {
+		writeBadRequest(c, "challenge_port/sidecar_port 必须大于 0")
+		return
+	}
+	if err := h.repo.UpsertProblemContainer(id, &req); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "容器配置保存成功"})
+}
+
+func (h *ProblemHandler) PublishProblemGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	started, startErr := h.repo.StartImageBuildPipelineForProblem(id)
+	if startErr != nil {
+		writeError(c, startErr, http.StatusBadRequest)
+		return
+	}
+	if started {
+		c.JSON(http.StatusAccepted, gin.H{
+			"message": "镜像构建任务已启动，请等待完成后再次点击发布",
+			"status":  "building",
+		})
+		return
+	}
+	if err := h.repo.PublishProblem(id); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "题目发布成功", "status": "published"})
+}
+
+func (h *ProblemHandler) SaveProblemImageGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
 		return
 	}
 
-	if !isSupportedProblemStatus(req.Status) {
-		writeBadRequest(c, "status 不合法")
+	file, err := c.FormFile("file")
+	if err != nil {
+		writeBadRequest(c, "请上传构建文件，字段名为 file")
 		return
 	}
 
-	role := models.NormalizeRole(claims.Role)
-	req.CreatedBy = claims.UserID
-	req.Scope = strings.ToLower(strings.TrimSpace(req.Scope))
-	req.ContestID = strings.TrimSpace(req.ContestID)
-
-	if req.Scope == "" {
-		req.Scope = "platform"
+	buildDir := filepath.Join("..", "static", "images", "problems", id)
+	if mkErr := os.MkdirAll(buildDir, 0o755); mkErr != nil {
+		writeError(c, mkErr, http.StatusInternalServerError)
+		return
 	}
-
-	if req.Scope != "platform" && req.Scope != "contest" {
-		writeBadRequest(c, "scope 仅支持 platform/contest")
+	dst := filepath.Join(buildDir, filepath.Base(file.Filename))
+	if saveErr := c.SaveUploadedFile(file, dst); saveErr != nil {
+		writeError(c, saveErr, http.StatusInternalServerError)
 		return
 	}
 
-	if role != models.RoleRoot && role != models.RoleSiteAdmin {
-		if req.ContestID == "" {
-			writeForbidden(c, "contest_admin 创建题目时必须指定 contest_id")
-			return
-		}
+	imageRepo := strings.TrimSpace(c.PostForm("image_repo"))
+	if imageRepo == "" {
+		imageRepo = fmt.Sprintf("ctf-exec/%s", id)
+	}
+	imageTag := strings.TrimSpace(c.PostForm("image_tag"))
+	uploadType := strings.TrimSpace(c.PostForm("upload_type"))
+	if uploadType == "" {
+		uploadType = "docker_save"
+	}
+	log.Printf("[image-upload] problem=%s file=%s size=%d upload_type=%s saved_to=%s", id, file.Filename, file.Size, uploadType, dst)
 
-		isAdmin, err := h.contestAdminRepo.IsContestAdmin(claims.UserID, req.ContestID)
-		if err != nil {
-			writeError(c, err, http.StatusInternalServerError)
-			return
-		}
-		if !isAdmin {
-			writeForbidden(c, "无权在该赛事发布题目")
-			return
-		}
-
-		req.Scope = "contest"
-		if req.Status == "published" || req.Status == "archived" {
-			writeForbidden(c, "contest_admin 仅可创建 draft/review 状态题目")
-			return
-		}
-	} else if req.Scope == "contest" && req.ContestID == "" {
-		writeBadRequest(c, "scope=contest 时 contest_id 不能为空")
+	task, repoErr := h.repo.CreateImageBuildTask(id, dst, file.Size, imageRepo, imageTag)
+	if repoErr != nil {
+		writeError(c, repoErr, http.StatusInternalServerError)
+		return
+	}
+	if task == nil {
+		writeInternal(c, "构建任务初始化失败")
 		return
 	}
 
-	if req.Scope == "contest" {
-		contest, err := h.contestRepo.GetContestByID(req.ContestID)
-		if err != nil {
-			writeError(c, err, http.StatusBadRequest)
-			return
-		}
+	c.JSON(http.StatusOK, gin.H{
+		"message": "镜像包已暂存，发布时触发构建",
+		"status":  "uploaded",
+		"task":    task,
+	})
+}
 
-		if contest.EndTime != nil && time.Now().After(*contest.EndTime) {
-			writeBadRequest(c, "赛事已结束，不能发布新的赛事题目")
-			return
-		}
+func (h *ProblemHandler) GetProblemBuildTaskGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
 	}
 
-	problem, err := h.repo.CreateProblem(&req)
+	task, err := h.repo.GetLatestImageBuildTask(id)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
 
-	if req.Scope == "contest" {
-		if err := h.contestRepo.AddChallengeToContest(req.ContestID, problem.ID, nil); err != nil {
-			writeError(c, err, http.StatusInternalServerError)
-			return
-		}
+	if task == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"task":   nil,
+			"status": "not_found",
+		})
+		return
 	}
 
-	c.JSON(http.StatusCreated, problem)
+	c.JSON(http.StatusOK, gin.H{
+		"task":   task,
+		"status": task.Status,
+	})
 }
 
-// UpdateProblemGin 管理端更新题目。
 func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
 		return
 	}
+	role := models.NormalizeRole(claims.Role)
+	if role != models.RoleRoot && role != models.RoleSiteAdmin {
+		writeForbidden(c, "仅 site_admin/root 可更新题目")
+		return
+	}
 
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil || id <= 0 {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		writeBadRequest(c, "无效的题目ID")
 		return
 	}
@@ -146,74 +302,55 @@ func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
 		writeBadRequest(c, "请求体格式错误")
 		return
 	}
-
-	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
-		writeBadRequest(c, "title/category/difficulty 不能为空")
+	if err := validateProblemCreateUpdate((*models.CreateProblemRequest)(&models.CreateProblemRequest{
+		Title:       req.Title,
+		Category:    req.Category,
+		Type:        req.Type,
+		Description: req.Description,
+		BaseScore:   req.BaseScore,
+		Difficulty:  req.Difficulty,
+		DeployMode:  req.DeployMode,
+		UseKata:     req.UseKata,
+		Status:      req.Status,
+		Tags:        req.Tags,
+		Flag:        req.Flag,
+		Container:   req.Container,
+	})); err != nil {
+		writeBadRequest(c, err.Error())
 		return
-	}
-	if req.Points < 0 {
-		writeBadRequest(c, "points 不能为负数")
-		return
-	}
-
-	req.Type = normalizeProblemType(req.Type)
-	req.FlagRule = normalizeFlagRule(req.FlagRule)
-	req.Status = normalizeProblemStatus(req.Status)
-
-	if !isSupportedFlagRule(req.FlagRule) {
-		writeBadRequest(c, "flag_rule 不合法")
-		return
-	}
-
-	if !isSupportedProblemStatus(req.Status) {
-		writeBadRequest(c, "status 不合法")
-		return
-	}
-
-	role := models.NormalizeRole(claims.Role)
-	if role != models.RoleRoot && role != models.RoleSiteAdmin {
-		scope, contestID, _, metaErr := h.repo.GetProblemAccessMeta(id)
-		if metaErr != nil {
-			writeError(c, metaErr, http.StatusNotFound)
-			return
-		}
-
-		if scope != "contest" || contestID == "" {
-			writeForbidden(c, "仅可编辑所属赛事题目")
-			return
-		}
-
-		isAdmin, adminErr := h.contestAdminRepo.IsContestAdmin(claims.UserID, contestID)
-		if adminErr != nil {
-			writeError(c, adminErr, http.StatusInternalServerError)
-			return
-		}
-		if !isAdmin {
-			writeForbidden(c, "无权编辑该题目")
-			return
-		}
-
-		if req.Status == "published" || req.Status == "archived" {
-			writeForbidden(c, "contest_admin 仅可更新为 draft/review 状态")
-			return
-		}
 	}
 
 	if err := h.repo.UpdateProblem(id, &req); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "题目更新成功"})
 }
 
-// ListAdminProblemsGin 管理端题目列表。
-func (h *ProblemHandler) ListAdminProblemsGin(c *gin.Context) {
+func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
 		return
 	}
+	role := models.NormalizeRole(claims.Role)
+	if role != models.RoleRoot && role != models.RoleSiteAdmin {
+		writeForbidden(c, "仅 site_admin/root 可删除题目")
+		return
+	}
 
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	if err := h.repo.DeleteProblem(id); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "题目删除成功"})
+}
+
+func (h *ProblemHandler) ListAdminProblemsGin(c *gin.Context) {
 	items, err := h.repo.ListAdminProblems(
 		strings.TrimSpace(c.Query("keyword")),
 		strings.TrimSpace(c.Query("scope")),
@@ -223,175 +360,175 @@ func (h *ProblemHandler) ListAdminProblemsGin(c *gin.Context) {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
-
-	role := models.NormalizeRole(claims.Role)
-	if role == models.RoleContestAdmin {
-		filtered := make([]*models.Problem, 0, len(items))
-		for _, item := range items {
-			if item.Scope != "contest" || item.ContestID == nil || strings.TrimSpace(*item.ContestID) == "" {
-				continue
-			}
-			isAdmin, adminErr := h.contestAdminRepo.IsContestAdmin(claims.UserID, *item.ContestID)
-			if adminErr != nil {
-				writeError(c, adminErr, http.StatusInternalServerError)
-				return
-			}
-			if isAdmin {
-				filtered = append(filtered, item)
-			}
-		}
-		items = filtered
-	}
-
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// GetAdminProblemDetailGin 管理端题目详情。
 func (h *ProblemHandler) GetAdminProblemDetailGin(c *gin.Context) {
-	claims, ok := middleware.MustGetClaims(c)
-	if !ok {
-		return
-	}
-
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil || id <= 0 {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		writeBadRequest(c, "无效的题目ID")
 		return
 	}
-
-	problem, err := h.repo.GetAdminProblemByID(id)
+	item, err := h.repo.GetAdminProblemByID(id)
 	if err != nil {
 		writeError(c, err, http.StatusNotFound)
 		return
 	}
-
-	if models.NormalizeRole(claims.Role) == models.RoleContestAdmin {
-		if problem.Scope != "contest" || problem.ContestID == nil || strings.TrimSpace(*problem.ContestID) == "" {
-			writeForbidden(c, "无权查看该题目")
-			return
-		}
-		isAdmin, adminErr := h.contestAdminRepo.IsContestAdmin(claims.UserID, *problem.ContestID)
-		if adminErr != nil {
-			writeError(c, adminErr, http.StatusInternalServerError)
-			return
-		}
-		if !isAdmin {
-			writeForbidden(c, "无权查看该题目")
-			return
-		}
-	}
-
-	c.JSON(http.StatusOK, problem)
+	c.JSON(http.StatusOK, item)
 }
 
-// DeleteProblemGin 管理端删除题目。
-func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
-	idStr := c.Param("id")
-	id, err := strconv.Atoi(idStr)
-	if err != nil || id <= 0 {
-		writeBadRequest(c, "无效的题目ID")
-		return
-	}
-
-	if err := h.repo.DeleteProblem(id); err != nil {
-		writeError(c, err, http.StatusInternalServerError)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "题目删除成功"})
-}
-
-func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository) *ProblemHandler {
-	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo}
-}
-
-// GetProblemsGin Gin 版本的获取题目列表
 func (h *ProblemHandler) GetProblemsGin(c *gin.Context) {
-	var problems []*models.Problem
-	var err error
-
-	// 从 Gin 上下文中获取 claims
 	if claims, err := middleware.GetClaims(c); err == nil {
-		problems, err = h.repo.GetProblemsWithStatus(claims.UserID)
-		if err != nil {
+		items, qErr := h.repo.GetProblemsWithStatus(claims.UserID)
+		if qErr != nil {
 			writeInternal(c, "获取题目列表失败")
 			return
 		}
-		c.JSON(http.StatusOK, problems)
+		c.JSON(http.StatusOK, items)
 		return
 	}
 
-	// 如果没有认证信息，获取普通题目列表
-	problems, err = h.repo.GetProblems()
+	items, err := h.repo.GetProblems()
 	if err != nil {
 		writeInternal(c, "获取题目列表失败")
 		return
 	}
-
-	c.JSON(http.StatusOK, problems)
+	c.JSON(http.StatusOK, items)
 }
 
-// GetProblemDetailGin Gin 版本的获取题目详情
 func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
-	idStr := c.Query("id")
-	if idStr == "" {
+	id := strings.TrimSpace(c.Query("id"))
+	if id == "" {
+		id = strings.TrimSpace(c.Param("id"))
+	}
+	if id == "" {
 		writeBadRequest(c, "缺少 id 参数")
 		return
 	}
 
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		writeBadRequest(c, "无效的 id")
-		return
-	}
-
-	problem, err := h.repo.GetProblemByID(id)
+	item, err := h.repo.GetProblemByID(id)
 	if err != nil {
 		writeError(c, err, http.StatusNotFound)
 		return
 	}
-
-	c.JSON(http.StatusOK, problem)
+	c.JSON(http.StatusOK, item)
 }
 
-func normalizeProblemType(raw string) string {
-	v := strings.ToLower(strings.TrimSpace(raw))
-	if v != "dynamic" {
-		return "static"
+func validateProblemCreateUpdate(req *models.CreateProblemRequest) error {
+	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
+		return apperrErr("title/category/difficulty 不能为空")
 	}
-	return v
+	if req.BaseScore < 0 {
+		return apperrErr("base_score 不能为负数")
+	}
+	t := normalizeProblemType(req.Type)
+	if t == "" {
+		return apperrErr("type 仅支持 static/container_web/container_tcp")
+	}
+	req.Type = t
+	dm := normalizeDeployMode(req.DeployMode)
+	if dm == "" {
+		return apperrErr("deploy_mode 仅支持 shared/per_user")
+	}
+	req.DeployMode = dm
+
+	status := normalizeProblemStatus(req.Status)
+	if status == "" {
+		return apperrErr("status 仅支持 draft/ready/hidden")
+	}
+	req.Status = status
+
+	req.Flag.FlagRule = normalizeFlagRule(req.Flag.FlagRule)
+	req.Flag.FlagType = normalizeFlagFlagType(req.Flag.FlagType)
+	req.Flag.FlagInject = normalizeFlagInject(req.Flag.FlagInject)
+	if req.Flag.FlagRule == "" || req.Flag.FlagType == "" || req.Flag.FlagInject == "" {
+		return apperrErr("flag_rule/flag_type/flag_inject 不合法")
+	}
+
+	if req.DeployMode == "shared" && req.Flag.FlagType == "dynamic" {
+		return apperrErr("shared 模式下不允许 dynamic flag")
+	}
+	if req.Flag.FlagType == "static" && strings.TrimSpace(req.Flag.FlagPlain) == "" {
+		return apperrErr("static flag 不能为空")
+	}
+
+	if req.Container != nil {
+		if strings.TrimSpace(req.Container.ImageName) == "" || strings.TrimSpace(req.Container.SidecarImage) == "" {
+			return apperrErr("容器配置 image_name/sidecar_image 不能为空")
+		}
+		if req.Container.ChallengePort <= 0 || req.Container.SidecarPort <= 0 {
+			return apperrErr("容器配置端口必须大于 0")
+		}
+		if req.Type == "container_web" && (req.Container.IngressHostTpl == nil || strings.TrimSpace(*req.Container.IngressHostTpl) == "") {
+			return apperrErr("container_web 必须配置 ingress_host_tpl")
+		}
+	}
+
+	return nil
+}
+
+type simpleErr string
+
+func (e simpleErr) Error() string { return string(e) }
+
+func apperrErr(msg string) error { return simpleErr(msg) }
+
+func normalizeProblemType(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "static", "container_web", "container_tcp":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func normalizeDeployMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "shared", "per_user":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
 }
 
 func normalizeFlagRule(raw string) string {
-	v := strings.TrimSpace(raw)
+	v := strings.ToLower(strings.TrimSpace(raw))
 	if v == "" {
 		return "exact"
 	}
-	return v
+	if v == "exact" || v == "case_insensitive" {
+		return v
+	}
+	return ""
 }
 
-func isSupportedFlagRule(rule string) bool {
-	v := strings.ToLower(strings.TrimSpace(rule))
-	if v == "exact" || v == "case_insensitive" {
-		return true
+func normalizeFlagFlagType(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if v == "" {
+		return "static"
 	}
-	return strings.HasPrefix(v, "contains:") || strings.HasPrefix(v, "regex:")
+	if v == "static" || v == "dynamic" {
+		return v
+	}
+	return ""
+}
+
+func normalizeFlagInject(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	if v == "" {
+		return "env"
+	}
+	if v == "env" || v == "sidecar" {
+		return v
+	}
+	return ""
 }
 
 func normalizeProblemStatus(raw string) string {
-	v := strings.ToLower(strings.TrimSpace(raw))
-	if v == "" {
-		return "published"
-	}
-	return v
-}
-
-func isSupportedProblemStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "draft", "review", "published", "archived":
-		return true
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "draft", "ready", "hidden":
+		return strings.ToLower(strings.TrimSpace(raw))
 	default:
-		return false
+		return ""
 	}
 }

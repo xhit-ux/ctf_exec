@@ -3,6 +3,7 @@ export type Difficulty = 'Easy' | 'Medium' | 'Hard' | 'Expert';
 export type FlagType = 'static' | 'dynamic';
 export type DeployMode = 'shared' | 'per_user';
 export type AccessType = 'ingress' | 'nodeport';
+export type BuildUploadType = 'docker_save' | 'compose_bundle';
 
 export interface Attachment {
   id: string;
@@ -42,9 +43,12 @@ export interface ProblemPublishState {
 
   // Step 5 Container Env
   imageTaskId?: string;
-  imageTaskStatus?: 'uploading' | 'extracting' | 'loading' | 'tagging' | 'pushing' | 'success' | 'failed';
+  imageTaskStatus?: 'pending' | 'running' | 'uploaded' | 'extracting' | 'loading' | 'tagging' | 'building' | 'pushing' | 'starting' | 'success' | 'failed';
   imageTaskProgress?: number;
   imageTaskError?: string;
+  uploadType?: BuildUploadType;
+  hostPortMin?: number;
+  hostPortMax?: number;
   registryImage?: string;
   
   internalPort?: number;
@@ -77,5 +81,9 @@ export const initialProblemState: ProblemPublishState = {
   
   cpuLimit: 500,
   memoryLimit: 512,
-  deployMode: 'per_user'
+  deployMode: 'per_user',
+  accessType: 'ingress',
+  uploadType: 'docker_save',
+  hostPortMin: 20000,
+  hostPortMax: 30000,
 };

@@ -24,6 +24,10 @@ type Config struct {
 	Leaderboard LeaderboardConfig
 	Email       EmailConfig
 	Bot         BotProtectionConfig
+	Container   ContainerConfig
+	MinIO       MinIOConfig
+	Flag        FlagConfig
+	Ingress     IngressConfig
 }
 
 // InitConfig 启动初始化配置。
@@ -112,6 +116,38 @@ type BotProtectionConfig struct {
 	Enabled            bool
 	TurnstileSecretKey string
 	TurnstileVerifyURL string
+}
+
+// ContainerConfig 容器实例与 k3s 运行配置。
+type ContainerConfig struct {
+	KubeconfigPath          string
+	MaxConcurrentContainers int
+	DefaultContainerTTL     int
+	NamespacePrefix         string
+	KataRuntimeClass        string
+}
+
+// MinIOConfig MinIO 对象存储配置。
+type MinIOConfig struct {
+	Endpoint      string
+	AccessKey     string
+	SecretKey     string
+	UseSSL        bool
+	BucketPrefix  string
+	PresignExpiry int
+}
+
+// FlagConfig 动态 flag 生成配置。
+type FlagConfig struct {
+	Template string
+}
+
+// IngressConfig Web 题域名与 TLS 配置。
+type IngressConfig struct {
+	DomainTemplate string
+	Class          string
+	TLSEnabled     bool
+	TLSSecret      string
 }
 
 const DefaultJWTSecret = "your-secret-key-change-this-in-production"
@@ -222,6 +258,34 @@ func LoadConfig() (*Config, error) {
 			return
 		}
 		cfg.Bot = *botConfig
+
+		containerConfig, err := loadContainerConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载容器配置失败: %w", err)
+			return
+		}
+		cfg.Container = *containerConfig
+
+		minioConfig, err := loadMinIOConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载MinIO配置失败: %w", err)
+			return
+		}
+		cfg.MinIO = *minioConfig
+
+		flagConfig, err := loadFlagConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载Flag配置失败: %w", err)
+			return
+		}
+		cfg.Flag = *flagConfig
+
+		ingressConfig, err := loadIngressConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载Ingress配置失败: %w", err)
+			return
+		}
+		cfg.Ingress = *ingressConfig
 
 		loadedConfig = cfg
 	})
@@ -399,6 +463,42 @@ func loadBotProtectionConfig() (*BotProtectionConfig, error) {
 		Enabled:            enabled,
 		TurnstileSecretKey: secretKey,
 		TurnstileVerifyURL: getEnv("TURNSTILE_VERIFY_URL", "https://challenges.cloudflare.com/turnstile/v0/siteverify"),
+	}, nil
+}
+
+func loadContainerConfig() (*ContainerConfig, error) {
+	return &ContainerConfig{
+		KubeconfigPath:          getEnv("KUBECONFIG_PATH", ""),
+		MaxConcurrentContainers: getEnvInt("MAX_CONCURRENT_CONTAINERS", 5),
+		DefaultContainerTTL:     getEnvInt("DEFAULT_CONTAINER_TTL", 3600),
+		NamespacePrefix:         getEnv("NAMESPACE_PREFIX", "ctf"),
+		KataRuntimeClass:        getEnv("KATA_RUNTIME_CLASS", "kata"),
+	}, nil
+}
+
+func loadMinIOConfig() (*MinIOConfig, error) {
+	return &MinIOConfig{
+		Endpoint:      getEnv("MINIO_ENDPOINT", ""),
+		AccessKey:     getEnv("MINIO_ACCESS_KEY", ""),
+		SecretKey:     getEnv("MINIO_SECRET_KEY", ""),
+		UseSSL:        getEnvBool("MINIO_USE_SSL", false),
+		BucketPrefix:  getEnv("MINIO_BUCKET_PREFIX", "ctf"),
+		PresignExpiry: getEnvInt("MINIO_PRESIGN_EXPIRY", 600),
+	}, nil
+}
+
+func loadFlagConfig() (*FlagConfig, error) {
+	return &FlagConfig{
+		Template: getEnv("FLAG_TEMPLATE", "flag{%s}"),
+	}, nil
+}
+
+func loadIngressConfig() (*IngressConfig, error) {
+	return &IngressConfig{
+		DomainTemplate: getEnv("INGRESS_DOMAIN_TEMPLATE", "{id}.chal.example.com"),
+		Class:          getEnv("INGRESS_CLASS", "traefik"),
+		TLSEnabled:     getEnvBool("INGRESS_TLS_ENABLED", false),
+		TLSSecret:      getEnv("INGRESS_TLS_SECRET", ""),
 	}, nil
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -21,6 +22,10 @@ import (
 )
 
 func main() {
+	log.SetOutput(os.Stdout)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.SetPrefix("[ctf-backend] ")
+
 	// 加载配置
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -183,9 +188,10 @@ func main() {
 		// 题目路由
 		problems := api.Group("/problems")
 		{
-			problems.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
+			problems.Use(middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore))
 			problems.GET("", probHandler.GetProblemsGin)
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
+			problems.GET(":id", probHandler.GetProblemDetailGin)
 		}
 
 		// 赛事公开路由
@@ -245,7 +251,13 @@ func main() {
 			{
 				adminProblems.GET("", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.ListAdminProblemsGin)
 				adminProblems.GET(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.GetAdminProblemDetailGin)
-				adminProblems.POST("", probHandler.CreateProblemGin)
+				adminProblems.POST("", middleware.RequireSiteAdminOrRoot(), probHandler.CreateProblemDraftGin)
+				adminProblems.PATCH(":id/basic", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemBasicGin)
+				adminProblems.POST(":id/flag", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemFlagGin)
+				adminProblems.PATCH(":id/container", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemContainerGin)
+				adminProblems.POST(":id/image", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemImageGin)
+				adminProblems.GET(":id/build-task", middleware.RequireSiteAdminOrRoot(), probHandler.GetProblemBuildTaskGin)
+				adminProblems.POST(":id/publish", middleware.RequireSiteAdminOrRoot(), probHandler.PublishProblemGin)
 				adminProblems.PUT(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.UpdateProblemGin)
 				adminProblems.DELETE(":id", middleware.RequireSiteAdminOrRoot(), probHandler.DeleteProblemGin)
 			}

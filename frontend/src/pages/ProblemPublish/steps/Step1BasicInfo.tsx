@@ -4,6 +4,7 @@ import { ProblemCategory } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { IconChip, IconGlobe, IconKey, IconPuzzle, IconTerminal } from '../icons';
+import { createProblemDraft, saveProblemBasic } from '../../../utils/problemPublishApi';
 
 const CATEGORIES: { id: ProblemCategory; label: string; desc: string; icon: React.ReactNode; color: string }[] = [
   { id: 'Web', label: 'Web', desc: 'Web 类题目。', icon: <IconGlobe className="w-5 h-5" />, color: 'border-sky-500 bg-sky-50' },
@@ -24,7 +25,7 @@ const FIXED_TAG_MAP: Record<ProblemCategory, string> = {
 const FIXED_TAGS = Object.values(FIXED_TAG_MAP);
 
 export default function Step1BasicInfo() {
-  const { state, updateState, nextStep } = useProblemPublish();
+  const { state, updateState, nextStep, setSubmitting } = useProblemPublish();
   const fixedTag = state.category ? FIXED_TAG_MAP[state.category] : '';
   const customTags = state.tags.filter((tag) => !FIXED_TAGS.includes(tag));
 
@@ -38,9 +39,57 @@ export default function Step1BasicInfo() {
     });
   };
 
-  const handleNext = () => {
-    console.log('Mock: 保存基础信息');
-    nextStep();
+  const toProblemType = (category: ProblemCategory, useContainer: boolean): 'static' | 'container_web' | 'container_tcp' => {
+    if (!useContainer) return 'static';
+    if (category === 'Web') return 'container_web';
+    return 'container_tcp';
+  };
+
+  const toDifficulty = (raw: string): 'easy' | 'medium' | 'hard' | 'expert' => {
+    switch (raw.toLowerCase()) {
+      case 'easy':
+        return 'easy';
+      case 'medium':
+        return 'medium';
+      case 'hard':
+        return 'hard';
+      default:
+        return 'expert';
+    }
+  };
+
+  const handleNext = async () => {
+    if (!state.category || !state.title.trim()) return;
+    setSubmitting(true);
+    try {
+      const problemType = toProblemType(state.category, state.useContainer);
+      let problemID = state.problemId;
+      if (!problemID) {
+        problemID = await createProblemDraft({
+          category: state.category,
+          type: problemType,
+        });
+        updateState({ problemId: problemID });
+      }
+
+      await saveProblemBasic(problemID, {
+        title: state.title.trim(),
+        category: state.category,
+        type: problemType,
+        description: state.description,
+        base_score: Number(state.baseScore) || 0,
+        difficulty: toDifficulty(state.difficulty),
+        deploy_mode: state.deployMode || 'per_user',
+        use_kata: false,
+      });
+
+      nextStep();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '保存基础信息失败';
+      window.alert(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (

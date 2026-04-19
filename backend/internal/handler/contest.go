@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/ctf_exec/backend/internal/apperr"
@@ -169,7 +168,7 @@ func (h *ContestHandler) AddChallengeToContestGin(c *gin.Context) {
 		writeBadRequest(c, "请求体格式错误")
 		return
 	}
-	if req.ChallengeID <= 0 {
+	if strings.TrimSpace(req.ChallengeID) == "" {
 		writeBadRequest(c, "无效的 challenge_id")
 		return
 	}
@@ -188,9 +187,8 @@ func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 	}
 
 	contestID := c.Param("id")
-	challengeIDStr := c.Param("challengeID")
-	challengeID, err := strconv.Atoi(challengeIDStr)
-	if contestID == "" || err != nil || challengeID <= 0 {
+	challengeID := strings.TrimSpace(c.Param("challengeID"))
+	if contestID == "" || challengeID == "" {
 		writeBadRequest(c, "无效的参数")
 		return
 	}
@@ -458,15 +456,10 @@ func (h *ContestHandler) ListContestSubmissionsGin(c *gin.Context) {
 		return
 	}
 
-	problemID := 0
+	problemID := ""
 	problemIDRaw := strings.TrimSpace(c.Query("problem_id"))
 	if problemIDRaw != "" {
-		parsed, err := strconv.Atoi(problemIDRaw)
-		if err != nil || parsed <= 0 {
-			writeBadRequest(c, "problem_id 必须是大于 0 的整数")
-			return
-		}
-		problemID = parsed
+		problemID = problemIDRaw
 	}
 
 	result := strings.ToLower(strings.TrimSpace(c.Query("result")))

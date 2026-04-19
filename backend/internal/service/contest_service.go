@@ -18,7 +18,7 @@ type ContestService interface {
 	LeaveContest(contestID, userID string, teamID *string) error
 	GetContestChallengesForUser(contestID, userID, userRole string) ([]*models.ContestChallengeView, error)
 	GetContestScoreboard(contestID, boardType string, limit int) ([]*models.ContestScoreboardEntry, error)
-	ValidateContestSubmission(contestID, userID string, problemID int) (*models.ContestParticipantScope, int, error)
+	ValidateContestSubmission(contestID, userID string, problemID string) (*models.ContestParticipantScope, int, error)
 	ApplyContestSolve(contestID string, scope *models.ContestParticipantScope, score int, solvedAt time.Time) error
 }
 
@@ -169,7 +169,7 @@ func (s *ContestServiceImpl) GetContestScoreboard(contestID, boardType string, l
 	return s.contestRepo.GetContestUserScoreboardFromDB(contestID, limit)
 }
 
-func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string, problemID int) (*models.ContestParticipantScope, int, error) {
+func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string, problemID string) (*models.ContestParticipantScope, int, error) {
 	contest, err := s.contestRepo.GetContestByID(contestID)
 	if err != nil {
 		return nil, 0, err

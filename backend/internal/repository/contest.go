@@ -192,7 +192,7 @@ func (r *ContestRepository) DeleteContest(contestID string) error {
 	return nil
 }
 
-func (r *ContestRepository) AddChallengeToContest(contestID string, challengeID int, scoreOverride *int) error {
+func (r *ContestRepository) AddChallengeToContest(contestID string, challengeID string, scoreOverride *int) error {
 	query := `
 		INSERT INTO contest_challenges (contest_id, challenge_id, score_override)
 		VALUES (?, ?, ?)
@@ -206,7 +206,7 @@ func (r *ContestRepository) AddChallengeToContest(contestID string, challengeID 
 	return nil
 }
 
-func (r *ContestRepository) RemoveChallengeFromContest(contestID string, challengeID int) error {
+func (r *ContestRepository) RemoveChallengeFromContest(contestID string, challengeID string) error {
 	result, err := r.db.Exec(`DELETE FROM contest_challenges WHERE contest_id = ? AND challenge_id = ?`, contestID, challengeID)
 	if err != nil {
 		return fmt.Errorf("移除赛事题目失败: %w", err)
@@ -302,14 +302,14 @@ func (r *ContestRepository) IsTeamMember(teamID, userID string) (bool, error) {
 // ListContestChallengesForUser 返回赛事题目及用户在该赛事下的解题状态。
 func (r *ContestRepository) ListContestChallengesForUser(contestID, userID string) ([]*models.ContestChallengeView, error) {
 	query := `
-		SELECT p.id, p.title, p.category, p.difficulty, p.points, cc.score_override,
+		SELECT p.id, p.title, p.category, p.difficulty, p.base_score, cc.score_override,
 		       IF(COUNT(s.id) > 0, 1, 0) AS is_solved
 		FROM contest_challenges cc
 		JOIN problems p ON p.id = cc.challenge_id
 		LEFT JOIN submissions s
 		  ON s.problem_id = p.id AND s.user_id = ? AND s.contest_id = ? AND s.is_correct = 1
 		WHERE cc.contest_id = ?
-		GROUP BY p.id, p.title, p.category, p.difficulty, p.points, cc.score_override
+		GROUP BY p.id, p.title, p.category, p.difficulty, p.base_score, cc.score_override
 		ORDER BY p.id ASC
 	`
 
@@ -334,7 +334,7 @@ func (r *ContestRepository) ListContestChallengesForUser(contestID, userID strin
 }
 
 // IsProblemInContest 校验题目是否编排在赛事中。
-func (r *ContestRepository) IsProblemInContest(contestID string, problemID int) (bool, error) {
+func (r *ContestRepository) IsProblemInContest(contestID string, problemID string) (bool, error) {
 	var cnt int
 	err := r.db.QueryRow(`SELECT COUNT(1) FROM contest_challenges WHERE contest_id = ? AND challenge_id = ?`, contestID, problemID).Scan(&cnt)
 	if err != nil {
@@ -344,11 +344,11 @@ func (r *ContestRepository) IsProblemInContest(contestID string, problemID int) 
 }
 
 // GetContestChallengeScore 获取赛事题目实际分值。
-func (r *ContestRepository) GetContestChallengeScore(contestID string, problemID int) (int, error) {
+func (r *ContestRepository) GetContestChallengeScore(contestID string, problemID string) (int, error) {
 	var override sql.NullInt64
 	var points int
 	query := `
-		SELECT cc.score_override, p.points
+		SELECT cc.score_override, p.base_score
 		FROM contest_challenges cc
 		JOIN problems p ON p.id = cc.challenge_id
 		WHERE cc.contest_id = ? AND cc.challenge_id = ?
@@ -368,7 +368,7 @@ func (r *ContestRepository) GetContestChallengeScore(contestID string, problemID
 }
 
 // HasSolvedInContest 校验主体在赛事中是否已正确解过该题。
-func (r *ContestRepository) HasSolvedInContest(contestID string, problemID int, userID string, teamID *string) (bool, error) {
+func (r *ContestRepository) HasSolvedInContest(contestID string, problemID string, userID string, teamID *string) (bool, error) {
 	var cnt int
 	var err error
 
@@ -793,7 +793,7 @@ func (r *ContestRepository) ListContestMySubmissions(contestID, userID string, o
 }
 
 // ListContestSubmissions 查询赛事提交审计记录。
-func (r *ContestRepository) ListContestSubmissions(contestID string, offset, limit int, userID string, problemID int, result string) ([]*models.ContestSubmissionItem, int, error) {
+func (r *ContestRepository) ListContestSubmissions(contestID string, offset, limit int, userID string, problemID string, result string) ([]*models.ContestSubmissionItem, int, error) {
 	filters := []string{"s.contest_id = ?"}
 	args := []interface{}{contestID}
 
@@ -801,9 +801,9 @@ func (r *ContestRepository) ListContestSubmissions(contestID string, offset, lim
 		filters = append(filters, "s.user_id = ?")
 		args = append(args, strings.TrimSpace(userID))
 	}
-	if problemID > 0 {
+	if strings.TrimSpace(problemID) != "" {
 		filters = append(filters, "s.problem_id = ?")
-		args = append(args, problemID)
+		args = append(args, strings.TrimSpace(problemID))
 	}
 	if strings.EqualFold(result, "correct") {
 		filters = append(filters, "s.is_correct = 1")

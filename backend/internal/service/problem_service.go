@@ -8,7 +8,7 @@ import (
 // ProblemService 题目服务接口
 type ProblemService interface {
 	GetProblems(userID string) ([]*models.Problem, error)
-	GetProblemDetail(problemID int, userID string) (*models.Problem, error)
+	GetProblemDetail(problemID string, userID string) (*models.Problem, error)
 }
 
 // ProblemServiceImpl 题目服务实现
@@ -44,7 +44,7 @@ func (s *ProblemServiceImpl) GetProblems(userID string) ([]*models.Problem, erro
 }
 
 // GetProblemDetail 获取题目详情
-func (s *ProblemServiceImpl) GetProblemDetail(problemID int, userID string) (*models.Problem, error) {
+func (s *ProblemServiceImpl) GetProblemDetail(problemID string, userID string) (*models.Problem, error) {
 	// 获取题目基础信息
 	problem, err := s.problemRepo.GetProblemByID(problemID)
 	if err != nil {

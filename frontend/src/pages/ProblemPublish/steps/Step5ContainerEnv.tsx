@@ -1,37 +1,74 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useProblemPublish } from '../ProblemPublishContext';
 import { IconUpload } from '../icons';
-
-const PHASE_LABEL: Record<string, string> = {
-  uploading: '上传中',
-  extracting: '解包中',
-  loading: '载入镜像层',
-  tagging: '打标签',
-  pushing: '推送仓库',
-  success: '完成',
-  failed: '失败',
-};
+import { saveProblemContainer, uploadProblemImage } from '../../../utils/problemPublishApi';
 
 export default function Step5ContainerEnv() {
-  const { state, updateState, nextStep, prevStep } = useProblemPublish();
-  const [uploadTaskMock, setUploadTaskMock] = useState(false);
+  const { state, updateState, nextStep, prevStep, setSubmitting } = useProblemPublish();
+  const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    if (uploadTaskMock) {
-      updateState({ imageTaskStatus: 'uploading', imageTaskProgress: 10 });
-      timers.push(setTimeout(() => updateState({ imageTaskStatus: 'extracting', imageTaskProgress: 30 }), 1200));
-      timers.push(setTimeout(() => updateState({ imageTaskStatus: 'loading', imageTaskProgress: 50 }), 2400));
-      timers.push(setTimeout(() => updateState({ imageTaskStatus: 'tagging', imageTaskProgress: 70 }), 3600));
-      timers.push(setTimeout(() => updateState({ imageTaskStatus: 'pushing', imageTaskProgress: 85 }), 4800));
-      timers.push(setTimeout(() => updateState({ 
-        imageTaskStatus: 'success', 
-        imageTaskProgress: 100,
-        registryImage: 'reg.ctf.local/ctf/web-sqli-2026:v1'
-      }), 6200));
+  const dateTag = (): string => {
+    return new Date().toISOString().slice(0, 10);
+  };
+
+  const handleUploadFile = async (file: File) => {
+    if (!state.problemId) {
+      window.alert('请先完成基础信息并保存草稿');
+      return;
     }
-    return () => timers.forEach(clearTimeout);
-  }, [uploadTaskMock]);
+    if (!state.internalPort || state.internalPort <= 0) {
+      window.alert('请先填写内部端口');
+      return;
+    }
+    if (!state.hostPortMin || !state.hostPortMax || state.hostPortMin > state.hostPortMax) {
+      window.alert('请填写合法的可用端口范围');
+      return;
+    }
+
+    const repo = state.registryImage?.split(':')[0] || `ctf-exec/${state.problemId}`;
+
+    setSubmitting(true);
+    setUploading(true);
+    try {
+      await saveProblemContainer(state.problemId, {
+        image_name: repo,
+        image_tag: dateTag(),
+        challenge_port: state.internalPort,
+        sidecar_image: 'busybox:latest',
+        sidecar_port: 9999,
+        cpu_limit: `${state.cpuLimit || 500}m`,
+        memory_limit: `${state.memoryLimit || 512}Mi`,
+        env: {},
+        ttl_seconds: 3600,
+        ingress_host_tpl: (state.accessType || 'ingress') === 'ingress' ? '{id}.chal.local' : undefined,
+      });
+
+      const task = await uploadProblemImage(state.problemId, {
+        file,
+        imageRepo: repo,
+        imageTag: '',
+        uploadType: state.uploadType || 'docker_save',
+        hostPortMin: state.hostPortMin,
+        hostPortMax: state.hostPortMax,
+      });
+
+      const imageRef = task.image_repo && task.image_tag ? `${task.image_repo}:${task.image_tag}` : state.registryImage;
+      updateState({
+        imageTaskId: task.id,
+        imageTaskStatus: 'uploaded',
+        imageTaskProgress: 100,
+        imageTaskError: undefined,
+        registryImage: imageRef,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传镜像文件失败';
+      updateState({ imageTaskStatus: 'failed', imageTaskError: msg, imageTaskProgress: 100 });
+      window.alert(msg);
+    } finally {
+      setUploading(false);
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="glass-card p-4 md:p-5 space-y-4 animate-fade-in">
@@ -72,28 +109,67 @@ export default function Step5ContainerEnv() {
       <>
       <div className="p-3.5 border border-gray-200 rounded-lg hover:border-amber-300 transition bg-gray-50">
         <h3 className="font-bold text-gray-900 mb-2">1. 镜像上传</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-700">上传类型</label>
+            <select
+              value={state.uploadType || 'docker_save'}
+              onChange={(e) => updateState({ uploadType: e.target.value as any })}
+              className="field-select mt-1"
+            >
+              <option value="docker_save">docker save 镜像包（load）</option>
+              <option value="compose_bundle">compose 项目包（解包后 compose）</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700">可用端口最小值</label>
+            <input
+              type="number"
+              value={state.hostPortMin || 20000}
+              onChange={(e) => updateState({ hostPortMin: Number(e.target.value) })}
+              className="field-input mt-1"
+              placeholder="20000"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700">可用端口最大值</label>
+            <input
+              type="number"
+              value={state.hostPortMax || 30000}
+              onChange={(e) => updateState({ hostPortMax: Number(e.target.value) })}
+              className="field-input mt-1"
+              placeholder="30000"
+            />
+          </div>
+        </div>
         {!state.imageTaskStatus || state.imageTaskStatus === 'failed' ? (
           <div>
             <div className="border-2 border-dashed border-gray-300 bg-white rounded-xl p-4 text-center cursor-pointer relative mt-2 hover:bg-gray-50 transition">
               <input 
                 type="file" 
-                accept=".tar,.gz"
+                accept=".tar,.gz,.tgz"
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={() => setUploadTaskMock(true)}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    void handleUploadFile(file);
+                  }
+                  e.currentTarget.value = '';
+                }}
               />
               <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-50 text-amber-700">
                 <IconUpload className="w-4 h-4" />
               </span>
               <p className="mt-1.5 font-medium text-gray-800 text-sm">拖拽或点击上传 challenge.tar</p>
-              <p className="text-xs text-gray-500 mt-1">建议使用 docker save 导出的镜像包</p>
+              <p className="text-xs text-gray-500 mt-1">支持 docker save 镜像包或 compose 打包文件</p>
             </div>
-            <p className="text-xs text-gray-400 mt-2">或直接填写镜像地址（用于跳过上传演示）。</p>
+            <p className="text-xs text-gray-400 mt-2">默认会以日期作为 tag，例如 2026-04-19。</p>
             <input 
               type="text" 
               value={state.registryImage || ''}
               onChange={(e) => updateState({ registryImage: e.target.value })}
               className="field-input mt-2"
-              placeholder="例如：reg.ctf.local/ctf/web-sqli-2026:v1"
+              placeholder="例如：reg.ctf.local/ctf/web-sqli-2026"
             />
           </div>
         ) : (
@@ -102,19 +178,19 @@ export default function Step5ContainerEnv() {
               <div className="flex items-center space-x-2 min-w-0">
                 {state.imageTaskStatus === 'success' ? <span className="text-green-600 text-base">●</span> : <span className="text-amber-600 text-base">●</span>}
                 <div>
-                  <p className="font-semibold text-gray-900 text-sm">构建任务：{PHASE_LABEL[state.imageTaskStatus || 'uploading']}</p>
-                  <p className="text-xs text-gray-500">进度 {state.imageTaskProgress || 0}%</p>
+                  <p className="font-semibold text-gray-900 text-sm">镜像包：已上传并暂存</p>
+                  <p className="text-xs text-gray-500">构建会在点击发布后执行</p>
                 </div>
               </div>
-              {state.imageTaskStatus === 'success' && (
+              {state.imageTaskStatus === 'uploaded' && (
                 <button onClick={() => updateState({ imageTaskStatus: undefined, imageTaskProgress: 0, registryImage: undefined })} className="text-xs text-amber-700 hover:text-amber-800 underline">重新上传</button>
               )}
             </div>
-            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-              <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${state.imageTaskProgress || 0}%` }}></div>
-            </div>
             {state.registryImage && (
               <p className="text-[11px] font-mono mt-2 text-gray-600 truncate">{state.registryImage}</p>
+            )}
+            {state.imageTaskError && (
+              <p className="text-[11px] mt-2 text-red-600 whitespace-pre-wrap">{state.imageTaskError}</p>
             )}
           </div>
         )}
@@ -182,10 +258,10 @@ export default function Step5ContainerEnv() {
         </button>
         <button
           onClick={nextStep}
-          disabled={state.useContainer && !state.registryImage && state.imageTaskStatus !== 'success'}
+          disabled={state.useContainer && !state.imageTaskId}
           className="btn-primary !py-2 !px-4 text-sm disabled:opacity-50"
         >
-          下一步：发布检查
+          {uploading ? '处理中...' : '下一步：发布检查'}
         </button>
       </div>
     </div>

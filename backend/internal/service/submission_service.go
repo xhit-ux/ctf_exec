@@ -18,7 +18,7 @@ import (
 
 // SubmissionService 提交服务接口
 type SubmissionService interface {
-	SubmitFlag(userID string, problemID int, flag string, contestID *string, clientIP string) (*models.Submission, error)
+	SubmitFlag(userID string, problemID string, flag string, contestID *string, clientIP string) (*models.Submission, error)
 	GetMySubmissions(userID string) ([]*models.Submission, error)
 	CheckRateLimit(userID string) (bool, int64, error)
 }
@@ -56,7 +56,7 @@ func NewSubmissionService(
 }
 
 // SubmitFlag 提交 flag
-func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag string, contestID *string, clientIP string) (*models.Submission, error) {
+func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID string, flag string, contestID *string, clientIP string) (*models.Submission, error) {
 	if err := validateSubmissionInput(problemID, flag); err != nil {
 		return nil, err
 	}
@@ -81,6 +81,9 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 
 	if err := validateProblemSubmissionPolicy(problemMeta, contestID); err != nil {
 		return nil, err
+	}
+	if strings.EqualFold(problemMeta.FlagType, "dynamic") {
+		return nil, apperr.New(apperr.ErrBadRequest, "动态 Flag 提交依赖实例服务，当前流程尚未启用")
 	}
 
 	// 按 flag_rule 执行判题。
@@ -144,7 +147,7 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID int, flag st
 		if contestID != nil && *contestID != "" {
 			err = s.contestSvc.ApplyContestSolve(*contestID, contestScope, contestScore, time.Now())
 			if err != nil {
-				log.Printf("[submission] 更新赛事榜失败 user_id=%s contest_id=%s problem_id=%d err=%v", userID, *contestID, problemID, err)
+				log.Printf("[submission] 更新赛事榜失败 user_id=%s contest_id=%s problem_id=%s err=%v", userID, *contestID, problemID, err)
 			}
 		}
 	}
@@ -193,8 +196,8 @@ func evaluateSubmittedFlag(submitted, storedHash, rule string) (bool, error) {
 	}
 }
 
-func validateSubmissionInput(problemID int, flag string) error {
-	if problemID <= 0 {
+func validateSubmissionInput(problemID string, flag string) error {
+	if strings.TrimSpace(problemID) == "" {
 		return apperr.New(apperr.ErrBadRequest, "无效的题目 ID")
 	}
 	if flag == "" {
@@ -208,42 +211,8 @@ func validateProblemSubmissionPolicy(problem *models.ProblemSubmissionMeta, cont
 		return apperr.New(apperr.ErrBadRequest, "题目元数据为空")
 	}
 
-	if problem.Status != "published" {
+	if problem.Status != "ready" {
 		return apperr.New(apperr.ErrForbidden, "题目当前不可提交")
-	}
-
-	now := time.Now()
-	hasContest := contestID != nil && *contestID != ""
-
-	if hasContest {
-		if problem.Scope == "contest" {
-			if problem.ContestID == nil || *problem.ContestID != *contestID {
-				return apperr.New(apperr.ErrForbidden, "题目不属于当前赛事")
-			}
-			return nil
-		}
-
-		if problem.Scope != "platform" {
-			return apperr.New(apperr.ErrForbidden, "题目类型不支持提交")
-		}
-
-		if problem.VisibleFrom != nil && now.Before(*problem.VisibleFrom) {
-			return apperr.New(apperr.ErrForbidden, "题目尚未开放")
-		}
-		if problem.VisibleTo != nil && now.After(*problem.VisibleTo) {
-			return apperr.New(apperr.ErrForbidden, "题目已关闭")
-		}
-		return nil
-	}
-
-	if problem.Scope != "platform" {
-		return apperr.New(apperr.ErrForbidden, "该题仅支持在赛事内提交")
-	}
-	if problem.VisibleFrom != nil && now.Before(*problem.VisibleFrom) {
-		return apperr.New(apperr.ErrForbidden, "题目尚未开放")
-	}
-	if problem.VisibleTo != nil && now.After(*problem.VisibleTo) {
-		return apperr.New(apperr.ErrForbidden, "题目已关闭")
 	}
 
 	return nil
