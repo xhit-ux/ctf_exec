@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
+	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -208,13 +210,32 @@ func (h *ProblemHandler) SaveProblemImageGin(c *gin.Context) {
 		return
 	}
 
+	cfg, cfgErr := config.LoadConfig()
+	if cfgErr != nil {
+		writeError(c, cfgErr, http.StatusInternalServerError)
+		return
+	}
+
+	if err := c.Request.ParseMultipartForm(cfg.Upload.MaxImagePackageSize); err != nil {
+		writeBadRequest(c, "解析表单失败")
+		return
+	}
+
 	file, err := c.FormFile("file")
 	if err != nil {
 		writeBadRequest(c, "请上传构建文件，字段名为 file")
 		return
 	}
+	if file.Size <= 0 {
+		writeBadRequest(c, "构建文件不能为空")
+		return
+	}
+	if cfg.Upload.MaxImagePackageSize > 0 && file.Size > cfg.Upload.MaxImagePackageSize {
+		writeBadRequest(c, fmt.Sprintf("构建文件超过限制，最大允许 %d MB", cfg.Upload.MaxImagePackageSize/(1024*1024)))
+		return
+	}
 
-	buildDir := filepath.Join("..", "static", "images", "problems", id)
+	buildDir := filepath.Join(cfg.Upload.StaticPath, "images", "problems", id)
 	if mkErr := os.MkdirAll(buildDir, 0o755); mkErr != nil {
 		writeError(c, mkErr, http.StatusInternalServerError)
 		return
@@ -253,6 +274,96 @@ func (h *ProblemHandler) SaveProblemImageGin(c *gin.Context) {
 	})
 }
 
+func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+
+	cfg, cfgErr := config.LoadConfig()
+	if cfgErr != nil {
+		writeError(c, cfgErr, http.StatusInternalServerError)
+		return
+	}
+	if cfg.MinIO.Enabled {
+		writeBadRequest(c, "MinIO 附件上传暂未启用")
+		return
+	}
+
+	detail, err := h.repo.GetAdminProblemByID(id)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+
+	if err := c.Request.ParseMultipartForm(cfg.Upload.MaxAttachmentSize); err != nil {
+		writeBadRequest(c, "解析表单失败")
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		writeBadRequest(c, "获取附件失败")
+		return
+	}
+	defer file.Close()
+
+	if err := utils.ValidateAttachmentArchive(header, cfg.Upload.MaxAttachmentSize); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	ext := utils.AttachmentExtension(header.Filename)
+	if ext == "" {
+		writeBadRequest(c, "仅支持上传压缩包文件")
+		return
+	}
+
+	attachments, err := h.repo.ListProblemAttachments(id)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	for _, attachment := range attachments {
+		if attachment == nil {
+			continue
+		}
+		oldPath := resolveAttachmentFSPath(cfg.Upload.StaticPath, attachment.ObjectKey)
+		if oldPath != "" {
+			_ = utils.DeleteFile(oldPath)
+		}
+	}
+
+	category := normalizeAttachmentCategory(detail.Category)
+	fileName := fmt.Sprintf("%s%s", id, ext)
+	storagePath := filepath.ToSlash(filepath.Join("static", "attachments", category, fileName))
+	fsPath := filepath.Join(cfg.Upload.StaticPath, "attachments", category, fileName)
+
+	written, sha, err := utils.SaveUploadedFileAs(file, fsPath)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	item, err := h.repo.ReplaceProblemAttachment(id, header.Filename, "local", storagePath, written, sha)
+	if err != nil {
+		_ = utils.DeleteFile(fsPath)
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "附件上传成功",
+		"attachment": gin.H{
+			"id":        item.ID,
+			"file_name": item.FileName,
+			"file_size": item.FileSize,
+			"sha256":    item.Sha256,
+			"file_path": item.ObjectKey,
+		},
+	})
+}
+
 func (h *ProblemHandler) GetProblemBuildTaskGin(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
@@ -278,6 +389,73 @@ func (h *ProblemHandler) GetProblemBuildTaskGin(c *gin.Context) {
 		"task":   task,
 		"status": task.Status,
 	})
+}
+
+func (h *ProblemHandler) GetProblemInstanceGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+
+	instance, err := h.repo.GetChallengeInstance(problemID, claims.UserID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	if instance == nil {
+		c.JSON(http.StatusOK, gin.H{"status": "idle", "instance": nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": instance.Status, "instance": instance})
+}
+
+func (h *ProblemHandler) StartProblemInstanceGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+
+	instance, err := h.repo.StartChallengeInstance(problemID, claims.UserID)
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "实例启动成功",
+		"status":   instance.Status,
+		"instance": instance,
+	})
+}
+
+func (h *ProblemHandler) DestroyProblemInstanceGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+
+	if err := h.repo.DestroyChallengeInstance(problemID, claims.UserID); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "实例销毁成功", "status": "destroyed"})
 }
 
 func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
@@ -480,6 +658,39 @@ func normalizeProblemType(raw string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizeAttachmentCategory(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "web":
+		return "web"
+	case "pwn":
+		return "pwn"
+	case "crypto":
+		return "crypto"
+	case "reverse", "rev":
+		return "reverse"
+	case "misc":
+		return "misc"
+	default:
+		return "misc"
+	}
+}
+
+func resolveAttachmentFSPath(staticRoot, objectKey string) string {
+	cleanKey := strings.TrimSpace(objectKey)
+	if cleanKey == "" {
+		return ""
+	}
+	if strings.HasPrefix(cleanKey, "static/") {
+		cleanKey = strings.TrimPrefix(cleanKey, "static/")
+	}
+	cleanKey = filepath.Clean(cleanKey)
+	if cleanKey == "." || strings.HasPrefix(cleanKey, "..") || filepath.IsAbs(cleanKey) {
+		return ""
+	}
+	return filepath.Join(staticRoot, cleanKey)
 }
 
 func normalizeDeployMode(raw string) string {

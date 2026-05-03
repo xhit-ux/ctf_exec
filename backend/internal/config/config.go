@@ -87,8 +87,10 @@ type JWTConfig struct {
 
 // UploadConfig 上传配置
 type UploadConfig struct {
-	StaticPath    string
-	MaxUploadSize int64
+	StaticPath          string
+	MaxImagePackageSize int64
+	MaxImageSize        int64
+	MaxAttachmentSize   int64
 }
 
 // RateLimitConfig 提交限流配置
@@ -129,6 +131,7 @@ type ContainerConfig struct {
 
 // MinIOConfig MinIO 对象存储配置。
 type MinIOConfig struct {
+	Enabled       bool
 	Endpoint      string
 	AccessKey     string
 	SecretKey     string
@@ -415,11 +418,15 @@ func loadAuthCookieConfig() (*AuthCookieConfig, error) {
 // loadUploadConfig 加载上传配置
 func loadUploadConfig() (*UploadConfig, error) {
 	staticPath := getEnv("STATIC_PATH", "../static")
-	maxUploadSize := getEnvInt64("MAX_UPLOAD_SIZE", 10*1024*1024) // 10MB
+	maxImagePackageSize := getEnvInt64("MAX_UPLOAD_IMAGE_PACKAGE_SIZE", 2*1024*1024*1024) // 2GB
+	maxImageSize := getEnvInt64("MAX_UPLOAD_IMAGE_SIZE", 10*1024*1024)                    // 10MB
+	maxAttachmentSize := getEnvInt64("MAX_UPLOAD_ATTACHMENT_SIZE", 200*1024*1024)         // 200MB
 
 	return &UploadConfig{
-		StaticPath:    staticPath,
-		MaxUploadSize: maxUploadSize,
+		StaticPath:          staticPath,
+		MaxImagePackageSize: maxImagePackageSize,
+		MaxImageSize:        maxImageSize,
+		MaxAttachmentSize:   maxAttachmentSize,
 	}, nil
 }
 
@@ -478,6 +485,7 @@ func loadContainerConfig() (*ContainerConfig, error) {
 
 func loadMinIOConfig() (*MinIOConfig, error) {
 	return &MinIOConfig{
+		Enabled:       getEnvBool("MINIO_ENABLED", false),
 		Endpoint:      getEnv("MINIO_ENDPOINT", ""),
 		AccessKey:     getEnv("MINIO_ACCESS_KEY", ""),
 		SecretKey:     getEnv("MINIO_SECRET_KEY", ""),

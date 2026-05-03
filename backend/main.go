@@ -63,12 +63,14 @@ func main() {
 	contestRepo := repository.NewContestRepository(sqlDB)
 	contestAdminRepo := repository.NewContestAdminRepository(sqlDB)
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
+	probRepo.StartDraftCleanupScheduler(24*time.Hour, 7*24*time.Hour)
 	if err := service.EnsureDefaultRootUser(userRepo, cfg.Init.RootDefaultPassword); err != nil {
 		log.Fatalf("初始化 root 用户失败: %v", err)
 	}
 
 	// 初始化服务层
 	sessionStore := authsession.NewStore(redisClient.Client, sqlDB)
+	sessionStore.StartRefreshTokenCleanupScheduler(24*time.Hour, 7*24*time.Hour)
 	authService := service.NewAuthService(userRepo, redisClient.Client, sessionStore, cfg)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
@@ -192,6 +194,12 @@ func main() {
 			problems.GET("", probHandler.GetProblemsGin)
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
 			problems.GET(":id", probHandler.GetProblemDetailGin)
+
+			problemAuth := problems.Group("")
+			problemAuth.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
+			problemAuth.GET(":id/instance", probHandler.GetProblemInstanceGin)
+			problemAuth.POST(":id/instance/start", probHandler.StartProblemInstanceGin)
+			problemAuth.DELETE(":id/instance", probHandler.DestroyProblemInstanceGin)
 		}
 
 		// 赛事公开路由
@@ -256,6 +264,7 @@ func main() {
 				adminProblems.POST(":id/flag", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemFlagGin)
 				adminProblems.PATCH(":id/container", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemContainerGin)
 				adminProblems.POST(":id/image", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemImageGin)
+				adminProblems.POST(":id/attachment", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemAttachmentGin)
 				adminProblems.GET(":id/build-task", middleware.RequireSiteAdminOrRoot(), probHandler.GetProblemBuildTaskGin)
 				adminProblems.POST(":id/publish", middleware.RequireSiteAdminOrRoot(), probHandler.PublishProblemGin)
 				adminProblems.PUT(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.UpdateProblemGin)

@@ -11,7 +11,7 @@ export type Problem = {
 }
 
 export type Submission = {
-    problemId: number
+    problemId: number | string
     problemTitle?: string
     flag: string
     correct: boolean

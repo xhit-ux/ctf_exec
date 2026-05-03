@@ -9,6 +9,21 @@
   display: none;
 }
 
+html.dark {
+  --bg-base: #111827;
+  --surface: #1f2937;
+  --surface-muted: #374151;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --border-soft: #4b5563;
+  --accent: #d97706;
+  --accent-strong: #f59e0b;
+  --accent-soft: #78350f;
+  --glass-bg: rgba(31, 41, 55, 0.66);
+  --glass-soft-bg: rgba(31, 41, 55, 0.48);
+  --glass-border: #4b5563;
+}
+
 :root {
   --mobile-panel-top: 64px;
   --bg-base: #f3f4f6;
@@ -20,6 +35,9 @@
   --accent: #b45309;
   --accent-strong: #92400e;
   --accent-soft: #fef3c7;
+  --glass-bg: rgba(255, 255, 255, 0.66);
+  --glass-soft-bg: rgba(255, 255, 255, 0.48);
+  --glass-border: #e6dccd;
 }
 
 body {
@@ -52,8 +70,8 @@ a {
 }
 
 .section-card {
-  border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-radius: 1rem;
@@ -61,8 +79,8 @@ a {
 }
 
 .glass-card {
-  border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border-radius: 1rem;
@@ -70,27 +88,27 @@ a {
 }
 
 .glass-soft {
-  border: 1px solid #eadfce;
-  background: rgba(255, 255, 255, 0.48);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-soft-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 0.875rem;
 }
 
 .glass-table-wrap {
-  border: 1px solid #eadfce;
+  border: 1px solid var(--glass-border);
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.56);
+  background: var(--glass-soft-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
 }
 
 .glass-input {
   width: 100%;
-  border: 1px solid #e2d7c7;
+  border: 1px solid var(--border-soft);
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.72);
-  color: #1f2937;
+  background: var(--glass-bg);
+  color: var(--text-primary);
   padding: 0.55rem 0.8rem;
   outline: none;
   font-size: 0.9rem;

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { staticUrl } from '../utils/api'
+import ThemeSwitcher from '../components/common/ThemeSwitcher'
 
 function getLevelInfo(score: number = 0) {
   if (score < 1000) return { title: '新手', color: 'text-zinc-600', bg: 'bg-zinc-100' }
@@ -131,6 +132,9 @@ export default function Header() {
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
                 </button>
+                <div className="ml-1 flex items-center">
+                  <ThemeSwitcher />
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-3">
@@ -146,6 +150,9 @@ export default function Header() {
                 >
                   注册
                 </Link>
+                <div className="ml-1 flex items-center border-l border-amber-100 pl-3 dark:border-gray-700">
+                  <ThemeSwitcher />
+                </div>
               </div>
             )}
             

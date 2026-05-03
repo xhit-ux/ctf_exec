@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -35,6 +37,24 @@ var allowedImageMIMEs = map[string]bool{
 	"image/png":  true,
 	"image/gif":  true,
 	"image/webp": true,
+}
+
+var allowedAttachmentExtensions = []string{
+	".tar.zst",
+	".tar.xz",
+	".tar.bz2",
+	".tar.gz",
+	".tbz2",
+	".tgz",
+	".txz",
+	".tar",
+	".zip",
+	".7z",
+	".rar",
+	".gz",
+	".bz2",
+	".xz",
+	".zst",
 }
 
 // ValidateImageFile 验证图片文件
@@ -75,6 +95,31 @@ func ValidateImageFile(file multipart.File, header *multipart.FileHeader, maxSiz
 	return nil
 }
 
+// AttachmentExtension returns the matched archive extension or an empty string.
+func AttachmentExtension(filename string) string {
+	name := strings.ToLower(strings.TrimSpace(filename))
+	for _, ext := range allowedAttachmentExtensions {
+		if strings.HasSuffix(name, ext) {
+			return ext
+		}
+	}
+	return ""
+}
+
+// ValidateAttachmentArchive validates size and extension for archive attachments.
+func ValidateAttachmentArchive(header *multipart.FileHeader, maxSize int64) error {
+	if header.Size <= 0 {
+		return apperr.New(apperr.ErrBadRequest, "附件文件不能为空")
+	}
+	if maxSize > 0 && header.Size > maxSize {
+		return apperr.New(apperr.ErrBadRequest, fmt.Sprintf("附件大小超过限制，最大允许 %d MB", maxSize/(1024*1024)))
+	}
+	if AttachmentExtension(header.Filename) == "" {
+		return apperr.New(apperr.ErrBadRequest, "仅支持上传压缩包文件")
+	}
+	return nil
+}
+
 // SaveUploadedFile 保存上传的文件
 // destDir: 目标目录，如 "static/avatars/user-id"
 // 返回相对路径，如 "static/avatars/user-id/timestamp_filename.jpg"
@@ -108,6 +153,28 @@ func SaveUploadedFile(file multipart.File, header *multipart.FileHeader, destDir
 
 	// 返回相对路径（用于存储到数据库）
 	return destPath, nil
+}
+
+// SaveUploadedFileAs saves an uploaded file to a fixed path and returns size and sha256.
+func SaveUploadedFileAs(file multipart.File, destPath string) (int64, string, error) {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return 0, "", fmt.Errorf("创建目录失败: %w", err)
+	}
+
+	cleanPath := filepath.Clean(destPath)
+	dst, err := os.Create(cleanPath)
+	if err != nil {
+		return 0, "", fmt.Errorf("创建文件失败: %w", err)
+	}
+	defer dst.Close()
+
+	hash := sha256.New()
+	written, err := io.Copy(io.MultiWriter(dst, hash), file)
+	if err != nil {
+		return 0, "", fmt.Errorf("保存文件失败: %w", err)
+	}
+
+	return written, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // DeleteFile 删除文件

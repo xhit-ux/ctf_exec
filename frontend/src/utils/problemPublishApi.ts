@@ -22,6 +22,14 @@ export type PublishProblemResult = {
   message: string
 }
 
+export type AttachmentUploadResult = {
+  id: string
+  file_name: string
+  file_size: number
+  sha256?: string | null
+  file_path: string
+}
+
 async function mustOK(response: Response, fallback: string): Promise<void> {
   if (response.ok) return
   const message = await readSafeErrorMessage(response.clone(), fallback)
@@ -125,6 +133,22 @@ export async function uploadProblemImage(problemID: string, payload: {
     throw new Error('上传镜像文件失败：未返回构建任务')
   }
   return body.task
+}
+
+export async function uploadProblemAttachment(problemID: string, file: File): Promise<AttachmentUploadResult> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await apiFetch(apiUrl(`/api/admin/problems/${problemID}/attachment`), {
+    method: 'POST',
+    body: formData,
+  })
+  await mustOK(response, '上传附件失败')
+  const body = await response.json() as { attachment?: AttachmentUploadResult }
+  if (!body.attachment) {
+    throw new Error('上传附件失败：未返回附件信息')
+  }
+  return body.attachment
 }
 
 export async function fetchProblemBuildTask(problemID: string): Promise<BuildTaskView | null> {

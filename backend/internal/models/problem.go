@@ -15,6 +15,7 @@ type Problem struct {
 	Status      string            `json:"status"`
 	CreatedBy   *string           `json:"created_by,omitempty"`
 	Tags        []string          `json:"tags,omitempty"`
+	Attachments []*Attachment     `json:"attachments,omitempty"`
 	IsSolved    bool              `json:"is_solved,omitempty"`
 	Flag        *ProblemFlag      `json:"flag,omitempty"`
 	Container   *ProblemContainer `json:"container,omitempty"`
@@ -140,4 +141,18 @@ type ImageBuildTask struct {
 	WorkerID    *string `json:"worker_id,omitempty"`
 	StartedAt   string  `json:"started_at"`
 	FinishedAt  *string `json:"finished_at,omitempty"`
+}
+
+type ChallengeInstance struct {
+	ID          string  `json:"id"`
+	UserID      string  `json:"user_id"`
+	ProblemID   string  `json:"problem_id"`
+	PodName     *string `json:"pod_name,omitempty"`
+	Namespace   *string `json:"namespace,omitempty"`
+	AccessURL   *string `json:"access_url,omitempty"`
+	NodePort    *int    `json:"node_port,omitempty"`
+	Status      string  `json:"status"`
+	StartedAt   *string `json:"started_at,omitempty"`
+	ExpiredAt   *string `json:"expired_at,omitempty"`
+	DestroyedAt *string `json:"destroyed_at,omitempty"`
 }

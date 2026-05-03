@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -199,6 +200,67 @@ func (s *Store) RevokeRefreshSession(ctx context.Context, rawToken, userID, jti 
 	}
 
 	return nil
+}
+
+// CleanupExpiredRefreshSessions 清理过期超过 retention 的 refresh token 记录。
+func (s *Store) CleanupExpiredRefreshSessions(ctx context.Context, retention time.Duration) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, fmt.Errorf("session store unavailable")
+	}
+	if retention < 0 {
+		retention = 0
+	}
+
+	query := `
+		DELETE FROM refresh_tokens
+		WHERE expires_at < DATE_SUB(NOW(), INTERVAL ? SECOND)
+	`
+	result, err := s.db.ExecContext(ctx, query, int(retention.Seconds()))
+	if err != nil {
+		return 0, fmt.Errorf("cleanup expired refresh sessions failed: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read cleanup affected rows failed: %w", err)
+	}
+
+	return affected, nil
+}
+
+// StartRefreshTokenCleanupScheduler 启动 refresh token 清理任务。
+func (s *Store) StartRefreshTokenCleanupScheduler(interval, retention time.Duration) {
+	if s == nil || s.db == nil {
+		log.Println("[refresh-cleanup] session store unavailable, scheduler skipped")
+		return
+	}
+	if interval <= 0 {
+		interval = 24 * time.Hour // 默认每天执行一次
+	}
+
+	go func() {
+		ctx := context.Background()
+		deleted, err := s.CleanupExpiredRefreshSessions(ctx, retention)
+		if err != nil {
+			log.Printf("[refresh-cleanup] initial cleanup failed: %v", err)
+		} else {
+			log.Printf("[refresh-cleanup] initial cleanup completed, deleted=%d", deleted)
+		}
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			deleted, runErr := s.CleanupExpiredRefreshSessions(context.Background(), retention)
+			if runErr != nil {
+				log.Printf("[refresh-cleanup] scheduled cleanup failed: %v", runErr)
+				continue
+			}
+			if deleted > 0 {
+				log.Printf("[refresh-cleanup] scheduled cleanup completed, deleted=%d", deleted)
+			}
+		}
+	}()
 }
 
 // RevokeAllUserSessions 撤销用户全部会话，常用于封禁、角色变更等高风险操作。

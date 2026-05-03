@@ -1,24 +1,24 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import ProblemCard from '../components/problem/ProblemCard'
-import { Problem } from '../types'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/common/PageHeader'
 import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
+import { categoryLabel, normalizeProblemList, ProblemDifficulty, ProblemView } from '../utils/problemView'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
 export default function Problems() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth()
   const [category, setCategory] = useState<typeof categories[number]>('all')
-  const [difficulty, setDifficulty] = useState<'all' | '简单' | '中等' | '困难'>('all')
+  const [difficulty, setDifficulty] = useState<'all' | ProblemDifficulty>('all')
   const [query, setQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [tabAccent, setTabAccent] = useState(TAB_ACCENT_PALETTE[0])
 
-  const [problems, setProblems] = useState<Problem[]>([])
+  const [problems, setProblems] = useState<ProblemView[]>([])
   const [loading, setLoading] = useState(true)
   const isProblemPublisher = user?.role === 'root' || user?.role === 'site_admin' || user?.role === 'contest_admin'
   const publishEntryPath = user?.role === 'contest_admin' ? '/contests' : '/problem/publish'
@@ -40,12 +40,7 @@ export default function Problems() {
         return res.json()
       })
       .then(data => {
-        if (Array.isArray(data)) {
-          setProblems(data)
-        } else {
-          console.error('API response is not an array:', data)
-          setProblems([])
-        }
+        setProblems(normalizeProblemList(data))
         setLoading(false)
       })
       .catch(err => {
@@ -67,9 +62,9 @@ export default function Problems() {
     return problems.filter((p) => {
       if (category !== 'all' && p.category !== category) return false
       if (difficulty !== 'all' && p.difficulty !== difficulty) return false
-      const tags = Array.isArray(p.tags) ? p.tags : []
+      const tags = p.tags
       if (selectedTag && !tags.includes(selectedTag)) return false
-      if (query && !(`${p.title} ${tags.join(' ')}`.toLowerCase().includes(query.toLowerCase()))) return false
+      if (query && !(`${p.title} ${p.description} ${tags.join(' ')}`.toLowerCase().includes(query.toLowerCase()))) return false
       return true
     })
   }, [category, difficulty, query, selectedTag, problems])
@@ -124,7 +119,7 @@ export default function Problems() {
                     className={`tab-pill text-xs uppercase tracking-wider ${category === c ? 'tab-pill--active' : ''}`}
                     style={category === c ? tabAccentStyle(tabAccent) : undefined}
                   >
-                    {c === 'all' ? '全部' : c}
+                    {c === 'all' ? '全部' : categoryLabel(c)}
                   </button>
                 ))}
               </div>
@@ -139,6 +134,7 @@ export default function Problems() {
                 <option value="简单">简单</option>
                 <option value="中等">中等</option>
                 <option value="困难">困难</option>
+                <option value="专家">专家</option>
               </select>
               <input
                 placeholder="搜索题目..."
@@ -180,7 +176,7 @@ export default function Problems() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {filtered.map((p: Problem) => (
+            {filtered.map((p) => (
               <Link key={p.id} to={`/problem/${p.id}`} className="h-full block transform transition-transform hover:-translate-y-1 hover:shadow-lg rounded-xl">
                 <ProblemCard p={p} />
               </Link>
@@ -210,7 +206,7 @@ export default function Problems() {
                     className={`tab-pill text-sm ${category === c ? 'tab-pill--active' : ''}`}
                     style={category === c ? tabAccentStyle(tabAccent) : undefined}
                   >
-                    {c === 'all' ? '全部领域' : c.toUpperCase()}
+                    {c === 'all' ? '全部领域' : categoryLabel(c).toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -228,6 +224,7 @@ export default function Problems() {
                   <option value="简单">简单 (Easy)</option>
                   <option value="中等">中等 (Medium)</option>
                   <option value="困难">困难 (Hard)</option>
+                  <option value="专家">专家 (Expert)</option>
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-500">
                   <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>

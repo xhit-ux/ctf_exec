@@ -1,14 +1,14 @@
 import React from 'react'
-import { Problem } from '../../types'
+import { categoryLabel, ProblemView } from '../../utils/problemView'
 
-export default function ProblemCard({ p }: { p: Problem }) {
-  // 防守性编程：确保 tags 总是数组
-  const tags = Array.isArray(p.tags) ? p.tags : []
+export default function ProblemCard({ p }: { p: ProblemView }) {
+  const tags = p.tags
 
   const difficultyColor = {
     '简单': 'bg-green-100 text-green-800',
     '中等': 'bg-yellow-100 text-yellow-800',
     '困难': 'bg-red-100 text-red-800',
+    '专家': 'bg-purple-100 text-purple-800',
   }[p.difficulty] || 'bg-gray-100 text-gray-800'
 
   return (
@@ -49,7 +49,7 @@ export default function ProblemCard({ p }: { p: Problem }) {
       {/* Category & Difficulty */}
       <div className="flex items-center gap-2 mb-4 relative z-10">
         <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">
-          {p.category}
+          {categoryLabel(p.category)}
         </span>
         <span
           className={`text-xs font-semibold px-2 py-1 rounded-full ${difficultyColor}`}

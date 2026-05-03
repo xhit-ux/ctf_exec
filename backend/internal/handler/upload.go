@@ -3,6 +3,7 @@ package handler
 import (
 	"path/filepath"
 
+	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/middleware"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -27,8 +28,14 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 		return
 	}
 
-	// 解析 multipart form，限制最大内存为 10MB
-	if err := c.Request.ParseMultipartForm(10 << 20); err != nil {
+	cfg, cfgErr := config.LoadConfig()
+	if cfgErr != nil {
+		writeError(c, cfgErr, 500)
+		return
+	}
+
+	// 解析 multipart form
+	if err := c.Request.ParseMultipartForm(cfg.Upload.MaxImageSize); err != nil {
 		writeBadRequest(c, "解析表单失败")
 		return
 	}
@@ -42,13 +49,13 @@ func (h *UploadHandler) UploadAvatarGin(c *gin.Context) {
 	defer file.Close()
 
 	// 验证图片文件
-	if err := utils.ValidateImageFile(file, header, utils.MaxAvatarSize); err != nil {
+	if err := utils.ValidateImageFile(file, header, cfg.Upload.MaxImageSize); err != nil {
 		writeError(c, err, 400)
 		return
 	}
 
 	// 确定保存目录：static/avatars/{user_id}/
-	destDir := filepath.Join("../static/avatars", claims.UserID)
+	destDir := filepath.Join(cfg.Upload.StaticPath, "avatars", claims.UserID)
 
 	// 保存文件
 	filePath, err := utils.SaveUploadedFile(file, header, destDir)
@@ -85,8 +92,14 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 		return
 	}
 
+	cfg, cfgErr := config.LoadConfig()
+	if cfgErr != nil {
+		writeError(c, cfgErr, 500)
+		return
+	}
+
 	// 解析 multipart form
-	if err := c.Request.ParseMultipartForm(10 << 20); err != nil {
+	if err := c.Request.ParseMultipartForm(cfg.Upload.MaxImageSize); err != nil {
 		writeBadRequest(c, "解析表单失败")
 		return
 	}
@@ -98,12 +111,12 @@ func (h *UploadHandler) UploadContestCoverGin(c *gin.Context) {
 	}
 	defer file.Close()
 
-	if err := utils.ValidateImageFile(file, header, utils.MaxCoverSize); err != nil {
+	if err := utils.ValidateImageFile(file, header, cfg.Upload.MaxImageSize); err != nil {
 		writeError(c, err, 400)
 		return
 	}
 
-	destDir := "../static/contests"
+	destDir := filepath.Join(cfg.Upload.StaticPath, "contests")
 	filePath, err := utils.SaveUploadedFile(file, header, destDir)
 	if err != nil {
 		writeError(c, err, 500)
