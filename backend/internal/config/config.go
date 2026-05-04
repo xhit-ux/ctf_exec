@@ -463,13 +463,13 @@ func loadEmailConfig() (*EmailConfig, error) {
 
 // loadBotProtectionConfig 加载机器人验证配置
 func loadBotProtectionConfig() (*BotProtectionConfig, error) {
-	secretKey := getEnv("TURNSTILE_SECRET_KEY", "")
+	secretKey := strings.TrimSpace(getEnv("TURNSTILE_SECRET_KEY", ""))
 	enabled := getEnvBool("TURNSTILE_ENABLED", secretKey != "")
 
 	return &BotProtectionConfig{
 		Enabled:            enabled,
 		TurnstileSecretKey: secretKey,
-		TurnstileVerifyURL: getEnv("TURNSTILE_VERIFY_URL", "https://challenges.cloudflare.com/turnstile/v0/siteverify"),
+		TurnstileVerifyURL: strings.TrimSpace(getEnv("TURNSTILE_VERIFY_URL", "https://challenges.cloudflare.com/turnstile/v0/siteverify")),
 	}, nil
 }
 

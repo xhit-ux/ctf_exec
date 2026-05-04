@@ -23,6 +23,8 @@ function shouldBypassAutoRefresh(url: string): boolean {
   return url.includes('/api/auth/login') ||
     url.includes('/api/auth/register') ||
     url.includes('/api/auth/send-register-code') ||
+    url.includes('/api/auth/send-password-reset-code') ||
+    url.includes('/api/auth/reset-password') ||
     url.includes('/api/auth/refresh')
 }
 

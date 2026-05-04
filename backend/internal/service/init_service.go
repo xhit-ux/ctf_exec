@@ -27,7 +27,7 @@ func EnsureDefaultRootUser(userRepo *repository.UserRepository, rootDefaultPassw
 	}
 
 	if created {
-		log.Println("✓ 默认 root 用户已创建（username=root,password=" + password + "）")
+		log.Println("✓ 默认 root 用户已创建")
 		return nil
 	}
 

@@ -15,7 +15,6 @@
 
 # Dependency directories
 vendor/
-go.sum
 node_modules/
 
 # IDE and Editor

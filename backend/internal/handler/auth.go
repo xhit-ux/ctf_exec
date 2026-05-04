@@ -36,6 +36,16 @@ func sameSiteByConfig(value string) http.SameSite {
 	}
 }
 
+// RegistrationHintsGin 注册页公开策略（无需登录）。
+func (h *AuthHandler) RegistrationHintsGin(c *gin.Context) {
+	hints, err := h.authService.GetRegistrationHints()
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, hints)
+}
+
 func (h *AuthHandler) setAuthCookies(c *gin.Context, accessToken, refreshToken string, accessTTL, refreshTTL int64) {
 	sameSite := sameSiteByConfig(h.cookieCfg.SameSite)
 	secure := h.cookieCfg.Secure
@@ -128,6 +138,39 @@ func (h *AuthHandler) SendRegisterCodeGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "验证码已发送，请前往邮箱查收"})
+}
+
+// SendPasswordResetCodeGin 发送密码重置验证码（防邮箱枚举：始终返回成功文案）。
+func (h *AuthHandler) SendPasswordResetCodeGin(c *gin.Context) {
+	var req models.SendPasswordResetCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+
+	err := h.authService.SendPasswordResetCode(&req, realClientIP(c))
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "若该邮箱已绑定账号，你将收到一封包含验证码的邮件，请查收"})
+}
+
+// ResetPasswordGin 使用邮箱验证码重置密码。
+func (h *AuthHandler) ResetPasswordGin(c *gin.Context) {
+	var req models.ResetPasswordWithCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+
+	if err := h.authService.ResetPasswordWithEmailCode(&req); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "密码已重置，请使用新密码登录"})
 }
 
 // RegisterGin Gin 版本的用户注册处理

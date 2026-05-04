@@ -21,6 +21,20 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: backendTarget,
           changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq, req) => {
+              const remote = req.socket?.remoteAddress
+              if (!remote) return
+              const existing = req.headers['x-forwarded-for']
+              if (typeof existing === 'string' && existing.trim() !== '') {
+                proxyReq.setHeader('X-Forwarded-For', `${existing}, ${remote}`)
+              } else if (Array.isArray(existing) && existing[0]) {
+                proxyReq.setHeader('X-Forwarded-For', `${existing[0]}, ${remote}`)
+              } else {
+                proxyReq.setHeader('X-Forwarded-For', remote)
+              }
+            })
+          },
         },
         '/static': {
           target: backendTarget,

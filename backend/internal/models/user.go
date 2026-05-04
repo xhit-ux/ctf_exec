@@ -41,6 +41,26 @@ type SendRegisterCodeRequest struct {
 	BotToken string `json:"bot_token"`
 }
 
+// RegistrationHints 注册页公开策略（不含密钥），供前端与公开接口使用。
+type RegistrationHints struct {
+	RegistrationEnabled       bool `json:"registration_enabled"`
+	EmailVerificationRequired bool `json:"email_verification_required"`
+	BotProtectionEnabled      bool `json:"bot_protection_enabled"`
+}
+
+// SendPasswordResetCodeRequest 发送密码重置邮箱验证码
+type SendPasswordResetCodeRequest struct {
+	Email    string `json:"email"`
+	BotToken string `json:"bot_token"`
+}
+
+// ResetPasswordWithCodeRequest 使用邮箱验证码重置密码
+type ResetPasswordWithCodeRequest struct {
+	Email       string `json:"email"`
+	EmailCode   string `json:"email_code"`
+	NewPassword string `json:"new_password"`
+}
+
 // LoginRequest 登陆请求
 type LoginRequest struct {
 	Username string `json:"username"`

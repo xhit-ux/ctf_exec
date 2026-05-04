@@ -9,6 +9,7 @@ import RequiresDesktop from './components/layout/RequiresDesktop'
 // 页面组件
 import Login from './pages/Login'
 import Register from './pages/Register'
+import ForgotPassword from './pages/ForgotPassword'
 import Index from './pages/Index'
 import Problems from './pages/Problems'
 import ProblemDetail from './pages/ProblemDetail'
@@ -90,6 +91,14 @@ export default function App() {
               element={
                 <AuthenticatedRoute>
                   <Register />
+                </AuthenticatedRoute>
+              }
+            />
+            <Route
+              path="forgot-password"
+              element={
+                <AuthenticatedRoute>
+                  <ForgotPassword />
                 </AuthenticatedRoute>
               }
             />

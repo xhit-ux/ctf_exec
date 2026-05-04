@@ -71,7 +71,7 @@ func main() {
 	// 初始化服务层
 	sessionStore := authsession.NewStore(redisClient.Client, sqlDB)
 	sessionStore.StartRefreshTokenCleanupScheduler(24*time.Hour, 7*24*time.Hour)
-	authService := service.NewAuthService(userRepo, redisClient.Client, sessionStore, cfg)
+	authService := service.NewAuthService(userRepo, siteConfigRepo, redisClient.Client, sessionStore, cfg)
 	userService := service.NewUserService(userRepo)
 	_ = service.NewProblemService(probRepo) // 暂时未使用
 
@@ -164,7 +164,10 @@ func main() {
 		// 认证路由
 		auth := api.Group("/auth")
 		{
+			auth.GET("/registration-hints", authHandler.RegistrationHintsGin)
 			auth.POST("/send-register-code", authHandler.SendRegisterCodeGin)
+			auth.POST("/send-password-reset-code", authHandler.SendPasswordResetCodeGin)
+			auth.POST("/reset-password", authHandler.ResetPasswordGin)
 			auth.POST("/register", authHandler.RegisterGin)
 			auth.POST("/login", authHandler.LoginGin)
 			auth.POST("/refresh", authHandler.RefreshGin)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
 import { apiFetch, setAuthTokens } from '../utils/authClient'
@@ -76,7 +76,15 @@ export default function Login() {
                     />
                 </div>
                 <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">密码</label>
+                    <div className="flex items-center justify-between gap-2">
+                        <label className="text-sm font-medium text-slate-700">密码</label>
+                        <Link
+                            to="/forgot-password"
+                            className="text-sm text-slate-600 hover:text-slate-900 underline decoration-slate-300 hover:decoration-slate-600"
+                        >
+                            忘记密码？
+                        </Link>
+                    </div>
                     <input
                         type="password"
                         className="field-input"

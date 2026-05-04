@@ -40,6 +40,15 @@ const (
 	// 邮箱验证码发送日限额
 	KeyEmailVerifyDailyLimitTemplate = "auth:email_verify:daily:%s:%s"
 
+	// 密码重置邮箱验证码
+	KeyPasswordResetCodeTemplate = "auth:pwd_reset:code:%s"
+
+	// 密码重置验证码发送冷却
+	KeyPasswordResetCooldownTemplate = "auth:pwd_reset:cooldown:%s"
+
+	// 密码重置验证码日限额
+	KeyPasswordResetDailyLimitTemplate = "auth:pwd_reset:daily:%s:%s"
+
 	// 机器人验证限流
 	KeyBotVerifyRateLimitTemplate = "auth:bot_verify:ip:%s"
 
@@ -108,6 +117,21 @@ func GetEmailVerifyCooldownKey(email string) string {
 // GetEmailVerifyDailyLimitKey 获取验证码发送日限额键
 func GetEmailVerifyDailyLimitKey(email, day string) string {
 	return fmt.Sprintf(KeyEmailVerifyDailyLimitTemplate, email, day)
+}
+
+// GetPasswordResetCodeKey 密码重置验证码键
+func GetPasswordResetCodeKey(email string) string {
+	return fmt.Sprintf(KeyPasswordResetCodeTemplate, email)
+}
+
+// GetPasswordResetCooldownKey 密码重置发送冷却键
+func GetPasswordResetCooldownKey(email string) string {
+	return fmt.Sprintf(KeyPasswordResetCooldownTemplate, email)
+}
+
+// GetPasswordResetDailyLimitKey 密码重置日限额键
+func GetPasswordResetDailyLimitKey(email, day string) string {
+	return fmt.Sprintf(KeyPasswordResetDailyLimitTemplate, email, day)
 }
 
 // GetBotVerifyRateLimitKey 获取机器人验证限流键

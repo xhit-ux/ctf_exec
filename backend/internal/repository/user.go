@@ -299,6 +299,57 @@ func (r *UserRepository) GetUserByID(id string) (*models.User, error) {
 	return user, nil
 }
 
+// GetActiveUserByEmail 通过已规范化的邮箱获取激活用户（用于密码重置等）。
+func (r *UserRepository) GetActiveUserByEmail(email string) (*models.User, error) {
+	user := &models.User{}
+	query := `
+		SELECT id, username, COALESCE(email, ''), password_hash, role, display_name,
+		       COALESCE(avatar_url, ''), COALESCE(bio, ''),
+		       COALESCE(website_url, ''), COALESCE(organization, ''), COALESCE(country, ''),
+		       score, solved_count, is_active, is_verified, rank_num,
+		       last_login_at, created_at, updated_at,
+		       COALESCE(preferences, '{}')
+		FROM users WHERE email = ? AND email <> '' AND is_active = 1
+	`
+
+	err := r.db.QueryRow(query, email).Scan(
+		&user.ID, &user.Username, &user.Email, &user.PasswordHash,
+		&user.Role, &user.DisplayName, &user.AvatarURL, &user.Bio,
+		&user.WebsiteURL, &user.Organization, &user.Country,
+		&user.Score, &user.SolvedCount, &user.IsActive, &user.IsVerified,
+		&user.RankNum, &user.LastLoginAt, &user.CreatedAt, &user.UpdatedAt,
+		&user.Preferences,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, apperr.New(apperr.ErrNotFound, "用户不存在")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("查询用户失败: %w", err)
+	}
+
+	return user, nil
+}
+
+// UpdatePasswordHash 更新用户密码哈希（不修改其它字段）。
+func (r *UserRepository) UpdatePasswordHash(userID, passwordHash string) error {
+	result, err := r.db.Exec(
+		`UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ? AND is_active = 1`,
+		passwordHash, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("更新密码失败: %w", err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("获取更新结果失败: %w", err)
+	}
+	if n == 0 {
+		return apperr.New(apperr.ErrNotFound, "用户不存在")
+	}
+	return nil
+}
+
 // GetLeaderboard 获取排行榜
 func (r *UserRepository) GetLeaderboard(limit int) ([]*models.User, error) {
 	users, _, err := r.GetLeaderboardPage(0, limit)

@@ -52,6 +52,9 @@ function loadTurnstileScript(): Promise<void> {
   })
 }
 
+/**
+ * Cloudflare Turnstile：用 ref 持有回调，避免因父组件重渲染反复 remove/render 导致验证状态闪烁或丢失。
+ */
 export default function TurnstileWidget({
   siteKey,
   resetSignal,
@@ -61,6 +64,13 @@ export default function TurnstileWidget({
 }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const widgetIdRef = useRef<string | null>(null)
+  const onVerifyRef = useRef(onVerify)
+  const onExpireRef = useRef(onExpire)
+  const onErrorRef = useRef(onError)
+
+  onVerifyRef.current = onVerify
+  onExpireRef.current = onExpire
+  onErrorRef.current = onError
 
   useEffect(() => {
     let disposed = false
@@ -78,15 +88,16 @@ export default function TurnstileWidget({
 
       widgetIdRef.current = window.turnstile.render(containerRef.current, {
         sitekey: siteKey,
-        callback: onVerify,
-        'expired-callback': onExpire,
-        'error-callback': (errorCode?: string) => onError?.(errorCode || 'turnstile_render_error'),
+        callback: (token: string) => onVerifyRef.current?.(token),
+        'expired-callback': () => onExpireRef.current?.(),
+        'error-callback': (errorCode?: string) =>
+          onErrorRef.current?.(errorCode || 'turnstile_render_error'),
         theme: 'light',
       })
     }
 
     renderWidget().catch(() => {
-      onError?.('turnstile_script_load_failed')
+      onErrorRef.current?.('turnstile_script_load_failed')
     })
 
     return () => {
@@ -96,7 +107,7 @@ export default function TurnstileWidget({
         widgetIdRef.current = null
       }
     }
-  }, [siteKey, onVerify, onExpire, onError, resetSignal])
+  }, [siteKey, resetSignal])
 
   return <div ref={containerRef} />
 }
