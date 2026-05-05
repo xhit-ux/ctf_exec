@@ -7,7 +7,7 @@ import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
 import AuthShell from '../components/auth/AuthShell'
 
 export default function Login() {
-    const [username, setUsername] = useState('')
+    const [identifier, setIdentifier] = useState('')
     const [password, setPassword] = useState('')
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
@@ -19,13 +19,20 @@ export default function Login() {
         setError('')
         setLoading(true)
 
+        const trimmedIdentifier = identifier.trim()
+        if (!trimmedIdentifier) {
+            setError('请输入用户名或邮箱')
+            setLoading(false)
+            return
+        }
+
         try {
             const response = await apiFetch(apiUrl('/api/auth/login'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ identifier: trimmedIdentifier, password }),
             }, {
                 disableAuth: true,
                 disableRetry401: true,
@@ -64,15 +71,15 @@ export default function Login() {
 
             <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                    <label className="text-sm font-medium text-slate-700">用户名</label>
+                    <label className="text-sm font-medium text-slate-700">用户名或邮箱</label>
                     <input
                         type="text"
                         className="field-input"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
                         disabled={loading}
                         required
-                        placeholder="请输入用户名"
+                        placeholder="请输入用户名或邮箱"
                     />
                 </div>
                 <div className="space-y-2">

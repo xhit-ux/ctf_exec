@@ -186,8 +186,19 @@ func (r *UserRepository) CreateUser(req *models.RegisterRequest, passwordHash, r
 
 	if err != nil {
 		var mysqlErr *mysql.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
-			return nil, apperr.New(apperr.ErrConflict, "用户名已被使用")
+		if errors.As(err, &mysqlErr) {
+			switch mysqlErr.Number {
+			case 1062:
+				if strings.Contains(mysqlErr.Message, "uniq_users_email") {
+					return nil, apperr.New(apperr.ErrConflict, "邮箱已被使用")
+				}
+				return nil, apperr.New(apperr.ErrConflict, "用户名已被使用")
+			case 3819:
+				return nil, apperr.New(apperr.ErrBadRequest, "用户名格式不符合要求（仅允许字母、数字与下划线）")
+			}
+			if strings.Contains(strings.ToLower(mysqlErr.Message), "chk_username_format") {
+				return nil, apperr.New(apperr.ErrBadRequest, "用户名格式不符合要求（仅允许字母、数字与下划线）")
+			}
 		}
 		return nil, fmt.Errorf("创建用户失败: %w", err)
 	}
@@ -606,7 +617,7 @@ func (r *UserRepository) IncreaseUserScoreAndSolvedCount(userID string, deltaSco
 // UserExistsByUsername 检查用户名是否存在
 func (r *UserRepository) UserExistsByUsername(username string) (bool, error) {
 	var count int
-	query := `SELECT COUNT(*) FROM users WHERE username = ? AND is_active = 1`
+	query := `SELECT COUNT(*) FROM users WHERE username = ?`
 	err := r.db.QueryRow(query, username).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("检查用户存在失败: %w", err)

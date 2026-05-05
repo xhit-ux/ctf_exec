@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,6 +27,9 @@ import (
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/redis/go-redis/v9"
 )
+
+// 与 db/final.sql 中 chk_username_format 一致：^[a-zA-Z0-9_]{3,32}$
+var usernameRegisterPattern = regexp.MustCompile(`^[a-zA-Z0-9_]{3,32}$`)
 
 // AuthService 认证服务接口
 type AuthService interface {
@@ -289,6 +293,9 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 		return nil, apperr.New(apperr.ErrForbidden, "管理员已关闭新用户注册")
 	}
 
+	req.Username = strings.TrimSpace(req.Username)
+	req.Email = strings.TrimSpace(req.Email)
+
 	if err := validateRegisterRequest(req, siteCfg.EmailVerificationRequired); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
 	}
@@ -351,8 +358,15 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP, userAgent st
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
 	}
 
-	// 查询用户
-	user, err := s.userRepo.GetUserByUsername(req.Username)
+	identifier := resolveLoginIdentifier(req)
+	var user *models.User
+	var err error
+	if isValidEmail(identifier) {
+		normalizedEmail := normalizeEmail(identifier)
+		user, err = s.userRepo.GetActiveUserByEmail(normalizedEmail)
+	} else {
+		user, err = s.userRepo.GetUserByUsername(identifier)
+	}
 	if err != nil {
 		return nil, apperr.New(apperr.ErrUnauthorized, "用户名或密码错误")
 	}
@@ -709,6 +723,17 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+func resolveLoginIdentifier(req *models.LoginRequest) string {
+	if req == nil {
+		return ""
+	}
+	identifier := strings.TrimSpace(req.Identifier)
+	if identifier != "" {
+		return identifier
+	}
+	return strings.TrimSpace(req.Username)
+}
+
 func isValidEmail(email string) bool {
 	_, err := mail.ParseAddress(email)
 	return err == nil
@@ -745,16 +770,18 @@ func hashEmailCode(email, code string) string {
 
 // 验证注册请求。emailVerificationRequired 为 true 时必须提供 6 位数字邮箱验证码；为 false 时不校验验证码（仍可忽略客户端误传）。
 func validateRegisterRequest(req *models.RegisterRequest, emailVerificationRequired bool) error {
-	if strings.TrimSpace(req.Username) == "" {
+	trimmedUsername := strings.TrimSpace(req.Username)
+	if trimmedUsername == "" {
 		return apperr.New(apperr.ErrBadRequest, "用户名不能为空")
 	}
-	if len(req.Username) < 3 || len(req.Username) > 32 {
-		return apperr.New(apperr.ErrBadRequest, "用户名长度应在 3-32 个字符之间")
+	if !usernameRegisterPattern.MatchString(trimmedUsername) {
+		return apperr.New(apperr.ErrBadRequest, "用户名须为 3-32 位，仅允许英文字母、数字与下划线（与数据库约束一致）")
 	}
-	if strings.TrimSpace(req.Email) == "" {
+	trimmedEmail := strings.TrimSpace(req.Email)
+	if trimmedEmail == "" {
 		return apperr.New(apperr.ErrBadRequest, "邮箱不能为空")
 	}
-	if !isValidEmail(req.Email) {
+	if !isValidEmail(trimmedEmail) {
 		return apperr.New(apperr.ErrBadRequest, "邮箱格式不正确")
 	}
 	if len(req.Password) < 6 {
@@ -825,8 +852,9 @@ func validateSendCodeRequest(req *models.SendRegisterCodeRequest) error {
 
 // 验证登录请求
 func validateLoginRequest(req *models.LoginRequest) error {
-	if strings.TrimSpace(req.Username) == "" {
-		return apperr.New(apperr.ErrBadRequest, "用户名不能为空")
+	identifier := resolveLoginIdentifier(req)
+	if identifier == "" {
+		return apperr.New(apperr.ErrBadRequest, "用户名或邮箱不能为空")
 	}
 	if strings.TrimSpace(req.Password) == "" {
 		return apperr.New(apperr.ErrBadRequest, "密码不能为空")

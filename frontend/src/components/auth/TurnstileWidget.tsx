@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react'
+import { useTheme } from '../../context/ThemeContext'
 
 type TurnstileWidgetProps = {
   siteKey: string
@@ -62,6 +63,7 @@ export default function TurnstileWidget({
   onExpire,
   onError,
 }: TurnstileWidgetProps) {
+  const { theme } = useTheme()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const widgetIdRef = useRef<string | null>(null)
   const onVerifyRef = useRef(onVerify)
@@ -92,7 +94,7 @@ export default function TurnstileWidget({
         'expired-callback': () => onExpireRef.current?.(),
         'error-callback': (errorCode?: string) =>
           onErrorRef.current?.(errorCode || 'turnstile_render_error'),
-        theme: 'light',
+        theme: theme === 'dark' ? 'dark' : 'light',
       })
     }
 
@@ -107,7 +109,7 @@ export default function TurnstileWidget({
         widgetIdRef.current = null
       }
     }
-  }, [siteKey, resetSignal])
+  }, [siteKey, resetSignal, theme])
 
   return <div ref={containerRef} />
 }

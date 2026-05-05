@@ -4,6 +4,31 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CTF_Exec</title>
+    <!-- Boot: theme class + favicon before bundle loads (kept in sync with src/utils/documentTheme.ts resolveInitialTheme / THEME_COLOR / favicon paths). -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme')
+          var dark = false
+          if (t === 'dark') dark = true
+          else if (t === 'light') dark = false
+          else dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+          document.documentElement.classList.toggle('dark', dark)
+          var link = document.createElement('link')
+          link.id = 'app-favicon'
+          link.rel = 'icon'
+          link.type = 'image/svg+xml'
+          link.href = dark ? '/favicon-dark.svg' : '/favicon-light.svg'
+          document.head.appendChild(link)
+          var m = document.createElement('meta')
+          m.setAttribute('name', 'theme-color')
+          m.setAttribute('content', dark ? '#111827' : '#f3f4f6')
+          document.head.appendChild(m)
+        } catch (e) {}
+      })()
+    </script>
+    <!-- Static fallback: follows OS appearance when favicon is requested without our JS paths -->
+    <link rel="alternate icon" href="/favicon.svg" type="image/svg+xml" />
   </head>
   <body>
     <div id="root"></div>

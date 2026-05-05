@@ -1,0 +1,40 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .stroke { stroke: #111; fill: none; }
+    .fill   { fill: #111; }
+    @media (prefers-color-scheme: dark) {
+      .stroke { stroke: #ffffff; }
+      .fill   { fill: #ffffff; }
+    }
+  </style>
+
+  <!-- 分裂框架 -->
+  <g class="stroke" stroke-width="3">
+    <path d="M8 20 V10 H20"/>
+    <path d="M44 10 H56 V22"/>
+    <path d="M8 44 V54 H20"/>
+    <path d="M44 54 H56 V42"/>
+  </g>
+
+  <!-- 中心符号 <- -->
+  <g class="fill">
+    <path d="M34 24 L26 32 L34 40 L31 43 L20 32 L31 21 Z"/>
+    <rect x="36" y="30.5" width="10" height="3" rx="1"/>
+  </g>
+
+  <!-- 半长度对角线 -->
+  <g class="stroke" stroke-width="2" stroke-dasharray="3 3">
+    <line x1="10" y1="12" x2="21" y2="22"/>
+    <line x1="54" y1="12" x2="43" y2="22"/>
+    <line x1="10" y1="52" x2="21" y2="42"/>
+    <line x1="54" y1="52" x2="43" y2="42"/>
+  </g>
+
+  <!-- 节点 -->
+  <g class="fill">
+    <circle cx="10" cy="12" r="2"/>
+    <circle cx="54" cy="12" r="2"/>
+    <circle cx="10" cy="52" r="2"/>
+    <circle cx="54" cy="52" r="2"/>
+  </g>
+</svg>

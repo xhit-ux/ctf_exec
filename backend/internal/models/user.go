@@ -61,10 +61,11 @@ type ResetPasswordWithCodeRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
-// LoginRequest 登陆请求
+// LoginRequest 登陆请求（支持用户名或邮箱）
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Identifier string `json:"identifier"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
 }
 
 // AuthResponse 认证响应

@@ -32,6 +32,9 @@ function resolveTurnstileErrorMessage(reason: string): string {
   return `人机验证失败(${reason})，请刷新页面后重试`
 }
 
+const usernamePattern = /^[A-Za-z0-9_-]+$/
+const usernamePatternHint = '用户名仅允许包含字母、数字、短线(-)和下划线(_)'
+
 export default function Register() {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -102,7 +105,9 @@ export default function Register() {
       setError('')
       setCaptchaErrorSend('')
 
-      if (!email) {
+      const trimmedEmail = email.trim()
+
+      if (!trimmedEmail) {
         setError('请先输入邮箱')
         return
       }
@@ -136,7 +141,7 @@ export default function Register() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              email,
+              email: trimmedEmail,
               ...(botProtectionEnabled ? { bot_token: botToken } : {}),
             }),
           },
@@ -175,6 +180,8 @@ export default function Register() {
     setError('')
     setCaptchaErrorSend('')
 
+    const trimmedEmail = email.trim()
+
     if (!hintsLoaded) {
       setError('注册策略加载中，请稍候')
       return
@@ -187,7 +194,7 @@ export default function Register() {
       setError('当前站点未启用邮箱验证码，请直接填写密码并提交注册')
       return
     }
-    if (!email) {
+    if (!trimmedEmail) {
       setError('请先输入邮箱')
       return
     }
@@ -218,6 +225,9 @@ export default function Register() {
     e.preventDefault()
     setError('')
 
+    const trimmedUsername = username.trim()
+    const trimmedEmail = email.trim()
+
     if (!hintsLoaded) {
       setError('注册策略加载中，请稍候')
       return
@@ -227,8 +237,13 @@ export default function Register() {
       return
     }
 
-    if (!username || !email || !password) {
+    if (!trimmedUsername || !trimmedEmail || !password) {
       setError('请填写用户名、邮箱和密码')
+      return
+    }
+
+    if (!usernamePattern.test(trimmedUsername)) {
+      setError(usernamePatternHint)
       return
     }
 
@@ -256,8 +271,8 @@ export default function Register() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            username,
-            email,
+            username: trimmedUsername,
+            email: trimmedEmail,
             password,
             email_code: emailVerificationRequired ? emailCode : '',
           }),
@@ -322,9 +337,10 @@ export default function Register() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             disabled={disabledForm}
-            placeholder="3-32 个字符"
+            placeholder="3-32 位：字母、数字、下划线"
             required
           />
+          <p className="text-xs text-slate-500">{usernamePatternHint}</p>
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-700">邮箱</label>
