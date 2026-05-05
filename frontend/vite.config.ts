@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: backendTarget,
           changeOrigin: true,
+          ws: true,
           configure: (proxy) => {
             proxy.on('proxyReq', (proxyReq, req) => {
               const remote = req.socket?.remoteAddress

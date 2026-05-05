@@ -81,7 +81,6 @@ export function formatRelativeTime(date?: string): string {
   const hours = totalHours
   const minutes = totalMinutes % 60
 
-  if (hours === 0 && minutes <= 15) return `在线`
   if (hours === 0) return `${minutes}分钟内`
   if (hours > 0) return `${hours}小时内`
   return `${hours}小时内`

@@ -62,12 +62,19 @@ func hashRefreshToken(token string) string {
 }
 
 // CreateRefreshSession 注册 refresh token 会话到持久化存储。
-func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, rawToken, clientIP, userAgent string) error {
+//
+// accessJTI 是与之配对的 access token jti，写入 refresh_tokens.jti 列，
+// 以便后续通过 access jti 即可定位并撤销对应的 refresh（单会话互踢等场景）。
+// claims 为 refresh token 自身的 claims（user_id、expires_at 等）。
+func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, rawToken, clientIP, userAgent, accessJTI string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("session store unavailable")
 	}
 	if claims == nil || claims.UserID == "" || claims.ID == "" || claims.ExpiresAt == nil || rawToken == "" {
 		return fmt.Errorf("invalid claims for refresh session creation")
+	}
+	if accessJTI == "" {
+		return fmt.Errorf("invalid access jti for refresh session creation")
 	}
 
 	expiresAt := claims.ExpiresAt.Time
@@ -85,7 +92,7 @@ func (s *Store) CreateRefreshSession(ctx context.Context, claims *utils.Claims, 
 		uuid.New().String(),
 		claims.UserID,
 		hashRefreshToken(rawToken),
-		claims.ID,
+		accessJTI,
 		expiresAt,
 		normalizeIP(clientIP),
 		truncateUserAgent(userAgent),
@@ -160,11 +167,13 @@ func (s *Store) RevokeSession(ctx context.Context, userID, jti string) error {
 }
 
 // IsRefreshSessionActive 校验 refresh 会话是否仍有效且归属于当前用户。
-func (s *Store) IsRefreshSessionActive(ctx context.Context, rawToken, userID, jti string) (bool, error) {
+//
+// token_hash 具有 UNIQUE 约束，仅凭 user_id + token_hash 即可唯一定位记录。
+func (s *Store) IsRefreshSessionActive(ctx context.Context, rawToken, userID string) (bool, error) {
 	if s == nil || s.db == nil {
 		return false, fmt.Errorf("session store unavailable")
 	}
-	if rawToken == "" || userID == "" || jti == "" {
+	if rawToken == "" || userID == "" {
 		return false, nil
 	}
 
@@ -172,9 +181,9 @@ func (s *Store) IsRefreshSessionActive(ctx context.Context, rawToken, userID, jt
 	query := `
 		SELECT COUNT(1)
 		FROM refresh_tokens
-		WHERE user_id = ? AND jti = ? AND token_hash = ? AND revoked = 0 AND expires_at > NOW()
+		WHERE user_id = ? AND token_hash = ? AND revoked = 0 AND expires_at > NOW()
 	`
-	if err := s.db.QueryRowContext(ctx, query, userID, jti, hashRefreshToken(rawToken)).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, query, userID, hashRefreshToken(rawToken)).Scan(&count); err != nil {
 		return false, fmt.Errorf("query refresh session failed: %w", err)
 	}
 
@@ -203,20 +212,22 @@ func (s *Store) RevokeRefreshSessionByJTI(ctx context.Context, userID, jti strin
 }
 
 // RevokeRefreshSession 撤销单个 refresh 会话。
-func (s *Store) RevokeRefreshSession(ctx context.Context, rawToken, userID, jti string) error {
+//
+// token_hash 具有 UNIQUE 约束，仅凭 user_id + token_hash 即可唯一定位记录。
+func (s *Store) RevokeRefreshSession(ctx context.Context, rawToken, userID string) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("session store unavailable")
 	}
-	if rawToken == "" || userID == "" || jti == "" {
+	if rawToken == "" || userID == "" {
 		return nil
 	}
 
 	query := `
 		UPDATE refresh_tokens
 		SET revoked = 1
-		WHERE user_id = ? AND jti = ? AND token_hash = ? AND revoked = 0
+		WHERE user_id = ? AND token_hash = ? AND revoked = 0
 	`
-	if _, err := s.db.ExecContext(ctx, query, userID, jti, hashRefreshToken(rawToken)); err != nil {
+	if _, err := s.db.ExecContext(ctx, query, userID, hashRefreshToken(rawToken)); err != nil {
 		return fmt.Errorf("revoke refresh session failed: %w", err)
 	}
 
