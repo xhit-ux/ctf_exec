@@ -181,6 +181,27 @@ func (s *Store) IsRefreshSessionActive(ctx context.Context, rawToken, userID, jt
 	return count > 0, nil
 }
 
+// RevokeRefreshSessionByJTI 按 jti 撤销 refresh 会话（不需要原始 token），
+// 用于 single_session 互踢、批量撤销等无明文场景。
+func (s *Store) RevokeRefreshSessionByJTI(ctx context.Context, userID, jti string) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("session store unavailable")
+	}
+	if userID == "" || jti == "" {
+		return nil
+	}
+
+	query := `
+		UPDATE refresh_tokens
+		SET revoked = 1
+		WHERE user_id = ? AND jti = ? AND revoked = 0
+	`
+	if _, err := s.db.ExecContext(ctx, query, userID, jti); err != nil {
+		return fmt.Errorf("revoke refresh session by jti failed: %w", err)
+	}
+	return nil
+}
+
 // RevokeRefreshSession 撤销单个 refresh 会话。
 func (s *Store) RevokeRefreshSession(ctx context.Context, rawToken, userID, jti string) error {
 	if s == nil || s.db == nil {

@@ -9,6 +9,7 @@ import AuthShell from '../components/auth/AuthShell'
 export default function Login() {
     const [identifier, setIdentifier] = useState('')
     const [password, setPassword] = useState('')
+    const [rememberMe, setRememberMe] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const navigate = useNavigate()
@@ -32,7 +33,7 @@ export default function Login() {
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ identifier: trimmedIdentifier, password }),
+                body: JSON.stringify({ identifier: trimmedIdentifier, password, remember_me: rememberMe }),
             }, {
                 disableAuth: true,
                 disableRetry401: true,
@@ -102,6 +103,16 @@ export default function Login() {
                         placeholder="请输入密码"
                     />
                 </div>
+                <label className="flex items-center gap-2 text-sm text-slate-600 select-none">
+                    <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-500"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        disabled={loading}
+                    />
+                    <span>记住我（30 天内自动保持登录）</span>
+                </label>
                 <button
                     type="submit"
                     className="btn-primary w-full !py-3"

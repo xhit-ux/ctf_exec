@@ -17,6 +17,8 @@ type Config struct {
 	Redis       RedisConfig
 	Server      ServerConfig
 	JWT         JWTConfig
+	Session     SessionConfig
+	WS          WSConfig
 	Init        InitConfig
 	AuthCookie  AuthCookieConfig
 	Upload      UploadConfig
@@ -78,11 +80,37 @@ type ServerConfig struct {
 
 // JWTConfig JWT配置
 type JWTConfig struct {
-	Secret            string
-	AccessExpiration  time.Duration
+	Secret string
+	// AccessExpiration access token 有效期，所有角色统一短 TTL。
+	AccessExpiration time.Duration
+	// RefreshExpiration 默认 refresh token 有效期：未勾选 remember_me 时使用。
 	RefreshExpiration time.Duration
+	// RememberMeRefreshExpiration 勾选 remember_me 时使用的长 refresh TTL（仅 user 角色）。
+	RememberMeRefreshExpiration time.Duration
 	// Expiration 保留兼容字段，等同于 AccessExpiration。
 	Expiration time.Duration
+}
+
+// SessionConfig 会话策略配置：admin 角色固定 single_session，user 可配置 multi_session 上限。
+type SessionConfig struct {
+	// AdminSessionMode 始终为 "single_session"（代码层硬编码，仅作记录用途）。
+	AdminSessionMode string
+	// UserSessionMode 普通用户会话模式："multi_session"。
+	UserSessionMode string
+	// UserMaxActiveSessions 普通用户最大并发活跃会话数（multi_session 上限）。
+	UserMaxActiveSessions int
+}
+
+// WSConfig WebSocket 心跳与在线状态配置。
+type WSConfig struct {
+	// Enabled 是否启用 WS 心跳上报。
+	Enabled bool
+	// ClientHeartbeatInterval 服务端发送 ping 的间隔。
+	ClientHeartbeatInterval time.Duration
+	// PresenceTimeout 在线状态 TTL，应 >= ClientHeartbeatInterval * 2。
+	PresenceTimeout time.Duration
+	// MaxConnectionsPerUser 单用户最大并发 WS 连接数。
+	MaxConnectionsPerUser int
 }
 
 // UploadConfig 上传配置
@@ -207,6 +235,20 @@ func LoadConfig() (*Config, error) {
 			return
 		}
 		cfg.JWT = *jwtConfig
+
+		sessionConfig, err := loadSessionConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载会话策略配置失败: %w", err)
+			return
+		}
+		cfg.Session = *sessionConfig
+
+		wsConfig, err := loadWSConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载 WebSocket 配置失败: %w", err)
+			return
+		}
+		cfg.WS = *wsConfig
 
 		initConfig, err := loadInitConfig()
 		if err != nil {
@@ -376,21 +418,83 @@ func parseCSV(value string) []string {
 	return result
 }
 
-// loadJWTConfig 加载JWT配置
+// loadJWTConfig 加载JWT配置。
+//
+// 兼容性：保留 JWT_REFRESH_EXPIRATION_HOURS 作为「未勾选记住我」的默认 refresh TTL；
+// AUTH_NO_REMEMBER_ME_REFRESH_TTL_MINUTES 优先级更高，便于按分钟精细控制；
+// AUTH_REMEMBER_ME_REFRESH_TTL_DAYS 控制「勾选记住我」的长 refresh TTL（仅 user 角色生效）。
 func loadJWTConfig() (*JWTConfig, error) {
 	secret := getEnv("JWT_SECRET", DefaultJWTSecret)
 
-	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", 15) // 15分钟
-	refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168)  // 7天
+	accessMinutes := getEnvInt("JWT_ACCESS_EXPIRATION_MINUTES", 15)
+
+	noRememberMeMinutes := getEnvInt("AUTH_NO_REMEMBER_ME_REFRESH_TTL_MINUTES", 0)
+	var refreshExpiration time.Duration
+	if noRememberMeMinutes > 0 {
+		refreshExpiration = time.Duration(noRememberMeMinutes) * time.Minute
+	} else {
+		refreshHours := getEnvInt("JWT_REFRESH_EXPIRATION_HOURS", 168)
+		refreshExpiration = time.Duration(refreshHours) * time.Hour
+	}
+
+	rememberDays := getEnvInt("AUTH_REMEMBER_ME_REFRESH_TTL_DAYS", 30)
+	rememberMeRefreshExpiration := time.Duration(rememberDays) * 24 * time.Hour
+	if rememberMeRefreshExpiration < refreshExpiration {
+		// 记住我的 TTL 必须 >= 默认 TTL，否则配置无意义。
+		rememberMeRefreshExpiration = refreshExpiration
+	}
 
 	accessExpiration := time.Duration(accessMinutes) * time.Minute
-	refreshExpiration := time.Duration(refreshHours) * time.Hour
 
 	return &JWTConfig{
-		Secret:            secret,
-		AccessExpiration:  accessExpiration,
-		RefreshExpiration: refreshExpiration,
-		Expiration:        accessExpiration,
+		Secret:                      secret,
+		AccessExpiration:            accessExpiration,
+		RefreshExpiration:           refreshExpiration,
+		RememberMeRefreshExpiration: rememberMeRefreshExpiration,
+		Expiration:                  accessExpiration,
+	}, nil
+}
+
+// loadSessionConfig 加载会话策略配置。
+func loadSessionConfig() (*SessionConfig, error) {
+	userMode := strings.ToLower(strings.TrimSpace(getEnv("AUTH_USER_SESSION_MODE", "multi_session")))
+	if userMode != "multi_session" && userMode != "single_session" {
+		userMode = "multi_session"
+	}
+	maxSessions := getEnvInt("AUTH_USER_MAX_ACTIVE_SESSIONS", 5)
+	if maxSessions <= 0 {
+		maxSessions = 5
+	}
+
+	return &SessionConfig{
+		AdminSessionMode:      "single_session",
+		UserSessionMode:       userMode,
+		UserMaxActiveSessions: maxSessions,
+	}, nil
+}
+
+// loadWSConfig 加载 WebSocket 心跳配置。
+func loadWSConfig() (*WSConfig, error) {
+	enabled := getEnvBool("WS_ENABLED", true)
+	heartbeatSec := getEnvInt("WS_CLIENT_HEARTBEAT_INTERVAL_SEC", 30)
+	if heartbeatSec <= 0 {
+		heartbeatSec = 30
+	}
+	presenceSec := getEnvInt("WS_PRESENCE_TIMEOUT_SEC", 120)
+	if presenceSec < heartbeatSec*2 {
+		// 在线判定超时必须 >= 心跳间隔 * 2，避免抖动误判。
+		presenceSec = heartbeatSec * 2
+	}
+	maxConns := getEnvInt("WS_MAX_CONNECTIONS_PER_USER", 3)
+	if maxConns <= 0 {
+		maxConns = 3
+	}
+
+	return &WSConfig{
+		Enabled:                 enabled,
+		ClientHeartbeatInterval: time.Duration(heartbeatSec) * time.Second,
+		PresenceTimeout:         time.Duration(presenceSec) * time.Second,
+		MaxConnectionsPerUser:   maxConns,
 	}, nil
 }
 

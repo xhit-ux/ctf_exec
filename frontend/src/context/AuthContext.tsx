@@ -3,6 +3,7 @@ import { apiUrl } from '../utils/api'
 import { AUTH_REFRESH_FAILED_EVENT, apiFetch, clearAuthTokens, refreshAccessTokenWithLock, setAuthTokens, shouldPreRefreshBeforeBootstrap } from '../utils/authClient'
 import { readSafeErrorMessage } from '../utils/error'
 import { publishGlobalHttpError } from '../utils/globalErrorBus'
+import { wsHeartbeat } from '../utils/wsHeartbeat'
 
 export interface User {
   id: string
@@ -52,6 +53,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const clearAuthState = () => {
     setUser(null)
     clearAuthTokens()
+    wsHeartbeat.disconnect()
   }
 
   // 验证 token 有效性并刷新用户信息
@@ -90,6 +92,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = (newUser: User) => {
     setUser(newUser)
+    // 登录成功后立即建立 WS 心跳，作为后续 presence 与互踢检测的载体。
+    wsHeartbeat.connect()
   }
 
   const logout = async () => {
@@ -125,6 +129,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const userData = await response.json()
         // /api/auth/me 直接返回用户对象，不是嵌套在 data.user 中
         setUser(userData)
+        // 刷新页面后用户依旧在线：开启 WS 心跳以恢复 presence 上报。
+        wsHeartbeat.connect()
       } else {
         if (response.status === 401) {
           // 主动清理 auth 状态，避免依赖事件派发时序。

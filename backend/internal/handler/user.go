@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
+	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/authz"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/middleware"
@@ -75,9 +76,10 @@ func viewerUserID(c *gin.Context) string {
 }
 
 type UserHandler struct {
-	userRepo    *repository.UserRepository
-	authService service.AuthService
-	redisClient *redis.Client
+	userRepo     *repository.UserRepository
+	authService  service.AuthService
+	redisClient  *redis.Client
+	sessionStore *authsession.Store
 }
 
 // ListAdminUsersGin root 查看用户列表。
@@ -223,11 +225,12 @@ func (h *UserHandler) PatchUserRoleGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "角色更新成功"})
 }
 
-func NewUserHandler(userRepo *repository.UserRepository, authService service.AuthService, redisClient *redis.Client) *UserHandler {
+func NewUserHandler(userRepo *repository.UserRepository, authService service.AuthService, redisClient *redis.Client, sessionStore *authsession.Store) *UserHandler {
 	return &UserHandler{
-		userRepo:    userRepo,
-		authService: authService,
-		redisClient: redisClient,
+		userRepo:     userRepo,
+		authService:  authService,
+		redisClient:  redisClient,
+		sessionStore: sessionStore,
 	}
 }
 
@@ -400,8 +403,16 @@ func (h *UserHandler) GetProfileGin(c *gin.Context) {
 		return
 	}
 
+	// 在线状态优先来自 WS 心跳产生的 Redis presence；
+	// 回退路径：没有 sessionStore 或查询失败时，沿用旧的「最近 15min 内有活动」启发判断。
 	isOnline := false
-	if lastActiveAt != nil {
+	if h.sessionStore != nil {
+		if online, err := h.sessionStore.IsUserOnline(c.Request.Context(), user.ID); err == nil {
+			isOnline = online
+		} else if lastActiveAt != nil {
+			isOnline = time.Since(*lastActiveAt) < 15*time.Minute
+		}
+	} else if lastActiveAt != nil {
 		isOnline = time.Since(*lastActiveAt) < 15*time.Minute
 	}
 

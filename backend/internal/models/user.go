@@ -28,11 +28,12 @@ type User struct {
 
 // RegisterRequest 注册请求
 type RegisterRequest struct {
-	Username  string `json:"username"`
-	Email     string `json:"email"`
-	Password  string `json:"password"`
-	EmailCode string `json:"email_code"`
-	BotToken  string `json:"bot_token"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	EmailCode  string `json:"email_code"`
+	BotToken   string `json:"bot_token"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 // SendRegisterCodeRequest 发送注册邮箱验证码请求
@@ -66,6 +67,7 @@ type LoginRequest struct {
 	Identifier string `json:"identifier"`
 	Username   string `json:"username"`
 	Password   string `json:"password"`
+	RememberMe bool   `json:"remember_me"`
 }
 
 // AuthResponse 认证响应
@@ -76,6 +78,10 @@ type AuthResponse struct {
 	RefreshExpiresInSecs int64  `json:"refresh_expires_in_secs"`
 	TokenType            string `json:"token_type"`
 	User                 *User  `json:"user"`
+	// SessionID 当前会话的 access token jti，前端用于 WS 鉴权或登出。
+	SessionID string `json:"sid,omitempty"`
+	// RememberMe 实际生效的 remember_me 状态（admin 角色会被强制为 false）。
+	RememberMe bool `json:"remember_me"`
 }
 
 // RefreshTokenRequest 刷新 access token 请求。

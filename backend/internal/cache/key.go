@@ -57,6 +57,18 @@ const (
 
 	// 用户会话索引: user_id -> set(jti)
 	KeyJWTUserSessionSetTemplate = "auth:jwt:user_sessions:%s"
+
+	// 单会话指针: user_id -> 当前有效 access jti（仅 admin 角色使用，控制互踢）。
+	KeyUserCurrentSessionTemplate = "auth:user_current:%s"
+
+	// 在线状态: user_id -> "1"，TTL = WS_PRESENCE_TIMEOUT_SEC。
+	KeyUserOnlineTemplate = "auth:online:%s"
+
+	// WS 连接索引: user_id -> set(connection_id)。
+	KeyWSUserConnectionsTemplate = "auth:ws:user_conns:%s"
+
+	// WS 连接元数据: connection_id -> hash{user_id, last_heartbeat_ms, connected_at_ms}。
+	KeyWSConnectionMetaTemplate = "auth:ws:conn:%s"
 )
 
 // GetContestUserLeaderboardKey 获取赛事用户排行榜键
@@ -147,4 +159,24 @@ func GetJWTSessionByJTIKey(jti string) string {
 // GetJWTUserSessionSetKey 获取用户会话集合键。
 func GetJWTUserSessionSetKey(userID string) string {
 	return fmt.Sprintf(KeyJWTUserSessionSetTemplate, userID)
+}
+
+// GetUserCurrentSessionKey 获取用户当前会话指针键（admin single_session 使用）。
+func GetUserCurrentSessionKey(userID string) string {
+	return fmt.Sprintf(KeyUserCurrentSessionTemplate, userID)
+}
+
+// GetUserOnlineKey 获取用户在线状态键。
+func GetUserOnlineKey(userID string) string {
+	return fmt.Sprintf(KeyUserOnlineTemplate, userID)
+}
+
+// GetWSUserConnectionsKey 获取用户 WS 连接索引键。
+func GetWSUserConnectionsKey(userID string) string {
+	return fmt.Sprintf(KeyWSUserConnectionsTemplate, userID)
+}
+
+// GetWSConnectionMetaKey 获取 WS 连接元数据键。
+func GetWSConnectionMetaKey(connID string) string {
+	return fmt.Sprintf(KeyWSConnectionMetaTemplate, connID)
 }

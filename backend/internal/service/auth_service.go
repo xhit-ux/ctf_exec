@@ -51,6 +51,7 @@ type AuthServiceImpl struct {
 	redisClient    *redis.Client
 	sessionStore   *authsession.Store
 	jwtCfg         config.JWTConfig
+	sessionCfg     config.SessionConfig
 	emailCfg       config.EmailConfig
 	botCfg         config.BotProtectionConfig
 	httpClient     *http.Client
@@ -64,6 +65,7 @@ func NewAuthService(userRepo *repository.UserRepository, siteConfigRepo *reposit
 		redisClient:    redisClient,
 		sessionStore:   sessionStore,
 		jwtCfg:         cfg.JWT,
+		sessionCfg:     cfg.Session,
 		emailCfg:       cfg.Email,
 		botCfg:         cfg.Bot,
 		httpClient:     &http.Client{Timeout: 8 * time.Second},
@@ -83,13 +85,48 @@ func (s *AuthServiceImpl) GetRegistrationHints() (*models.RegistrationHints, err
 	}, nil
 }
 
-func (s *AuthServiceImpl) issueTokenPair(user *models.User, clientIP, userAgent string) (*models.AuthResponse, error) {
+// isSingleSessionRole 判断角色是否走单会话互踢策略。admin 系角色（root/site_admin）固定单会话。
+func (s *AuthServiceImpl) isSingleSessionRole(role string) bool {
+	normalized := models.NormalizeRole(role)
+	return normalized == models.RoleRoot || normalized == models.RoleSiteAdmin
+}
+
+// resolveRememberMe 根据角色规范化 remember_me：admin 强制为 false，user 透传请求值。
+func (s *AuthServiceImpl) resolveRememberMe(role string, requested bool) bool {
+	if s.isSingleSessionRole(role) {
+		return false
+	}
+	return requested
+}
+
+// resolveRefreshTTL 根据角色和 remember_me 决定 refresh token TTL。
+func (s *AuthServiceImpl) resolveRefreshTTL(role string, rememberMe bool) time.Duration {
+	if !rememberMe {
+		return s.jwtCfg.RefreshExpiration
+	}
+	if s.isSingleSessionRole(role) {
+		return s.jwtCfg.RefreshExpiration
+	}
+	return s.jwtCfg.RememberMeRefreshExpiration
+}
+
+// issueTokenPair 签发 access + refresh token 并落地会话状态，按角色应用单/多会话策略。
+//
+// 策略矩阵：
+//   - admin (root/site_admin): single_session，原子置换 user_current 指针并撤销旧 access；
+//     remember_me 强制 false，refresh TTL 始终为短 TTL。
+//   - user: multi_session，活跃会话数超过 AUTH_USER_MAX_ACTIVE_SESSIONS 时驱逐最旧会话；
+//     remember_me 透传，决定 refresh TTL。
+func (s *AuthServiceImpl) issueTokenPair(user *models.User, clientIP, userAgent string, requestedRememberMe bool) (*models.AuthResponse, error) {
+	rememberMe := s.resolveRememberMe(user.Role, requestedRememberMe)
+	refreshTTL := s.resolveRefreshTTL(user.Role, rememberMe)
+
 	accessToken, accessClaims, err := utils.GenerateAccessToken(user.ID, user.Username, user.Role)
 	if err != nil {
 		return nil, wrapServiceError("生成 access token 失败", err)
 	}
 
-	refreshToken, refreshClaims, err := utils.GenerateRefreshToken(user.ID, user.Username, user.Role)
+	refreshToken, refreshClaims, err := utils.GenerateRefreshTokenWithTTL(user.ID, user.Username, user.Role, refreshTTL, rememberMe)
 	if err != nil {
 		return nil, wrapServiceError("生成 refresh token 失败", err)
 	}
@@ -104,14 +141,62 @@ func (s *AuthServiceImpl) issueTokenPair(user *models.User, clientIP, userAgent 
 		return nil, wrapServiceError("创建 refresh 会话失败", err)
 	}
 
+	if s.isSingleSessionRole(user.Role) {
+		// 原子地把指针指向新 jti，并撤销旧 access；refresh 同步标记 revoked=1。
+		oldJTI, err := s.sessionStore.SetUserCurrentSession(ctx, user.ID, accessClaims.ID, s.jwtCfg.AccessExpiration)
+		if err != nil {
+			return nil, wrapServiceError("设置当前会话指针失败", err)
+		}
+		if oldJTI != "" && oldJTI != accessClaims.ID {
+			_ = s.sessionStore.RevokeSession(ctx, user.ID, oldJTI)
+			_ = s.sessionStore.RevokeRefreshSessionByJTI(ctx, user.ID, oldJTI)
+		}
+	} else {
+		// multi_session：超限时驱逐最旧会话。
+		if err := s.enforceSessionLimit(ctx, user.ID); err != nil {
+			return nil, err
+		}
+	}
+
 	return &models.AuthResponse{
 		Token:                accessToken,
 		RefreshToken:         refreshToken,
 		AccessExpiresInSecs:  int64(s.jwtCfg.AccessExpiration / time.Second),
-		RefreshExpiresInSecs: int64(s.jwtCfg.RefreshExpiration / time.Second),
+		RefreshExpiresInSecs: int64(refreshTTL / time.Second),
 		TokenType:            "Bearer",
 		User:                 user,
+		SessionID:            accessClaims.ID,
+		RememberMe:           rememberMe,
 	}, nil
+}
+
+// enforceSessionLimit 在多会话场景下强制活跃会话数不超过上限：
+// 上限-1 之内放行，达到上限时驱逐最旧会话以腾出位置。
+//
+// 调用时机：发出新会话之前，确保新会话签发后总数 == 上限。
+func (s *AuthServiceImpl) enforceSessionLimit(ctx context.Context, userID string) error {
+	limit := s.sessionCfg.UserMaxActiveSessions
+	if limit <= 0 {
+		return nil
+	}
+
+	active, err := s.sessionStore.CountActiveSessions(ctx, userID)
+	if err != nil {
+		return wrapServiceError("查询用户活跃会话数失败", err)
+	}
+
+	// active 此时已包含刚刚通过 CreateSession 写入的新会话。
+	for active > limit {
+		victim, err := s.sessionStore.EvictOldestSession(ctx, userID)
+		if err != nil {
+			return wrapServiceError("驱逐过期会话失败", err)
+		}
+		if victim == "" {
+			break
+		}
+		active--
+	}
+	return nil
 }
 
 // SendPasswordResetCode 发送密码重置验证码（邮箱不存在时静默成功，避免枚举）。
@@ -348,7 +433,12 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 	}
 	_ = s.userRepo.LogActivity(user.ID, "login", clientIP)
 
-	return s.issueTokenPair(user, clientIP, userAgent)
+	// 注册场景默认开启「记住我」（user 角色），方便新用户跨会话保持登录。
+	rememberMe := req.RememberMe
+	if !rememberMe {
+		rememberMe = true
+	}
+	return s.issueTokenPair(user, clientIP, userAgent, rememberMe)
 }
 
 // Login 处理用户登录
@@ -383,7 +473,7 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP, userAgent st
 	}
 	_ = s.userRepo.LogLogin(user.ID, clientIP)
 
-	return s.issueTokenPair(user, clientIP, userAgent)
+	return s.issueTokenPair(user, clientIP, userAgent, req.RememberMe)
 }
 
 // Refresh 使用 refresh token 轮换签发新令牌对。
@@ -420,7 +510,8 @@ func (s *AuthServiceImpl) Refresh(refreshToken, clientIP, userAgent string) (*mo
 
 	_ = s.userRepo.LogActivity(user.ID, "online", clientIP)
 
-	return s.issueTokenPair(user, clientIP, userAgent)
+	// 沿用旧 refresh claims 中记录的 remember_me，避免依赖 TTL 长度推断。
+	return s.issueTokenPair(user, clientIP, userAgent, refreshClaims.RememberMe)
 }
 
 // Logout 登出当前会话。
@@ -442,6 +533,13 @@ func (s *AuthServiceImpl) Logout(userID, accessJTI, refreshToken string) error {
 			if err := s.sessionStore.RevokeRefreshSession(ctx, refreshToken, userID, refreshClaims.ID); err != nil {
 				return wrapServiceError("撤销 refresh 会话失败", err)
 			}
+		}
+	}
+
+	// 单会话角色：登出当前 jti 时若指针仍指向它则一并清除，避免 user_current 残留。
+	if user, err := s.userRepo.GetUserByID(userID); err == nil && s.isSingleSessionRole(user.Role) {
+		if isCurrent, _ := s.sessionStore.IsUserCurrentSession(ctx, userID, accessJTI); isCurrent {
+			_ = s.sessionStore.ClearUserCurrentSession(ctx, userID)
 		}
 	}
 

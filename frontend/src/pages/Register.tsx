@@ -41,6 +41,7 @@ export default function Register() {
   const [emailCode, setEmailCode] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(true)
   const [loading, setLoading] = useState(false)
   const [sendingCode, setSendingCode] = useState(false)
   const [codeCooldown, setCodeCooldown] = useState(0)
@@ -275,6 +276,7 @@ export default function Register() {
             email: trimmedEmail,
             password,
             email_code: emailVerificationRequired ? emailCode : '',
+            remember_me: rememberMe,
           }),
         },
         { disableAuth: true, disableRetry401: true }
@@ -449,6 +451,16 @@ export default function Register() {
             required
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-slate-600 select-none">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-500"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            disabled={disabledForm}
+          />
+          <span>记住我（30 天内自动保持登录）</span>
+        </label>
         <button type="submit" className="btn-primary w-full !py-3" disabled={disabledForm || loading}>
           {loading ? '注册中...' : '注册'}
         </button>

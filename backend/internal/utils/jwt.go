@@ -27,6 +27,9 @@ type Claims struct {
 	Username string `json:"username"`
 	Role     string `json:"role"`
 	Type     string `json:"type"`
+	// RememberMe 仅在 refresh token 上有意义，表示该 refresh 是否走「记住我」的长 TTL。
+	// 用于 refresh 轮换时保持 remember_me 状态，无需依赖 TTL 长度推断。
+	RememberMe bool `json:"remember,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -48,7 +51,7 @@ func getJWTConfig() (*config.JWTConfig, error) {
 	return &cfgCopy, nil
 }
 
-func generateToken(userID, username, role, tokenType string, expiration time.Duration) (string, *Claims, error) {
+func generateToken(userID, username, role, tokenType string, expiration time.Duration, rememberMe bool) (string, *Claims, error) {
 	if tokenType != TokenTypeAccess && tokenType != TokenTypeRefresh {
 		return "", nil, fmt.Errorf("invalid token type")
 	}
@@ -60,10 +63,11 @@ func generateToken(userID, username, role, tokenType string, expiration time.Dur
 	now := time.Now()
 	expirationTime := now.Add(expiration)
 	claims := &Claims{
-		UserID:   userID,
-		Username: username,
-		Role:     role,
-		Type:     tokenType,
+		UserID:     userID,
+		Username:   username,
+		Role:       role,
+		Type:       tokenType,
+		RememberMe: rememberMe,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ID:        uuid.NewString(),
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
@@ -86,16 +90,24 @@ func GenerateAccessToken(userID, username, role string) (string, *Claims, error)
 	if err != nil {
 		return "", nil, err
 	}
-	return generateToken(userID, username, role, TokenTypeAccess, cfg.AccessExpiration)
+	return generateToken(userID, username, role, TokenTypeAccess, cfg.AccessExpiration, false)
 }
 
-// GenerateRefreshToken 生成长时 refresh token。
+// GenerateRefreshToken 生成默认 TTL 的 refresh token（不勾选 remember_me）。
 func GenerateRefreshToken(userID, username, role string) (string, *Claims, error) {
 	cfg, err := getJWTConfig()
 	if err != nil {
 		return "", nil, err
 	}
-	return generateToken(userID, username, role, TokenTypeRefresh, cfg.RefreshExpiration)
+	return generateToken(userID, username, role, TokenTypeRefresh, cfg.RefreshExpiration, false)
+}
+
+// GenerateRefreshTokenWithTTL 以指定 TTL 生成 refresh token；rememberMe 会被写入 claims 以便轮换时保持。
+func GenerateRefreshTokenWithTTL(userID, username, role string, ttl time.Duration, rememberMe bool) (string, *Claims, error) {
+	if ttl <= 0 {
+		return "", nil, fmt.Errorf("invalid refresh token ttl")
+	}
+	return generateToken(userID, username, role, TokenTypeRefresh, ttl, rememberMe)
 }
 
 // GenerateToken 兼容旧调用，等同于 GenerateAccessToken。

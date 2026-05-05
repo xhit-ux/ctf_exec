@@ -18,6 +18,7 @@ import (
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
+	wsmod "github.com/ctf_exec/backend/internal/ws"
 	"github.com/gin-gonic/gin"
 )
 
@@ -102,13 +103,14 @@ func main() {
 
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService, cfg.AuthCookie)
-	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client)
+	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client, sessionStore)
 	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
 	contestHandler := handler.NewContestHandler(contestRepo, userRepo, contestAdminRepo, contestService)
 	siteConfigHandler := handler.NewSiteConfigHandler(siteConfigRepo)
+	wsHandler := wsmod.NewHandler(cfg.WS, sessionStore, cfg.Server.AllowedOrigins)
 
 	// 创建 Gin 引擎：统一日志 + JSON panic 恢复。
 	r := gin.New()
@@ -310,6 +312,13 @@ func main() {
 		{
 			teamsPublic.GET("/leaderboard", teamHandler.GetTeamLeaderboardGin)
 			teamsPublic.GET("/public", middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore), teamHandler.GetTeamPublicGin)
+		}
+
+		// WebSocket 心跳路由：仅在 WS_ENABLED=true 时暴露。
+		if cfg.WS.Enabled {
+			ws := api.Group("/ws")
+			ws.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
+			ws.GET("/connect", wsHandler.HandleConnect)
 		}
 	}
 

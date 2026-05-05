@@ -88,6 +88,32 @@ func ensureClaimsSessionValid(claims *utils.Claims, sessionStore *authsession.St
 	return nil
 }
 
+// ensureClaimsIsCurrentSession 仅对 single_session 角色（admin 系）生效：
+// 若 auth:user_current:<uid> 指针不再指向当前 jti，说明已被新登录互踢。
+//
+// 注意：当指针不存在（key 过期 / 旧链路）时视为通过，避免中间件升级造成存量 token 全 401。
+func ensureClaimsIsCurrentSession(claims *utils.Claims, sessionStore *authsession.Store) error {
+	if sessionStore == nil || claims == nil {
+		return nil
+	}
+
+	normalized := models.NormalizeRole(claims.Role)
+	if normalized != models.RoleRoot && normalized != models.RoleSiteAdmin {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	isCurrent, err := sessionStore.IsUserCurrentSession(ctx, claims.UserID, claims.ID)
+	if err != nil {
+		return err
+	}
+	if !isCurrent {
+		return fmt.Errorf("session superseded by newer login")
+	}
+	return nil
+}
+
 // GinAuthMiddleware Gin 认证中间件。
 func GinAuthMiddleware() gin.HandlerFunc {
 	return GinAuthMiddlewareWithRepo(nil, nil)
@@ -118,6 +144,12 @@ func GinAuthMiddlewareWithRepo(userRepo *repository.UserRepository, sessionStore
 
 		if err := ensureClaimsSessionValid(claims, sessionStore); err != nil {
 			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "登录已失效，请重新登录"), http.StatusUnauthorized)
+			c.Abort()
+			return
+		}
+
+		if err := ensureClaimsIsCurrentSession(claims, sessionStore); err != nil {
+			apierror.Write(c, apperr.New(apperr.ErrUnauthorized, "你的账号已在其他设备登录，请重新登录"), http.StatusUnauthorized)
 			c.Abort()
 			return
 		}
@@ -154,6 +186,12 @@ func GinOptionalAuthMiddlewareWithRepo(userRepo *repository.UserRepository, sess
 		}
 
 		if err := ensureClaimsSessionValid(claims, sessionStore); err != nil {
+			c.Next()
+			return
+		}
+
+		// 可选认证：单会话被互踢时降级为匿名而不是 401。
+		if err := ensureClaimsIsCurrentSession(claims, sessionStore); err != nil {
 			c.Next()
 			return
 		}
