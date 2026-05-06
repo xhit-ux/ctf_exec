@@ -97,20 +97,40 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }
 
   const logout = async () => {
-    // 先清空本地状态，防止用户在等待期间继续操作
-    clearAuthState()
-
+    // 先调用服务端撤销会话，再清空本地状态，避免「本地已登出但服务端会话仍然存活」造成的
+    // 攻击面：单会话角色（admin）此时仍可被旧 access/refresh token 复用。
+    //
+    // 失败兜底：服务端不可达时仍然要继续清本地并跳转登录页（用户感知到「已登出」），
+    // 同时往全局错误总线发一条提示，避免静默吞错。
+    let serverLogoutFailed = false
     try {
-      await apiFetch(apiUrl('/api/auth/logout'), {  // ← await，等待请求完成
+      const response = await apiFetch(apiUrl('/api/auth/logout'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       }, {
-        disableAuth: true,
+        // logout 自身不重试 401（服务端 401 时同样意味着本地状态可清）
         disableRetry401: true,
+        suppressRefreshFailedEvent: true,
+        // 401 / 网络错误不弹全局错误，由本函数统一处理
+        disableGlobalError: true,
       })
+      if (!response.ok && response.status !== 401) {
+        serverLogoutFailed = true
+      }
     } catch {
+      serverLogoutFailed = true
     }
 
+    if (serverLogoutFailed) {
+      publishGlobalHttpError({
+        status: 0,
+        message: '登出请求未完成，本地登录状态已清除；如担心账户安全请尽快修改密码',
+        url: apiUrl('/api/auth/logout'),
+        method: 'POST',
+      })
+    }
+
+    clearAuthState()
     window.location.replace('/login')
   }
 

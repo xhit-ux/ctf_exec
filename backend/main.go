@@ -134,6 +134,10 @@ func main() {
 	// 添加 CORS 中间件（限制为显式允许的前端来源）
 	middleware.SetAccessTokenCookieName(cfg.AuthCookie.AccessTokenName)
 	r.Use(middleware.GinCORSMiddleware(cfg.Server.AllowedOrigins))
+	// CSRF 纵深防护：对状态变更请求校验 Origin / Referer
+	if len(cfg.Server.AllowedOrigins) > 0 {
+		r.Use(middleware.GinCSRFMiddleware(cfg.Server.AllowedOrigins))
+	}
 
 	// 健康检查（包含 Redis 与 MySQL 健康检查）
 	r.GET("/health", func(c *gin.Context) {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
+import { PASSWORD_POLICY_HINT, validatePasswordStrength } from '../utils/passwordPolicy'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 import AuthShell from '../components/auth/AuthShell'
 
@@ -218,8 +219,9 @@ export default function ForgotPassword() {
       setError('两次输入的密码不一致')
       return
     }
-    if (newPassword.length < 6) {
-      setError('密码长度至少 6 个字符')
+    const passwordError = validatePasswordStrength(newPassword)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
@@ -377,9 +379,10 @@ export default function ForgotPassword() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               disabled={loading}
-              placeholder="至少 6 个字符"
+              placeholder={PASSWORD_POLICY_HINT}
               required
             />
+            <p className="text-xs text-slate-500">{PASSWORD_POLICY_HINT}</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700">确认新密码</label>

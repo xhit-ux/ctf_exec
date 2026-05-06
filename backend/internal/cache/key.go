@@ -52,6 +52,24 @@ const (
 	// 机器人验证限流
 	KeyBotVerifyRateLimitTemplate = "auth:bot_verify:ip:%s"
 
+	// 登录失败计数（按账户）：累计窗口内的密码错误次数。
+	KeyLoginFailAccountTemplate = "auth:login:fail:user:%s"
+
+	// 登录失败计数（按 IP）：累计窗口内来自该 IP 的失败次数（含未知账户）。
+	KeyLoginFailIPTemplate = "auth:login:fail:ip:%s"
+
+	// 登录账户锁定标记：存在即表示账户处于冷却中，TTL = 锁定时长。
+	KeyLoginLockAccountTemplate = "auth:login:lock:user:%s"
+
+	// 登录 IP 锁定标记：存在即表示该 IP 暂时不被允许登录。
+	KeyLoginLockIPTemplate = "auth:login:lock:ip:%s"
+
+	// 注册验证码核验失败计数：超过阈值即作废验证码。
+	KeyEmailVerifyFailTemplate = "auth:email_verify:verify_fail:%s"
+
+	// 密码重置验证码核验失败计数：超过阈值即作废验证码。
+	KeyPasswordResetVerifyFailTemplate = "auth:pwd_reset:verify_fail:%s"
+
 	// JWT 会话: jti -> user_id
 	KeyJWTSessionByJTITemplate = "auth:jwt:session:jti:%s"
 
@@ -149,6 +167,36 @@ func GetPasswordResetDailyLimitKey(email, day string) string {
 // GetBotVerifyRateLimitKey 获取机器人验证限流键
 func GetBotVerifyRateLimitKey(clientIP string) string {
 	return fmt.Sprintf(KeyBotVerifyRateLimitTemplate, clientIP)
+}
+
+// GetLoginFailAccountKey 账户级登录失败计数 key。
+func GetLoginFailAccountKey(userID string) string {
+	return fmt.Sprintf(KeyLoginFailAccountTemplate, userID)
+}
+
+// GetLoginFailIPKey IP 级登录失败计数 key。
+func GetLoginFailIPKey(clientIP string) string {
+	return fmt.Sprintf(KeyLoginFailIPTemplate, clientIP)
+}
+
+// GetLoginLockAccountKey 账户登录锁定标记 key。
+func GetLoginLockAccountKey(userID string) string {
+	return fmt.Sprintf(KeyLoginLockAccountTemplate, userID)
+}
+
+// GetLoginLockIPKey IP 登录锁定标记 key。
+func GetLoginLockIPKey(clientIP string) string {
+	return fmt.Sprintf(KeyLoginLockIPTemplate, clientIP)
+}
+
+// GetEmailVerifyFailKey 注册验证码核验失败计数 key。
+func GetEmailVerifyFailKey(email string) string {
+	return fmt.Sprintf(KeyEmailVerifyFailTemplate, email)
+}
+
+// GetPasswordResetVerifyFailKey 密码重置验证码核验失败计数 key。
+func GetPasswordResetVerifyFailKey(email string) string {
+	return fmt.Sprintf(KeyPasswordResetVerifyFailTemplate, email)
 }
 
 // GetJWTSessionByJTIKey 获取 jti 会话键。

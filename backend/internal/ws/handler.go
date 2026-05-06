@@ -102,6 +102,6 @@ func (h *Handler) HandleConnect(c *gin.Context) {
 		return
 	}
 
-	client := newClient(conn, claims.UserID, connID, h.sessionStore, h.cfg)
+	client := newClient(conn, claims.UserID, claims.ID, claims.Role, connID, h.sessionStore, h.cfg)
 	client.start()
 }

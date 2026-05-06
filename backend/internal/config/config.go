@@ -30,6 +30,23 @@ type Config struct {
 	MinIO       MinIOConfig
 	Flag        FlagConfig
 	Ingress     IngressConfig
+	LoginGuard  LoginGuardConfig
+}
+
+// LoginGuardConfig 登录暴力破解防护配置：双维度（账户 + IP）失败计数 + 自动锁定。
+type LoginGuardConfig struct {
+	// AccountFailLimit 账户级失败次数阈值，达到即锁定。
+	AccountFailLimit int
+	// AccountFailWindow 账户失败计数窗口（计数器 TTL）。
+	AccountFailWindow time.Duration
+	// AccountLockDuration 账户锁定时长。
+	AccountLockDuration time.Duration
+	// IPFailLimit IP 级失败次数阈值（窗口内）。
+	IPFailLimit int
+	// IPFailWindow IP 失败计数窗口。
+	IPFailWindow time.Duration
+	// IPLockDuration IP 锁定时长。
+	IPLockDuration time.Duration
 }
 
 // InitConfig 启动初始化配置。
@@ -111,6 +128,9 @@ type WSConfig struct {
 	PresenceTimeout time.Duration
 	// MaxConnectionsPerUser 单用户最大并发 WS 连接数。
 	MaxConnectionsPerUser int
+	// SessionRecheckInterval 周期性校验 access 会话与单会话指针的间隔；
+	// <=0 表示关闭主动再校验（仅依赖连接断开时检测）。
+	SessionRecheckInterval time.Duration
 }
 
 // UploadConfig 上传配置
@@ -139,6 +159,11 @@ type EmailConfig struct {
 	VerificationCodeTTLSeconds   int
 	VerificationSendCooldownSecs int
 	VerificationDailyLimit       int
+	// CodeHMACSecret 用于对邮箱验证码做 HMAC-SHA256 哈希。
+	// 为空时回退到 JWT_SECRET，保证升级现有部署时无需立刻改 env。
+	CodeHMACSecret string
+	// VerifyFailLimit 同一邮箱在验证码生命周期内允许的最大失败次数；超过后立即作废验证码。
+	VerifyFailLimit int
 }
 
 // BotProtectionConfig 机器人验证配置（Turnstile）
@@ -332,6 +357,13 @@ func LoadConfig() (*Config, error) {
 		}
 		cfg.Ingress = *ingressConfig
 
+		loginGuardConfig, err := loadLoginGuardConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载登录防护配置失败: %w", err)
+			return
+		}
+		cfg.LoginGuard = *loginGuardConfig
+
 		loadedConfig = cfg
 	})
 
@@ -489,12 +521,18 @@ func loadWSConfig() (*WSConfig, error) {
 	if maxConns <= 0 {
 		maxConns = 3
 	}
+	// 默认 60s 主动再校验一次会话状态；设置为 0 可关闭。
+	recheckSec := getEnvInt("WS_SESSION_RECHECK_INTERVAL_SEC", 60)
+	if recheckSec < 0 {
+		recheckSec = 0
+	}
 
 	return &WSConfig{
 		Enabled:                 enabled,
 		ClientHeartbeatInterval: time.Duration(heartbeatSec) * time.Second,
 		PresenceTimeout:         time.Duration(presenceSec) * time.Second,
 		MaxConnectionsPerUser:   maxConns,
+		SessionRecheckInterval:  time.Duration(recheckSec) * time.Second,
 	}, nil
 }
 
@@ -515,7 +553,7 @@ func loadAuthCookieConfig() (*AuthCookieConfig, error) {
 		RefreshTokenName: getEnv("AUTH_REFRESH_COOKIE_NAME", "ctf_refresh_token"),
 		Domain:           getEnv("AUTH_COOKIE_DOMAIN", ""),
 		Secure:           getEnvBool("AUTH_COOKIE_SECURE", false),
-		SameSite:         strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "lax"))),
+		SameSite:         strings.ToLower(strings.TrimSpace(getEnv("AUTH_COOKIE_SAMESITE", "strict"))),
 	}, nil
 }
 
@@ -556,12 +594,19 @@ func loadLeaderboardConfig() (*LeaderboardConfig, error) {
 
 // loadEmailConfig 加载邮件配置
 func loadEmailConfig() (*EmailConfig, error) {
+	codeSecret := strings.TrimSpace(getEnv("EMAIL_CODE_HMAC_SECRET", ""))
+	failLimit := getEnvInt("EMAIL_VERIFY_FAIL_LIMIT", 10)
+	if failLimit <= 0 {
+		failLimit = 10
+	}
 	return &EmailConfig{
 		ResendAPIKey:                 getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail:              getEnv("RESEND_FROM_EMAIL", ""),
 		VerificationCodeTTLSeconds:   getEnvInt("EMAIL_VERIFY_CODE_TTL_SECONDS", 300),
 		VerificationSendCooldownSecs: getEnvInt("EMAIL_VERIFY_SEND_COOLDOWN_SECONDS", 60),
 		VerificationDailyLimit:       getEnvInt("EMAIL_VERIFY_DAILY_LIMIT", 5),
+		CodeHMACSecret:               codeSecret,
+		VerifyFailLimit:              failLimit,
 	}, nil
 }
 
@@ -602,6 +647,47 @@ func loadMinIOConfig() (*MinIOConfig, error) {
 func loadFlagConfig() (*FlagConfig, error) {
 	return &FlagConfig{
 		Template: getEnv("FLAG_TEMPLATE", "flag{%s}"),
+	}, nil
+}
+
+// loadLoginGuardConfig 加载登录暴力破解防护配置。
+//
+// 默认值经验估算：账户级 10 次失败 / 15 分钟窗口 → 锁 15 分钟；
+// IP 级 60 次失败 / 1 小时窗口 → 锁 30 分钟；后者主要拦截分布式枚举。
+func loadLoginGuardConfig() (*LoginGuardConfig, error) {
+	accountLimit := getEnvInt("LOGIN_FAIL_ACCOUNT_LIMIT", 10)
+	if accountLimit <= 0 {
+		accountLimit = 10
+	}
+	accountWindowMin := getEnvInt("LOGIN_FAIL_ACCOUNT_WINDOW_MINUTES", 15)
+	if accountWindowMin <= 0 {
+		accountWindowMin = 15
+	}
+	accountLockMin := getEnvInt("LOGIN_FAIL_ACCOUNT_LOCK_MINUTES", 15)
+	if accountLockMin <= 0 {
+		accountLockMin = 15
+	}
+
+	ipLimit := getEnvInt("LOGIN_FAIL_IP_LIMIT", 60)
+	if ipLimit <= 0 {
+		ipLimit = 60
+	}
+	ipWindowMin := getEnvInt("LOGIN_FAIL_IP_WINDOW_MINUTES", 60)
+	if ipWindowMin <= 0 {
+		ipWindowMin = 60
+	}
+	ipLockMin := getEnvInt("LOGIN_FAIL_IP_LOCK_MINUTES", 30)
+	if ipLockMin <= 0 {
+		ipLockMin = 30
+	}
+
+	return &LoginGuardConfig{
+		AccountFailLimit:    accountLimit,
+		AccountFailWindow:   time.Duration(accountWindowMin) * time.Minute,
+		AccountLockDuration: time.Duration(accountLockMin) * time.Minute,
+		IPFailLimit:         ipLimit,
+		IPFailWindow:        time.Duration(ipWindowMin) * time.Minute,
+		IPLockDuration:      time.Duration(ipLockMin) * time.Minute,
 	}, nil
 }
 

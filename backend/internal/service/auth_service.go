@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -50,25 +51,34 @@ type AuthServiceImpl struct {
 	siteConfigRepo *repository.SiteConfigRepository
 	redisClient    *redis.Client
 	sessionStore   *authsession.Store
+	loginGuard     *authsession.LoginGuard
 	jwtCfg         config.JWTConfig
 	sessionCfg     config.SessionConfig
 	emailCfg       config.EmailConfig
 	botCfg         config.BotProtectionConfig
 	httpClient     *http.Client
+	// codeHMACKey 用于对邮箱验证码做 HMAC-SHA256；缺省回退到 JWT_SECRET。
+	codeHMACKey []byte
 }
 
 // NewAuthService 创建认证服务实例
 func NewAuthService(userRepo *repository.UserRepository, siteConfigRepo *repository.SiteConfigRepository, redisClient *redis.Client, sessionStore *authsession.Store, cfg *config.Config) *AuthServiceImpl {
+	codeSecret := strings.TrimSpace(cfg.Email.CodeHMACSecret)
+	if codeSecret == "" {
+		codeSecret = cfg.JWT.Secret
+	}
 	return &AuthServiceImpl{
 		userRepo:       userRepo,
 		siteConfigRepo: siteConfigRepo,
 		redisClient:    redisClient,
 		sessionStore:   sessionStore,
+		loginGuard:     authsession.NewLoginGuard(redisClient, cfg.LoginGuard),
 		jwtCfg:         cfg.JWT,
 		sessionCfg:     cfg.Session,
 		emailCfg:       cfg.Email,
 		botCfg:         cfg.Bot,
 		httpClient:     &http.Client{Timeout: 8 * time.Second},
+		codeHMACKey:    []byte(codeSecret),
 	}
 }
 
@@ -244,13 +254,15 @@ func (s *AuthServiceImpl) SendPasswordResetCode(req *models.SendPasswordResetCod
 	}
 
 	codeKey := cache.GetPasswordResetCodeKey(normalizedEmail)
-	codeHash := hashPasswordResetCode(normalizedEmail, code)
+	codeHash := s.hashPasswordResetCode(normalizedEmail, code)
 	codeTTL := time.Duration(s.emailCfg.VerificationCodeTTLSeconds) * time.Second
 	cooldownTTL := time.Duration(s.emailCfg.VerificationSendCooldownSecs) * time.Second
 
 	if err := s.redisClient.Set(ctx, codeKey, codeHash, codeTTL).Err(); err != nil {
 		return wrapServiceError("验证码存储失败", err)
 	}
+	// 重新发码 → 清空旧的失败计数，避免历史失败累计影响新验证码。
+	_ = s.redisClient.Del(ctx, cache.GetPasswordResetVerifyFailKey(normalizedEmail)).Err()
 	if err := s.redisClient.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
 		return wrapServiceError("验证码冷却存储失败", err)
 	}
@@ -349,13 +361,15 @@ func (s *AuthServiceImpl) SendRegisterCode(req *models.SendRegisterCodeRequest, 
 	}
 
 	codeKey := cache.GetEmailVerifyCodeKey(normalizedEmail)
-	codeHash := hashEmailCode(normalizedEmail, code)
+	codeHash := s.hashEmailCode(normalizedEmail, code)
 	codeTTL := time.Duration(s.emailCfg.VerificationCodeTTLSeconds) * time.Second
 	cooldownTTL := time.Duration(s.emailCfg.VerificationSendCooldownSecs) * time.Second
 
 	if err := s.redisClient.Set(ctx, codeKey, codeHash, codeTTL).Err(); err != nil {
 		return wrapServiceError("验证码存储失败", err)
 	}
+	// 重新发码 → 清空旧的失败计数。
+	_ = s.redisClient.Del(ctx, cache.GetEmailVerifyFailKey(normalizedEmail)).Err()
 	if err := s.redisClient.Set(ctx, cooldownKey, "1", cooldownTTL).Err(); err != nil {
 		return wrapServiceError("验证码冷却存储失败", err)
 	}
@@ -441,11 +455,25 @@ func (s *AuthServiceImpl) Register(req *models.RegisterRequest, clientIP, userAg
 	return s.issueTokenPair(user, clientIP, userAgent, rememberMe)
 }
 
-// Login 处理用户登录
+// Login 处理用户登录。
+//
+// 防暴力破解策略：
+//  1. 入口先校验 IP 锁定状态；
+//  2. 解析账户后再校验账户锁定状态；
+//  3. 密码校验失败时累加 IP 与账户级失败计数，达到阈值即触发对应锁定；
+//  4. 登录成功立即清空双维度失败计数（锁定标记不会被解除，由 TTL 自然过期）。
+//
+// 失败文案统一为「用户名或密码错误」，避免账户枚举；触发锁定时改返 429 + Retry-After。
 func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP, userAgent string) (*models.AuthResponse, error) {
-	// 验证输入
 	if err := validateLoginRequest(req); err != nil {
 		return nil, apperr.New(apperr.ErrBadRequest, fmt.Sprintf("请求验证失败: %v", err))
+	}
+
+	guardCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	if err := s.loginGuard.EnsureNotLocked(guardCtx, clientIP, ""); err != nil {
+		return nil, err
 	}
 
 	identifier := resolveLoginIdentifier(req)
@@ -458,15 +486,35 @@ func (s *AuthServiceImpl) Login(req *models.LoginRequest, clientIP, userAgent st
 		user, err = s.userRepo.GetUserByUsername(identifier)
 	}
 	if err != nil {
+		// 未知账户：仍然累加 IP 失败计数，避免攻击者通过不存在的账户低成本枚举。
+		if locked, _ := s.loginGuard.RecordFailure(guardCtx, clientIP, ""); locked {
+			ttl := s.loginGuard.IPLockTTL(guardCtx, clientIP)
+			return nil, apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, "登录失败次数过多，请稍后重试", int(ttl.Seconds()))
+		}
 		return nil, apperr.New(apperr.ErrUnauthorized, "用户名或密码错误")
 	}
 
-	// 验证密码
+	if err := s.loginGuard.EnsureNotLocked(guardCtx, clientIP, user.ID); err != nil {
+		return nil, err
+	}
+
 	if err := utils.VerifyPassword(user.PasswordHash, req.Password); err != nil {
+		lockedAccount, lockedIP := s.loginGuard.RecordFailure(guardCtx, clientIP, user.ID)
+		if lockedAccount || lockedIP {
+			retryAfter := 0
+			if lockedAccount {
+				retryAfter = int(s.loginGuard.AccountLockTTL(guardCtx, user.ID).Seconds())
+			}
+			if retryAfter <= 0 {
+				retryAfter = int(s.loginGuard.IPLockTTL(guardCtx, clientIP).Seconds())
+			}
+			return nil, apperr.NewWithRetryAfter(apperr.ErrTooManyRequests, "登录失败次数过多，已临时锁定", retryAfter)
+		}
 		return nil, apperr.New(apperr.ErrUnauthorized, "用户名或密码错误")
 	}
 
-	// 更新最后登陆时间
+	s.loginGuard.RecordSuccess(guardCtx, clientIP, user.ID)
+
 	now := time.Now()
 	if updateErr := s.userRepo.UpdateLastLogin(user.ID, clientIP); updateErr == nil {
 		user.LastLoginAt = &now
@@ -563,6 +611,10 @@ func (s *AuthServiceImpl) RevokeUserSessions(userID string) error {
 	return nil
 }
 
+// verifyPasswordResetCode 校验密码重置验证码。
+//
+// 防暴力破解：失败计数器与 code key 同生命周期，达到 EmailCfg.VerifyFailLimit 时立即作废
+// code key，要求重新申请。计数器在比较失败「之后」累加，在比较成功后随 code key 一并删除。
 func (s *AuthServiceImpl) verifyPasswordResetCode(email, rawCode string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -576,18 +628,22 @@ func (s *AuthServiceImpl) verifyPasswordResetCode(email, rawCode string) error {
 		return wrapServiceError("验证码校验失败", err)
 	}
 
-	computedHash := hashPasswordResetCode(email, strings.TrimSpace(rawCode))
+	computedHash := s.hashPasswordResetCode(email, strings.TrimSpace(rawCode))
 	if subtle.ConstantTimeCompare([]byte(storedHash), []byte(computedHash)) != 1 {
-		return apperr.New(apperr.ErrBadRequest, "邮箱验证码错误")
+		return s.handleEmailCodeMismatch(ctx, codeKey, cache.GetPasswordResetVerifyFailKey(email))
 	}
 
-	if err := s.redisClient.Del(ctx, codeKey).Err(); err != nil {
+	pipe := s.redisClient.Pipeline()
+	pipe.Del(ctx, codeKey)
+	pipe.Del(ctx, cache.GetPasswordResetVerifyFailKey(email))
+	if _, err := pipe.Exec(ctx); err != nil {
 		return wrapServiceError("验证码状态更新失败", err)
 	}
 
 	return nil
 }
 
+// verifyEmailCode 校验注册验证码，与密码重置共享暴力破解防护逻辑。
 func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -601,16 +657,46 @@ func (s *AuthServiceImpl) verifyEmailCode(email, rawCode string) error {
 		return wrapServiceError("验证码校验失败", err)
 	}
 
-	computedHash := hashEmailCode(email, strings.TrimSpace(rawCode))
+	computedHash := s.hashEmailCode(email, strings.TrimSpace(rawCode))
 	if subtle.ConstantTimeCompare([]byte(storedHash), []byte(computedHash)) != 1 {
-		return apperr.New(apperr.ErrBadRequest, "邮箱验证码错误")
+		return s.handleEmailCodeMismatch(ctx, codeKey, cache.GetEmailVerifyFailKey(email))
 	}
 
-	if err := s.redisClient.Del(ctx, codeKey).Err(); err != nil {
+	pipe := s.redisClient.Pipeline()
+	pipe.Del(ctx, codeKey)
+	pipe.Del(ctx, cache.GetEmailVerifyFailKey(email))
+	if _, err := pipe.Exec(ctx); err != nil {
 		return wrapServiceError("验证码状态更新失败", err)
 	}
 
 	return nil
+}
+
+// handleEmailCodeMismatch 在哈希比对失败时累加失败计数，超阈值即作废验证码并返回统一错误。
+//
+// 失败计数 TTL 与验证码 TTL 同步（不超过验证码生命周期），保证计数器随 code 一同消亡。
+func (s *AuthServiceImpl) handleEmailCodeMismatch(ctx context.Context, codeKey, failCounterKey string) error {
+	codeTTL, _ := s.redisClient.TTL(ctx, codeKey).Result()
+	count, err := s.redisClient.Incr(ctx, failCounterKey).Result()
+	if err == nil && count == 1 {
+		expire := codeTTL
+		if expire <= 0 {
+			expire = time.Duration(s.emailCfg.VerificationCodeTTLSeconds) * time.Second
+		}
+		_ = s.redisClient.Expire(ctx, failCounterKey, expire).Err()
+	}
+
+	limit := s.emailCfg.VerifyFailLimit
+	if err == nil && limit > 0 && int(count) >= limit {
+		// 达到阈值：作废验证码并清理计数器，强制用户重新发码。
+		pipe := s.redisClient.Pipeline()
+		pipe.Del(ctx, codeKey)
+		pipe.Del(ctx, failCounterKey)
+		_, _ = pipe.Exec(ctx)
+		return apperr.New(apperr.ErrTooManyRequests, "验证码错误次数过多，请重新获取验证码")
+	}
+
+	return apperr.New(apperr.ErrBadRequest, "邮箱验证码错误")
 }
 
 func (s *AuthServiceImpl) checkPasswordResetDailyLimit(ctx context.Context, email string) error {
@@ -854,16 +940,26 @@ func generateNumericCode(length int) (string, error) {
 	return string(b), nil
 }
 
-func hashPasswordResetCode(email, code string) string {
-	raw := "pwdreset:" + email + ":" + code
-	hash := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(hash[:])
+// hashPasswordResetCode 使用 HMAC-SHA256(secret, "pwdreset:" + email + ":" + code) 生成验证码哈希。
+//
+// 引入服务端密钥后，即便数据库泄露，攻击者也无法对 6 位数字空间做彩虹表/枚举攻击。
+func (s *AuthServiceImpl) hashPasswordResetCode(email, code string) string {
+	mac := hmac.New(sha256.New, s.codeHMACKey)
+	mac.Write([]byte("pwdreset:"))
+	mac.Write([]byte(email))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(code))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func hashEmailCode(email, code string) string {
-	raw := email + ":" + code
-	hash := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(hash[:])
+// hashEmailCode 使用 HMAC-SHA256(secret, "register:" + email + ":" + code) 生成注册验证码哈希。
+func (s *AuthServiceImpl) hashEmailCode(email, code string) string {
+	mac := hmac.New(sha256.New, s.codeHMACKey)
+	mac.Write([]byte("register:"))
+	mac.Write([]byte(email))
+	mac.Write([]byte(":"))
+	mac.Write([]byte(code))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // 验证注册请求。emailVerificationRequired 为 true 时必须提供 6 位数字邮箱验证码；为 false 时不校验验证码（仍可忽略客户端误传）。
@@ -882,11 +978,8 @@ func validateRegisterRequest(req *models.RegisterRequest, emailVerificationRequi
 	if !isValidEmail(trimmedEmail) {
 		return apperr.New(apperr.ErrBadRequest, "邮箱格式不正确")
 	}
-	if len(req.Password) < 6 {
-		return apperr.New(apperr.ErrBadRequest, "密码长度至少 6 个字符")
-	}
-	if len(req.Password) > 128 {
-		return apperr.New(apperr.ErrBadRequest, "密码长度不能超过 128 个字符")
+	if err := utils.ValidatePasswordStrength(req.Password); err != nil {
+		return err
 	}
 	if emailVerificationRequired {
 		code := strings.TrimSpace(req.EmailCode)
@@ -928,11 +1021,8 @@ func validateResetPasswordWithCodeRequest(req *models.ResetPasswordWithCodeReque
 			return apperr.New(apperr.ErrBadRequest, "邮箱验证码应为 6 位数字")
 		}
 	}
-	if len(req.NewPassword) < 6 {
-		return apperr.New(apperr.ErrBadRequest, "密码长度至少 6 个字符")
-	}
-	if len(req.NewPassword) > 128 {
-		return apperr.New(apperr.ErrBadRequest, "密码长度不能超过 128 个字符")
+	if err := utils.ValidatePasswordStrength(req.NewPassword); err != nil {
+		return err
 	}
 	return nil
 }

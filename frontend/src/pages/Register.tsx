@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
 import { apiFetch, setAuthTokens } from '../utils/authClient'
 import { fromUnknownError, readSafeErrorMessage } from '../utils/error'
+import { PASSWORD_POLICY_HINT, validatePasswordStrength } from '../utils/passwordPolicy'
 import TurnstileWidget from '../components/auth/TurnstileWidget'
 import AuthShell from '../components/auth/AuthShell'
 
@@ -258,8 +259,9 @@ export default function Register() {
       return
     }
 
-    if (password.length < 6) {
-      setError('密码长度至少 6 个字符')
+    const passwordError = validatePasswordStrength(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
@@ -367,9 +369,6 @@ export default function Register() {
               </button>
             )}
           </div>
-          {!emailVerificationRequired && hintsLoaded && registrationEnabled && (
-            <p className="text-xs text-slate-500">当前站点未强制邮箱验证码，填写邮箱与密码后直接注册即可。</p>
-          )}
         </div>
 
         {emailVerificationRequired && sendPanelOpen && botProtectionEnabled && turnstileSiteKey && (
@@ -435,9 +434,10 @@ export default function Register() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={disabledForm}
-            placeholder="至少 6 个字符"
+            placeholder={PASSWORD_POLICY_HINT}
             required
           />
+          <p className="text-xs text-slate-500">{PASSWORD_POLICY_HINT}</p>
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-700">确认密码</label>

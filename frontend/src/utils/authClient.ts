@@ -28,7 +28,14 @@ function shouldBypassAutoRefresh(url: string): boolean {
     url.includes('/api/auth/refresh')
 }
 
-function writeTokenPair() {
+/**
+ * onAccessTokenIssued 在新 access token 签发后调用，仅做前端态一致性维护：
+ * 重置「刷新失败」广播标志位，避免上一轮过期态泄漏到本轮。
+ *
+ * 注意：access/refresh token 实际承载在 HttpOnly Cookie 中，JS 不直接接触；
+ * 本函数和文件名中的 "Token" 仅是「token 生命周期事件」的语义。
+ */
+function onAccessTokenIssued() {
   refreshFailureBroadcasted = false
 }
 
@@ -79,7 +86,11 @@ function schedulePreemptiveRefresh(accessExpiresInSecs: number) {
   }, refreshDelayMs)
 }
 
-function clearTokenPair() {
+/**
+ * onAccessTokenCleared 在登出 / refresh 失败时调用：清理预刷新定时器和过期时间戳，
+ * 但不会触碰任何 cookie（cookie 由后端 Set-Cookie 控制）。
+ */
+function onAccessTokenCleared() {
   clearProactiveRefreshTimer()
   clearAccessExpireAt()
 }
@@ -94,12 +105,12 @@ async function performRefresh(): Promise<boolean> {
   })
 
   if (!response.ok) {
-    clearTokenPair()
+    onAccessTokenCleared()
     return false
   }
 
   const data = await response.json()
-  writeTokenPair()
+  onAccessTokenIssued()
 
   if (typeof data?.access_expires_in_secs === 'number') {
     schedulePreemptiveRefresh(data.access_expires_in_secs)
@@ -120,14 +131,14 @@ export async function refreshAccessTokenWithLock(): Promise<boolean> {
 }
 
 export function setAuthTokens(accessExpiresInSecs?: number) {
-  writeTokenPair()
+  onAccessTokenIssued()
   if (typeof accessExpiresInSecs === 'number') {
     schedulePreemptiveRefresh(accessExpiresInSecs)
   }
 }
 
 export function clearAuthTokens() {
-  clearTokenPair()
+  onAccessTokenCleared()
 }
 
 export type ApiFetchOptions = {
