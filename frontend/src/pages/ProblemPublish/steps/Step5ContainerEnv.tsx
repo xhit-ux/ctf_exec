@@ -34,13 +34,13 @@ export default function Step5ContainerEnv() {
         image_name: repo,
         image_tag: dateTag(),
         challenge_port: state.internalPort,
-        sidecar_image: 'busybox:latest',
-        sidecar_port: 9999,
+        sidecar_image: state.enableSidecar ? (state.sidecarImage || null) : null,
+        sidecar_port: state.enableSidecar ? (state.sidecarPort || null) : null,
         cpu_limit: `${state.cpuLimit || 500}m`,
         memory_limit: `${state.memoryLimit || 512}Mi`,
         env: {},
-        ttl_seconds: 3600,
-        ingress_host_tpl: (state.accessType || 'ingress') === 'ingress' ? '{id}.chal.local' : undefined,
+        ttl_seconds: state.ttlSeconds || 3600,
+        ingress_host_tpl: (state.accessType || 'ingress') === 'ingress' ? (state.ingressHostTpl || '{id}.chal.local') : undefined,
       });
 
       const task = await uploadProblemImage(state.problemId, {
@@ -245,6 +245,48 @@ export default function Step5ContainerEnv() {
              <span className="text-sm text-gray-500 mt-1">每位选手独立实例，推荐 Pwn 与动态 Flag。</span>
            </label>
          </div>
+      </div>
+
+      <div className="p-4 border border-gray-200 rounded-lg">
+         <div className="flex items-center justify-between mb-3">
+           <div>
+             <h3 className="font-bold text-gray-900">5. Sidecar（可选）</h3>
+             <p className="text-xs text-gray-500 mt-0.5">用于动态 Flag 注入或题面访客桥接，未启用则保持空。</p>
+           </div>
+           <label className="inline-flex items-center cursor-pointer gap-2">
+             <input
+               type="checkbox"
+               checked={state.enableSidecar}
+               onChange={(e) => updateState({ enableSidecar: e.target.checked })}
+               className="h-4 w-4 accent-amber-500"
+             />
+             <span className="text-sm text-gray-700">启用 sidecar</span>
+           </label>
+         </div>
+         {state.enableSidecar && (
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div>
+               <label className="block text-sm font-medium text-gray-700">Sidecar 镜像</label>
+               <input
+                 type="text"
+                 value={state.sidecarImage || ''}
+                 onChange={(e) => updateState({ sidecarImage: e.target.value })}
+                 className="field-input mt-1"
+                 placeholder="例如：reg.ctf.local/ctf/web-flag-injector:2026-04"
+               />
+             </div>
+             <div>
+               <label className="block text-sm font-medium text-gray-700">Sidecar 端口</label>
+               <input
+                 type="number"
+                 value={state.sidecarPort || ''}
+                 onChange={(e) => updateState({ sidecarPort: Number(e.target.value) })}
+                 className="field-input mt-1"
+                 placeholder="9999"
+               />
+             </div>
+           </div>
+         )}
       </div>
       </>
       )}

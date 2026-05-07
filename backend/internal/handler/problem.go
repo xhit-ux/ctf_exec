@@ -26,38 +26,6 @@ func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *reposito
 	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo}
 }
 
-func (h *ProblemHandler) CreateProblemGin(c *gin.Context) {
-	claims, ok := middleware.MustGetClaims(c)
-	if !ok {
-		return
-	}
-
-	role := models.NormalizeRole(claims.Role)
-	if role != models.RoleRoot && role != models.RoleSiteAdmin {
-		writeForbidden(c, "仅 site_admin/root 可创建题目")
-		return
-	}
-
-	var req models.CreateProblemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeBadRequest(c, "请求体格式错误")
-		return
-	}
-
-	if err := validateProblemCreateUpdate(&req); err != nil {
-		writeBadRequest(c, err.Error())
-		return
-	}
-	req.CreatedBy = claims.UserID
-
-	item, err := h.repo.CreateProblem(&req)
-	if err != nil {
-		writeError(c, err, http.StatusInternalServerError)
-		return
-	}
-	c.JSON(http.StatusCreated, item)
-}
-
 func (h *ProblemHandler) CreateProblemDraftGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
@@ -112,8 +80,15 @@ func (h *ProblemHandler) SaveProblemBasicGin(c *gin.Context) {
 		writeBadRequest(c, "title/category/difficulty 不能为空")
 		return
 	}
-	if req.BaseScore < 0 {
-		writeBadRequest(c, "base_score 不能为负数")
+	difficulty := strings.ToLower(strings.TrimSpace(req.Difficulty))
+	rng, ok := models.GetDifficultyRange(difficulty)
+	if !ok {
+		writeBadRequest(c, "difficulty 仅支持 easy/medium/hard/expert")
+		return
+	}
+	req.Difficulty = difficulty
+	if req.PlatformScore < rng.Min || req.PlatformScore > rng.Max {
+		writeBadRequest(c, fmt.Sprintf("platform_score 必须在 [%d,%d] 区间内（难度=%s）", rng.Min, rng.Max, difficulty))
 		return
 	}
 	if err := h.repo.UpdateProblemBasic(id, &req); err != nil {
@@ -129,7 +104,7 @@ func (h *ProblemHandler) SaveProblemFlagGin(c *gin.Context) {
 		writeBadRequest(c, "无效的题目ID")
 		return
 	}
-	var req models.CreateFlagRequest
+	var req models.SaveProblemFlagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeBadRequest(c, "请求体格式错误")
 		return
@@ -141,12 +116,34 @@ func (h *ProblemHandler) SaveProblemFlagGin(c *gin.Context) {
 		writeBadRequest(c, "flag_rule/flag_type/flag_inject 不合法")
 		return
 	}
-	if req.FlagType == "static" && strings.TrimSpace(req.FlagPlain) == "" {
-		writeBadRequest(c, "static flag 不能为空")
-		return
+	// flag_mode_explain.md Part 4：dynamic 不允许 regex/contains。
+	if req.FlagType == "dynamic" {
+		if req.FlagRule == utils.FlagRuleRegex || req.FlagRule == utils.FlagRuleContains {
+			writeBadRequest(c, "dynamic flag 不支持 regex/contains 规则")
+			return
+		}
+	}
+	flagValue := strings.TrimSpace(req.FlagValue)
+	switch req.FlagType {
+	case "static":
+		if flagValue == "" {
+			writeBadRequest(c, "static flag 必须提供 flag_value")
+			return
+		}
+		// regex/contains 校验 pattern 长度 + 可编译。
+		if req.FlagRule == utils.FlagRuleRegex || req.FlagRule == utils.FlagRuleContains {
+			if err := utils.ValidateFlagPattern(req.FlagRule, flagValue); err != nil {
+				writeBadRequest(c, err.Error())
+				return
+			}
+		}
+		req.FlagValue = flagValue
+	case "dynamic":
+		// dynamic 不在此层提供 flag_value（运行期由实例生成）。
+		req.FlagValue = ""
 	}
 	if err := h.repo.UpsertProblemFlag(id, &req); err != nil {
-		writeError(c, err, http.StatusInternalServerError)
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Flag 配置保存成功"})
@@ -158,21 +155,28 @@ func (h *ProblemHandler) SaveProblemContainerGin(c *gin.Context) {
 		writeBadRequest(c, "无效的题目ID")
 		return
 	}
-	var req models.CreateContainerRequest
+	var req models.SaveProblemContainerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		writeBadRequest(c, "请求体格式错误")
 		return
 	}
-	if strings.TrimSpace(req.ImageName) == "" || strings.TrimSpace(req.SidecarImage) == "" {
-		writeBadRequest(c, "image_name/sidecar_image 不能为空")
+	if strings.TrimSpace(req.ImageName) == "" {
+		writeBadRequest(c, "image_name 不能为空")
 		return
 	}
-	if req.ChallengePort <= 0 || req.SidecarPort <= 0 {
-		writeBadRequest(c, "challenge_port/sidecar_port 必须大于 0")
+	if req.ChallengePort <= 0 {
+		writeBadRequest(c, "challenge_port 必须大于 0")
+		return
+	}
+	// sidecar 可选：要么两者都给，要么两者都为空。
+	hasSidecarImage := req.SidecarImage != nil && strings.TrimSpace(*req.SidecarImage) != ""
+	hasSidecarPort := req.SidecarPort != nil && *req.SidecarPort > 0
+	if hasSidecarImage != hasSidecarPort {
+		writeBadRequest(c, "sidecar_image/sidecar_port 必须同时提供或同时省略")
 		return
 	}
 	if err := h.repo.UpsertProblemContainer(id, &req); err != nil {
-		writeError(c, err, http.StatusInternalServerError)
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "容器配置保存成功"})
@@ -319,16 +323,11 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 		return
 	}
 
-	attachments, err := h.repo.ListProblemAttachments(id)
-	if err != nil {
-		writeError(c, err, http.StatusInternalServerError)
+	if existing, lookupErr := h.repo.GetProblemAttachment(id); lookupErr != nil {
+		writeError(c, lookupErr, http.StatusInternalServerError)
 		return
-	}
-	for _, attachment := range attachments {
-		if attachment == nil {
-			continue
-		}
-		oldPath := resolveAttachmentFSPath(cfg.Upload.StaticPath, attachment.ObjectKey)
+	} else if existing != nil {
+		oldPath := resolveAttachmentFSPath(cfg.Upload.StaticPath, existing.ObjectKey)
 		if oldPath != "" {
 			_ = utils.DeleteFile(oldPath)
 		}
@@ -458,53 +457,6 @@ func (h *ProblemHandler) DestroyProblemInstanceGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "实例销毁成功", "status": "destroyed"})
 }
 
-func (h *ProblemHandler) UpdateProblemGin(c *gin.Context) {
-	claims, ok := middleware.MustGetClaims(c)
-	if !ok {
-		return
-	}
-	role := models.NormalizeRole(claims.Role)
-	if role != models.RoleRoot && role != models.RoleSiteAdmin {
-		writeForbidden(c, "仅 site_admin/root 可更新题目")
-		return
-	}
-
-	id := strings.TrimSpace(c.Param("id"))
-	if id == "" {
-		writeBadRequest(c, "无效的题目ID")
-		return
-	}
-
-	var req models.UpdateProblemRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeBadRequest(c, "请求体格式错误")
-		return
-	}
-	if err := validateProblemCreateUpdate((*models.CreateProblemRequest)(&models.CreateProblemRequest{
-		Title:       req.Title,
-		Category:    req.Category,
-		Type:        req.Type,
-		Description: req.Description,
-		BaseScore:   req.BaseScore,
-		Difficulty:  req.Difficulty,
-		DeployMode:  req.DeployMode,
-		UseKata:     req.UseKata,
-		Status:      req.Status,
-		Tags:        req.Tags,
-		Flag:        req.Flag,
-		Container:   req.Container,
-	})); err != nil {
-		writeBadRequest(c, err.Error())
-		return
-	}
-
-	if err := h.repo.UpdateProblem(id, &req); err != nil {
-		writeError(c, err, http.StatusInternalServerError)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "题目更新成功"})
-}
-
 func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
@@ -584,7 +536,12 @@ func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 		return
 	}
 
-	item, err := h.repo.GetProblemByID(id)
+	userID := ""
+	if claims, err := middleware.GetClaims(c); err == nil {
+		userID = claims.UserID
+	}
+
+	item, err := h.repo.GetProblemByIDForUser(id, userID)
 	if err != nil {
 		writeError(c, err, http.StatusNotFound)
 		return
@@ -592,64 +549,167 @@ func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 	c.JSON(http.StatusOK, item)
 }
 
-func validateProblemCreateUpdate(req *models.CreateProblemRequest) error {
-	if strings.TrimSpace(req.Title) == "" || strings.TrimSpace(req.Category) == "" || strings.TrimSpace(req.Difficulty) == "" {
-		return apperrErr("title/category/difficulty 不能为空")
-	}
-	if req.BaseScore < 0 {
-		return apperrErr("base_score 不能为负数")
-	}
-	t := normalizeProblemType(req.Type)
-	if t == "" {
-		return apperrErr("type 仅支持 static/container_web/container_tcp")
-	}
-	req.Type = t
-	dm := normalizeDeployMode(req.DeployMode)
-	if dm == "" {
-		return apperrErr("deploy_mode 仅支持 shared/per_user")
-	}
-	req.DeployMode = dm
+// ============================================================
+// 提示子系统 handler
+// ============================================================
 
-	status := normalizeProblemStatus(req.Status)
-	if status == "" {
-		return apperrErr("status 仅支持 draft/ready/hidden")
+// ListProblemHintsGin 列出该题目的提示（用户视角，含 is_unlocked，未解锁不返回 content）。
+func (h *ProblemHandler) ListProblemHintsGin(c *gin.Context) {
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
 	}
-	req.Status = status
-
-	req.Flag.FlagRule = normalizeFlagRule(req.Flag.FlagRule)
-	req.Flag.FlagType = normalizeFlagFlagType(req.Flag.FlagType)
-	req.Flag.FlagInject = normalizeFlagInject(req.Flag.FlagInject)
-	if req.Flag.FlagRule == "" || req.Flag.FlagType == "" || req.Flag.FlagInject == "" {
-		return apperrErr("flag_rule/flag_type/flag_inject 不合法")
+	userID := ""
+	if claims, err := middleware.GetClaims(c); err == nil {
+		userID = claims.UserID
 	}
-
-	if req.DeployMode == "shared" && req.Flag.FlagType == "dynamic" {
-		return apperrErr("shared 模式下不允许 dynamic flag")
+	var contestID *string
+	if cid := strings.TrimSpace(c.Query("contest_id")); cid != "" {
+		contestID = &cid
 	}
-	if req.Flag.FlagType == "static" && strings.TrimSpace(req.Flag.FlagPlain) == "" {
-		return apperrErr("static flag 不能为空")
+	hints, err := h.repo.ListProblemHints(problemID, userID, contestID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
 	}
-
-	if req.Container != nil {
-		if strings.TrimSpace(req.Container.ImageName) == "" || strings.TrimSpace(req.Container.SidecarImage) == "" {
-			return apperrErr("容器配置 image_name/sidecar_image 不能为空")
-		}
-		if req.Container.ChallengePort <= 0 || req.Container.SidecarPort <= 0 {
-			return apperrErr("容器配置端口必须大于 0")
-		}
-		if req.Type == "container_web" && (req.Container.IngressHostTpl == nil || strings.TrimSpace(*req.Container.IngressHostTpl) == "") {
-			return apperrErr("container_web 必须配置 ingress_host_tpl")
+	for _, h := range hints {
+		if !h.IsUnlocked {
+			h.Content = ""
 		}
 	}
-
-	return nil
+	c.JSON(http.StatusOK, gin.H{"hints": hints})
 }
 
-type simpleErr string
+// UnlockHintGin 用户主动解锁某条提示。
+func (h *ProblemHandler) UnlockHintGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	hintID := strings.TrimSpace(c.Param("hintID"))
+	if hintID == "" {
+		writeBadRequest(c, "无效的提示ID")
+		return
+	}
+	var contestID *string
+	if cid := strings.TrimSpace(c.Query("contest_id")); cid != "" {
+		contestID = &cid
+	}
+	hint, _, err := h.repo.UnlockHint(claims.UserID, hintID, contestID)
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, hint)
+}
 
-func (e simpleErr) Error() string { return string(e) }
+// CreateProblemHintGin 管理端创建提示。
+func (h *ProblemHandler) CreateProblemHintGin(c *gin.Context) {
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req models.CreateHintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		writeBadRequest(c, "content 不能为空")
+		return
+	}
+	if req.Cost < 0 {
+		writeBadRequest(c, "cost 不能为负数")
+		return
+	}
+	hint, err := h.repo.CreateHint(problemID, &req)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusCreated, hint)
+}
 
-func apperrErr(msg string) error { return simpleErr(msg) }
+// UpdateProblemHintGin 管理端更新提示。
+func (h *ProblemHandler) UpdateProblemHintGin(c *gin.Context) {
+	hintID := strings.TrimSpace(c.Param("hintID"))
+	if hintID == "" {
+		writeBadRequest(c, "无效的提示ID")
+		return
+	}
+	var req models.UpdateHintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if req.Cost < 0 {
+		writeBadRequest(c, "cost 不能为负数")
+		return
+	}
+	if err := h.repo.UpdateHint(hintID, &req); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "提示更新成功"})
+}
+
+// DeleteProblemHintGin 管理端删除提示。
+func (h *ProblemHandler) DeleteProblemHintGin(c *gin.Context) {
+	hintID := strings.TrimSpace(c.Param("hintID"))
+	if hintID == "" {
+		writeBadRequest(c, "无效的提示ID")
+		return
+	}
+	if err := h.repo.DeleteHint(hintID); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "提示删除成功"})
+}
+
+// ============================================================
+// 前置依赖子系统 handler
+// ============================================================
+
+// SetProblemPrerequisitesGin 全量替换某题目的前置依赖列表（管理端）。
+func (h *ProblemHandler) SetProblemPrerequisitesGin(c *gin.Context) {
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req models.SetPrerequisitesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if err := h.repo.SetProblemPrerequisites(problemID, req.PrerequisiteIDs); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "前置依赖设置成功"})
+}
+
+// ListProblemPrerequisitesGin 列出某题目的前置依赖（用户视角，含 is_solved）。
+func (h *ProblemHandler) ListProblemPrerequisitesGin(c *gin.Context) {
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	userID := ""
+	if claims, err := middleware.GetClaims(c); err == nil {
+		userID = claims.UserID
+	}
+	items, err := h.repo.ListProblemPrerequisites(problemID, userID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"prerequisites": items})
+}
 
 func normalizeProblemType(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
@@ -703,14 +763,7 @@ func normalizeDeployMode(raw string) string {
 }
 
 func normalizeFlagRule(raw string) string {
-	v := strings.ToLower(strings.TrimSpace(raw))
-	if v == "" {
-		return "exact"
-	}
-	if v == "exact" || v == "case_insensitive" {
-		return v
-	}
-	return ""
+	return utils.NormalizeFlagRule(raw)
 }
 
 func normalizeFlagFlagType(raw string) string {

@@ -20,12 +20,15 @@ node_modules/
 # IDE and Editor
 .vscode/
 .cursor/
+.claude/
+.codex/
 .idea/
 .github/
 *.swp
 *.swo
 *~
 .DS_Store
+CLAUDE.md
 
 # Environment variables
 .env

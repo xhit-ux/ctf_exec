@@ -39,10 +39,42 @@ type UpdateContestRequest struct {
 	ScoringType string     `json:"scoring_type"`
 }
 
-// ContestChallengeBindRequest 赛事题目编排请求。
+// ContestChallenge 赛事题目实例（contest_challenges 表行）。
+// v2.1 模板-实例分离的关键模型：每场赛事可独立定义计分参数。
+type ContestChallenge struct {
+	ID             string    `json:"id"`
+	ContestID      string    `json:"contest_id"`
+	ProblemID      string    `json:"problem_id"`
+	ContestScore   int       `json:"contest_score"`
+	IsDynamicScore bool      `json:"is_dynamic_score"`
+	InitialScore   *int      `json:"initial_score,omitempty"`
+	MinScore       *int      `json:"min_score,omitempty"`
+	DecayConstant  *int      `json:"decay_constant,omitempty"`
+	SortOrder      int       `json:"sort_order"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// ContestChallengeBindRequest 赛事题目编排（绑定）请求。
+// v2.1：用 5 个独立字段替代旧 score_override 单一字段。
 type ContestChallengeBindRequest struct {
-	ChallengeID   string `json:"challenge_id"`
-	ScoreOverride *int   `json:"score_override"`
+	ChallengeID    string `json:"challenge_id"`
+	ContestScore   *int   `json:"contest_score"`
+	IsDynamicScore bool   `json:"is_dynamic_score"`
+	InitialScore   *int   `json:"initial_score"`
+	MinScore       *int   `json:"min_score"`
+	DecayConstant  *int   `json:"decay_constant"`
+	SortOrder      *int   `json:"sort_order"`
+}
+
+// UpdateContestChallengeRequest 更新已绑定的赛事题目计分配置。
+type UpdateContestChallengeRequest struct {
+	ContestScore   *int  `json:"contest_score"`
+	IsDynamicScore *bool `json:"is_dynamic_score"`
+	InitialScore   *int  `json:"initial_score"`
+	MinScore       *int  `json:"min_score"`
+	DecayConstant  *int  `json:"decay_constant"`
+	SortOrder      *int  `json:"sort_order"`
 }
 
 // JoinContestRequest 报名赛事请求。
@@ -55,15 +87,41 @@ type LeaveContestRequest struct {
 	TeamID *string `json:"team_id"`
 }
 
-// ContestChallengeView 赛事题目展示结构。
+// ContestChallengeView 赛事题目展示结构（user 视角）。
 type ContestChallengeView struct {
-	ID            string `json:"id"`
-	Title         string `json:"title"`
-	Category      string `json:"category"`
-	Difficulty    string `json:"difficulty"`
-	Points        int    `json:"points"`
-	ScoreOverride *int   `json:"score_override,omitempty"`
-	IsSolved      bool   `json:"is_solved"`
+	ID             string `json:"id"`
+	ProblemID      string `json:"problem_id"`
+	Title          string `json:"title"`
+	Category       string `json:"category"`
+	Difficulty     string `json:"difficulty"`
+	CurrentScore   int    `json:"current_score"`
+	IsDynamicScore bool   `json:"is_dynamic_score"`
+	InitialScore   *int   `json:"initial_score,omitempty"`
+	MinScore       *int   `json:"min_score,omitempty"`
+	DecayConstant  *int   `json:"decay_constant,omitempty"`
+	SolveCount     int    `json:"solve_count"`
+	IsSolved       bool   `json:"is_solved"`
+	IsLocked       bool   `json:"is_locked,omitempty"`
+	SortOrder      int    `json:"sort_order"`
+}
+
+// ContestChallengeAdminView 赛事管理员视角的题目实例视图。
+type ContestChallengeAdminView struct {
+	ID             string `json:"id"`
+	ProblemID      string `json:"problem_id"`
+	Title          string `json:"title"`
+	Category       string `json:"category"`
+	Difficulty     string `json:"difficulty"`
+	PlatformScore  int    `json:"platform_score"`
+	ContestScore   int    `json:"contest_score"`
+	IsDynamicScore bool   `json:"is_dynamic_score"`
+	InitialScore   *int   `json:"initial_score,omitempty"`
+	MinScore       *int   `json:"min_score,omitempty"`
+	DecayConstant  *int   `json:"decay_constant,omitempty"`
+	CurrentScore   int    `json:"current_score"`
+	SolveCount     int    `json:"solve_count"`
+	SortOrder      int    `json:"sort_order"`
+	Status         string `json:"status"`
 }
 
 // ContestScoreboardEntry 赛事榜条目，兼容个人/团队榜。
@@ -79,7 +137,7 @@ type ContestScoreboardEntry struct {
 	LastSolveTime *time.Time `json:"last_solve_time,omitempty"`
 }
 
-// ContestParticipantScope 表示赛事提交计分主体（个人或团队）。
+// ContestParticipantScope 赛事提交计分主体（个人或团队）。
 type ContestParticipantScope struct {
 	UserID *string
 	TeamID *string

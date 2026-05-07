@@ -59,36 +59,36 @@ export default function Step4Attachments() {
 
     const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     updateState({
-      attachments: [{
+      attachment: {
         id: tempId,
         filename: file.name,
         size: file.size,
         sha256: '',
         status: 'uploading' as const,
-      }],
+      },
     });
 
     try {
       const attachment = await uploadProblemAttachment(state.problemId, file);
       updateState({
-        attachments: [{
+        attachment: {
           id: attachment.id,
           filename: attachment.file_name || file.name,
           size: attachment.file_size || file.size,
           sha256: attachment.sha256 || '',
           status: 'success' as const,
-        }],
+        },
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : '上传附件失败';
       updateState({
-        attachments: [{
+        attachment: {
           id: tempId,
           filename: file.name,
           size: file.size,
           sha256: '',
           status: 'error' as const,
-        }],
+        },
       });
       alert(msg);
     } finally {
@@ -96,8 +96,8 @@ export default function Step4Attachments() {
     }
   };
 
-  const removeAttachment = (id: string) => {
-    updateState({ attachments: state.attachments.filter(a => a.id !== id) });
+  const removeAttachment = () => {
+    updateState({ attachment: null });
   };
 
   const handleNext = () => {
@@ -127,31 +127,29 @@ export default function Step4Attachments() {
         <p className="text-sm text-gray-500 mt-1">若需要上传多个文件，请先压缩为压缩包后上传</p>
       </div>
 
-      {state.attachments.length > 0 && (
+      {state.attachment && (
         <div className="mt-6 space-y-3">
           <h3 className="text-sm font-semibold text-gray-900">已上传文件</h3>
-          {state.attachments.map(att => (
-            <div key={att.id} className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="flex items-center">
-                <span className="mr-2 text-gray-600">
-                  <IconFile className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="font-medium text-gray-900">{att.filename}</p>
-                  <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
-                    <span>{(att.size / 1024 / 1024).toFixed(2)} MB</span>
-                    <span className="font-mono text-gray-400">SHA256: {att.sha256.slice(0, 12)}...</span>
-                  </div>
+          <div className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+            <div className="flex items-center">
+              <span className="mr-2 text-gray-600">
+                <IconFile className="w-5 h-5" />
+              </span>
+              <div>
+                <p className="font-medium text-gray-900">{state.attachment.filename}</p>
+                <div className="flex flex-wrap gap-3 text-xs text-gray-500 mt-1">
+                  <span>{(state.attachment.size / 1024 / 1024).toFixed(2)} MB</span>
+                  <span className="font-mono text-gray-400">
+                    SHA256: {state.attachment.sha256 ? `${state.attachment.sha256.slice(0, 12)}...` : '计算中…'}
+                  </span>
+                  <span>状态：{state.attachment.status}</span>
                 </div>
               </div>
-              <button 
-                onClick={() => removeAttachment(att.id)}
-                className="btn-danger !py-1.5 !px-3 text-xs"
-              >
-                删除
-              </button>
             </div>
-          ))}
+            <button onClick={removeAttachment} className="btn-danger !py-1.5 !px-3 text-xs">
+              删除
+            </button>
+          </div>
         </div>
       )}
 

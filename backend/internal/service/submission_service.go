@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"time"
 
@@ -82,14 +81,14 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID string, flag
 	if err := validateProblemSubmissionPolicy(problemMeta, contestID); err != nil {
 		return nil, err
 	}
-	if strings.EqualFold(problemMeta.FlagType, "dynamic") {
-		return nil, apperr.New(apperr.ErrBadRequest, "动态 Flag 提交依赖实例服务，当前流程尚未启用")
-	}
 
-	// 按 flag_rule 执行判题。
-	isCorrect, evalErr := evaluateSubmittedFlag(flag, problemMeta.FlagHash, problemMeta.FlagRule)
+	// 按 flag_type/flag_rule 执行判题。
+	// dynamic：取该用户当前实例的 flag_value 即席比对；
+	// static + (exact|case_insensitive)：使用 flag_hash；
+	// static + (regex|contains)：使用 flag_pattern。
+	isCorrect, evalErr := s.evaluateFlagForSubmission(userID, problemMeta, flag)
 	if evalErr != nil {
-		return nil, apperr.Wrap(apperr.ErrInternal, "判题规则执行失败", evalErr)
+		return nil, evalErr
 	}
 
 	var contestScope *models.ContestParticipantScope
@@ -138,9 +137,9 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID string, flag
 	// 正确提交后仅更新对应维度的分数。
 	if isCorrect {
 		if !alreadySolved && s.userRepo != nil && (contestID == nil || *contestID == "") {
-			err = s.userRepo.IncreaseUserScoreAndSolvedCount(userID, problemMeta.Points)
+			err = s.userRepo.IncreaseUserScoreAndSolvedCount(userID, problemMeta.PlatformScore)
 			if err != nil {
-				log.Printf("[submission] 更新全站用户积分失败 user_id=%s points=%d err=%v", userID, problemMeta.Points, err)
+				log.Printf("[submission] 更新全站用户积分失败 user_id=%s points=%d err=%v", userID, problemMeta.PlatformScore, err)
 			}
 		}
 
@@ -164,35 +163,59 @@ func (s *SubmissionServiceImpl) SubmitFlag(userID string, problemID string, flag
 	return submission, nil
 }
 
-func evaluateSubmittedFlag(submitted, storedHash, rule string) (bool, error) {
-	normalizedRule := strings.TrimSpace(rule)
-	if normalizedRule == "" {
-		normalizedRule = "exact"
+// evaluateFlagForSubmission 是 SubmitFlag 的判题入口。
+// 路由 4 条评估链路（flag_mode_explain.md Part 4）：
+//
+//  1. static  + exact|case_insensitive  → utils.EvaluateFlag(rule, hash, "", submitted)
+//  2. static  + regex|contains          → utils.EvaluateFlag(rule, "", pattern, submitted)
+//  3. dynamic + exact|case_insensitive  → 取 challenge_instances.flag_value 即席比对
+//  4. dynamic + regex|contains          → 不允许（DB CHECK + handler/repo 已拦截）
+func (s *SubmissionServiceImpl) evaluateFlagForSubmission(userID string, meta *models.ProblemSubmissionMeta, submitted string) (bool, error) {
+	flagType := strings.ToLower(strings.TrimSpace(meta.FlagType))
+	rule := utils.NormalizeFlagRule(meta.FlagRule)
+	if rule == "" {
+		return false, apperr.New(apperr.ErrInternal, "题目 flag_rule 不合法")
 	}
 
-	switch {
-	case strings.EqualFold(normalizedRule, "exact"):
-		return utils.VerifyFlagHash(submitted, storedHash), nil
-	case strings.EqualFold(normalizedRule, "case_insensitive"):
-		return utils.VerifyFlagHash(strings.ToLower(submitted), storedHash), nil
-	case strings.HasPrefix(strings.ToLower(normalizedRule), "contains:"):
-		needle := strings.TrimSpace(normalizedRule[len("contains:"):])
-		if needle == "" {
-			return false, fmt.Errorf("contains 规则缺少关键词")
+	if flagType == "dynamic" {
+		if rule == utils.FlagRuleRegex || rule == utils.FlagRuleContains {
+			return false, apperr.New(apperr.ErrInternal, "dynamic flag 不支持 regex/contains 规则")
 		}
-		return strings.Contains(strings.ToLower(submitted), strings.ToLower(needle)), nil
-	case strings.HasPrefix(strings.ToLower(normalizedRule), "regex:"):
-		pattern := strings.TrimSpace(normalizedRule[len("regex:"):])
-		if pattern == "" {
-			return false, fmt.Errorf("regex 规则缺少表达式")
-		}
-		re, err := regexp.Compile(pattern)
+		flagValue, err := s.problemRepo.GetActiveInstanceFlagValue(userID, meta.ID)
 		if err != nil {
-			return false, fmt.Errorf("无效 regex 表达式: %w", err)
+			return false, apperr.Wrap(apperr.ErrInternal, "查询实例 flag 失败", err)
 		}
-		return re.MatchString(submitted), nil
+		if flagValue == "" {
+			return false, apperr.New(apperr.ErrBadRequest, "请先启动题目实例后再提交 flag")
+		}
+		// 即席 hash 比对（保持与 static 相同的判题路径）。
+		dynamicHash, hashErr := utils.PrepareStaticFlagHash(rule, flagValue)
+		if hashErr != nil {
+			return false, apperr.Wrap(apperr.ErrInternal, "动态 flag 哈希失败", hashErr)
+		}
+		matched, evalErr := utils.EvaluateFlag(rule, dynamicHash, "", submitted)
+		if evalErr != nil {
+			return false, apperr.Wrap(apperr.ErrInternal, "动态 flag 评估失败", evalErr)
+		}
+		return matched, nil
+	}
+
+	// static 路径：根据 rule 决定走 hash 还是 pattern。
+	switch rule {
+	case utils.FlagRuleExact, utils.FlagRuleCaseInsensitive:
+		matched, evalErr := utils.EvaluateFlag(rule, meta.FlagHash, "", submitted)
+		if evalErr != nil {
+			return false, apperr.Wrap(apperr.ErrInternal, "flag 评估失败", evalErr)
+		}
+		return matched, nil
+	case utils.FlagRuleRegex, utils.FlagRuleContains:
+		matched, evalErr := utils.EvaluateFlag(rule, "", meta.FlagPattern, submitted)
+		if evalErr != nil {
+			return false, apperr.Wrap(apperr.ErrInternal, "flag 评估失败", evalErr)
+		}
+		return matched, nil
 	default:
-		return false, fmt.Errorf("不支持的 flag 规则: %s", rule)
+		return false, apperr.New(apperr.ErrInternal, "不支持的 flag_rule")
 	}
 }
 

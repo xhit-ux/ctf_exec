@@ -91,7 +91,7 @@ export default function Step6Review() {
 
   // Guard Checks
   const isBasicInfoValid = !!state.title && !!state.description && !!state.category;
-  const isFlagValid = state.flagType === 'static' ? !!state.staticFlag : (!!state.dynamicFlagEnvName || !!state.dynamicFlagFilePath);
+  const isFlagValid = state.flagType === 'dynamic' || !!state.flagValue;
   const isImageValid = !state.useContainer || state.imageTaskStatus === 'uploaded' || state.imageTaskStatus === 'success';
 
   const canPublish = isBasicInfoValid && isFlagValid && isImageValid;
@@ -244,7 +244,7 @@ export default function Step6Review() {
           </li>
           <li className="flex items-center text-sm">
             <IconCheck className="w-4 h-4 text-green-600 mr-3" />
-            <span className="text-gray-700">附件上传完成（{state.attachments.length} 个）</span>
+            <span className="text-gray-700">附件：{state.attachment ? state.attachment.filename : '未上传（可选）'}</span>
           </li>
           {state.useContainer && (
             <li className="flex items-center text-sm">
@@ -267,7 +267,7 @@ export default function Step6Review() {
           <div><span className="text-gray-500 mr-2">标题：</span> <span className="font-semibold text-gray-900">{state.title || '-'}</span></div>
           <div><span className="text-gray-500 mr-2">分类：</span> <span className="font-semibold text-gray-900">{state.category}</span></div>
           <div><span className="text-gray-500 mr-2">难度：</span> <span className="text-gray-800">{state.difficulty}</span></div>
-          <div><span className="text-gray-500 mr-2">分值：</span> <span className="text-gray-800">{state.baseScore} 分 {state.isDynamicScore ? `（最低 ${state.minScore}）` : ''}</span></div>
+          <div><span className="text-gray-500 mr-2">平台分值：</span> <span className="text-gray-800">{state.platformScore} 分</span></div>
           <div><span className="text-gray-500 mr-2">Flag 类型：</span> <span className="text-gray-800">{state.flagType}</span></div>
           <div><span className="text-gray-500 mr-2">容器：</span> <span className="text-gray-800">{state.useContainer ? '启用' : '跳过'}</span></div>
           {state.useContainer && (

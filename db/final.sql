@@ -1,13 +1,19 @@
 -- ==========================================================
--- CTF Platform - Consolidated Initialization Script v2
+-- CTF Platform — Consolidated Initialization Script v3
 -- Target:      MySQL 8.0+ / MariaDB 10.6+
 -- Encoding:    utf8mb4 / utf8mb4_unicode_ci
--- Updated:     2026-03-22
--- Changes:     Integrate RBAC v2 (site_admin / contest_admins)
---              Add problems.scope / contest_id / created_by / status
---              Add contests.created_by / visibility
---              Add contest_participants.status
---              Add role_change_logs audit table
+-- Updated:     2026-05-07
+-- Spec:        note/5-7_题目规范/CTF 题目规范 (v2.1).md
+--              note/5-7_题目规范/CTF 题目规范 (v3.0).md
+--              note/5-7_题目规范/flag_mode_explain.md
+-- 关键变更：
+--   * problems.base_score → problems.platform_score (难度区间硬约束)
+--   * problem_flags 新增 flag_pattern；flag_rule 扩展 regex/contains；
+--     CHECK 约束改为三段式 (chk_flag_fields)；flag_env_key 默认 EXEC_FLAG
+--   * attachments(problem_id) 唯一约束 — 一题一附件包
+--   * 新增 problem_hints / problem_prerequisites
+--   * contest_challenges 拆分为完整赛事计分配置：
+--     contest_score / is_dynamic_score / initial_score / min_score / decay_constant
 -- ==========================================================
 
 CREATE DATABASE IF NOT EXISTS ctf_exec
@@ -38,6 +44,9 @@ DROP TABLE IF EXISTS problem_flags;
 DROP TABLE IF EXISTS docker_images;
 DROP TABLE IF EXISTS attachments;
 DROP TABLE IF EXISTS challenge_instances;
+DROP TABLE IF EXISTS hint_unlocks;
+DROP TABLE IF EXISTS problem_hints;
+DROP TABLE IF EXISTS problem_prerequisites;
 DROP TABLE IF EXISTS problem_tags;
 DROP TABLE IF EXISTS challenge_tags;
 DROP TABLE IF EXISTS submissions;
@@ -67,13 +76,12 @@ CREATE TABLE users (
     avatar_url            VARCHAR(1024) NULL,
     bio                   TEXT          NULL,
     website_url           VARCHAR(512)  NULL,
-    
-    third_user_info       JSON          NULL,   -- For storing extra info from external auth providers
+
+    third_user_info       JSON          NULL,
 
     organization          VARCHAR(100)  NULL,
     country               CHAR(2)       NULL,
 
-    -- Global score & rank (platform-wide, separate from contest scores)
     score                 INT           NOT NULL DEFAULT 0,
     solved_count          INT           NOT NULL DEFAULT 0,
     rank_num              INT           NULL,
@@ -112,7 +120,6 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_score ON users(score DESC, last_login_at ASC);
 CREATE INDEX idx_users_role  ON users(role);
--- 全站榜定时快照查询用：按 score 降序 + 创建时间升序
 CREATE INDEX idx_users_leaderboard ON users(score DESC, created_at ASC);
 
 
@@ -122,21 +129,19 @@ CREATE INDEX idx_users_leaderboard ON users(score DESC, created_at ASC);
 
 CREATE TABLE leaderboard_global (
     id            BIGINT        NOT NULL AUTO_INCREMENT,
-    board_type    VARCHAR(16)   NOT NULL,   -- 'user' | 'team'
+    board_type    VARCHAR(16)   NOT NULL,
 
     rank_num      INT           NOT NULL,
-    ref_id        CHAR(36)      NOT NULL,   -- user.id or team.id
+    ref_id        CHAR(36)      NOT NULL,
 
     username      VARCHAR(32)   NULL,
     display_name  VARCHAR(64)   NULL,
     avatar_url    VARCHAR(1024) NULL,
     team_name     VARCHAR(100)  NULL,
 
-    -- User board fields
     score         INT           NOT NULL DEFAULT 0,
     solved_count  INT           NOT NULL DEFAULT 0,
 
-    -- Team board aggregation fields
     total_score   INT           NOT NULL DEFAULT 0,
     avg_score     DECIMAL(10,2) NOT NULL DEFAULT 0,
     member_count  INT           NOT NULL DEFAULT 0,
@@ -144,7 +149,7 @@ CREATE TABLE leaderboard_global (
     snapshot_at   DATETIME      NOT NULL,
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    is_current    TINYINT(1)   NOT NULL DEFAULT 1,  -- 1=当前有效快照, 0=历史快照
+    is_current    TINYINT(1)    NOT NULL DEFAULT 1,
 
     PRIMARY KEY (id),
 
@@ -182,14 +187,10 @@ CREATE TABLE teams (
         REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
--- ----------------------------------------------------------
--- 3.1 Team Members
--- ----------------------------------------------------------
-
 CREATE TABLE team_members (
     team_id      CHAR(36)    NOT NULL,
     user_id      CHAR(36)    NOT NULL,
-    role_in_team VARCHAR(16) NOT NULL DEFAULT 'member',  -- 'leader' | 'member'
+    role_in_team VARCHAR(16) NOT NULL DEFAULT 'member',
     joined_at    DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (team_id, user_id),
@@ -215,13 +216,8 @@ CREATE TABLE contests (
 
     scoring_type  VARCHAR(32)   NOT NULL DEFAULT 'jeopardy',
 
-    -- Visibility controls who can access/see the contest
-    -- 'public'       : listed publicly, open registration
-    -- 'invite_only'  : listed but requires invite_code to register
-    -- 'private'      : unlisted, admin access only (internal/test)
     visibility    VARCHAR(16)   NOT NULL DEFAULT 'public',
 
-    -- Who created this contest (site_admin or root)
     created_by    CHAR(36)      NULL,
 
     created_at    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -237,7 +233,12 @@ CREATE TABLE contests (
 ) ENGINE=InnoDB;
 
 -- ==========================================================
--- 5. Problems (Challenges)
+-- 5. Problems (Challenges) — 平台题库模板
+-- ==========================================================
+-- v2.1 关键字段：
+--   * platform_score  — 平台题库固定分值，受 difficulty 区间硬约束
+--                        easy:1-200 / medium:200-500 / hard:500-1000 / expert:1000-2000
+--   * 动态计分配置全部下沉到 contest_challenges 表（赛事 scope）
 -- ==========================================================
 
 CREATE TABLE problems (
@@ -246,7 +247,11 @@ CREATE TABLE problems (
     category           VARCHAR(32)   NOT NULL,
     type               VARCHAR(16)   NOT NULL DEFAULT 'static',
     description        TEXT          NULL,
-    base_score         INT           NOT NULL DEFAULT 0,
+    author             VARCHAR(64)   NULL,
+
+    -- 平台题库固定分值（v2.1 Part 3.1）
+    platform_score     INT           NOT NULL DEFAULT 0,
+
     difficulty         VARCHAR(16)   NOT NULL,
     deploy_mode        VARCHAR(16)   NOT NULL DEFAULT 'shared',
     use_kata           TINYINT(1)    NOT NULL DEFAULT 0,
@@ -263,6 +268,9 @@ CREATE TABLE problems (
     CONSTRAINT chk_problem_type        CHECK (type IN ('static', 'container_web', 'container_tcp')),
     CONSTRAINT chk_problem_deploy_mode CHECK (deploy_mode IN ('shared', 'per_user')),
     CONSTRAINT chk_problem_status      CHECK (status IN ('draft', 'ready', 'hidden')),
+    CONSTRAINT chk_problem_category    CHECK (category IN ('web', 'pwn', 'crypto', 'reverse', 'misc')),
+    CONSTRAINT chk_problem_difficulty  CHECK (difficulty IN ('easy', 'medium', 'hard', 'expert')),
+    CONSTRAINT chk_platform_score_nn   CHECK (platform_score >= 0),
 
     FOREIGN KEY fk_problems_created_by (created_by)
         REFERENCES users(id) ON DELETE SET NULL
@@ -273,27 +281,38 @@ CREATE INDEX idx_problems_category ON problems(category);
 CREATE INDEX idx_problems_created  ON problems(created_by);
 
 -- ----------------------------------------------------------
--- 5.1 Problem Flags
+-- 5.1 Problem Flags — 三正交维度
+-- ----------------------------------------------------------
+-- flag_type     : static / dynamic         (正确答案从哪来)
+-- flag_rule     : exact / case_insensitive / regex / contains   (怎么比对)
+-- flag_inject   : env / sidecar            (动态 flag 怎么进容器)
+--
+-- 字段一致性约束 (chk_flag_fields, 三段式):
+--   * exact / case_insensitive  → flag_hash NOT NULL, flag_pattern NULL
+--   * regex / contains          → flag_pattern NOT NULL, flag_hash NULL
+--   * dynamic                   → flag_hash NULL, flag_pattern NULL（真值在 flag_mappings）
 -- ----------------------------------------------------------
 
 CREATE TABLE problem_flags (
     problem_id            CHAR(36)      NOT NULL,
+    flag_type             VARCHAR(16)   NOT NULL DEFAULT 'static',
     flag_rule             VARCHAR(32)   NOT NULL DEFAULT 'exact',
     flag_hash             VARCHAR(255)  NULL,
+    flag_pattern          VARCHAR(512)  NULL,
     flag_example          VARCHAR(255)  NULL,
-    flag_type             VARCHAR(16)   NOT NULL DEFAULT 'static',
     flag_inject           VARCHAR(16)   NOT NULL DEFAULT 'env',
-    flag_env_key          VARCHAR(64)   NOT NULL DEFAULT 'FLAG',
+    flag_env_key          VARCHAR(64)   NOT NULL DEFAULT 'EXEC_FLAG',
     flag_sidecar_pattern  VARCHAR(255)  NULL,
 
     PRIMARY KEY (problem_id),
 
-    CONSTRAINT chk_flag_rule    CHECK (flag_rule IN ('exact', 'case_insensitive')),
     CONSTRAINT chk_flag_type    CHECK (flag_type IN ('static', 'dynamic')),
+    CONSTRAINT chk_flag_rule    CHECK (flag_rule IN ('exact', 'case_insensitive', 'regex', 'contains')),
     CONSTRAINT chk_flag_inject  CHECK (flag_inject IN ('env', 'sidecar')),
-    CONSTRAINT chk_flag_hash_nn CHECK (
-        (flag_type = 'static' AND flag_hash IS NOT NULL)
-        OR (flag_type = 'dynamic' AND flag_hash IS NULL)
+    CONSTRAINT chk_flag_fields  CHECK (
+        (flag_type = 'static'  AND flag_rule IN ('exact', 'case_insensitive') AND flag_hash IS NOT NULL AND flag_pattern IS NULL)
+        OR (flag_type = 'static'  AND flag_rule IN ('regex', 'contains')          AND flag_pattern IS NOT NULL AND flag_hash IS NULL)
+        OR (flag_type = 'dynamic' AND flag_hash IS NULL AND flag_pattern IS NULL)
     ),
 
     CONSTRAINT fk_pf_problem FOREIGN KEY (problem_id)
@@ -301,7 +320,7 @@ CREATE TABLE problem_flags (
 ) ENGINE=InnoDB;
 
 -- ----------------------------------------------------------
--- 5.2 Dynamic Flag Mappings
+-- 5.2 Dynamic Flag Mappings — 每用户/每实例独立 flag
 -- ----------------------------------------------------------
 
 CREATE TABLE flag_mappings (
@@ -327,8 +346,8 @@ CREATE TABLE problem_containers (
     image_name        VARCHAR(255)  NOT NULL,
     image_tag         VARCHAR(128)  NOT NULL DEFAULT 'latest',
     challenge_port    INT           NOT NULL,
-    sidecar_image     VARCHAR(255)  NOT NULL,
-    sidecar_port      INT           NOT NULL,
+    sidecar_image     VARCHAR(255)  NULL,
+    sidecar_port      INT           NULL,
     cpu_limit         VARCHAR(32)   NOT NULL DEFAULT '500m',
     memory_limit      VARCHAR(32)   NOT NULL DEFAULT '512Mi',
     env               JSON          NULL,
@@ -355,6 +374,66 @@ CREATE TABLE problem_tags (
         REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+-- ----------------------------------------------------------
+-- 5.5 Problem Hints — v2.1 Part 7
+-- ----------------------------------------------------------
+
+CREATE TABLE problem_hints (
+    id           CHAR(36)      NOT NULL,
+    problem_id   CHAR(36)      NOT NULL,
+    content      TEXT          NOT NULL,
+    cost         INT           NOT NULL DEFAULT 0,
+    sort_order   INT           NOT NULL DEFAULT 0,
+    is_visible   TINYINT(1)    NOT NULL DEFAULT 1,
+    created_at   DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    CONSTRAINT chk_hint_cost_nn CHECK (cost >= 0),
+
+    FOREIGN KEY fk_hints_problem (problem_id)
+        REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_hints_problem_order ON problem_hints(problem_id, sort_order);
+
+-- ----------------------------------------------------------
+-- 5.6 Hint Unlocks — 用户提示解锁记录（按 scope 扣分）
+-- ----------------------------------------------------------
+
+CREATE TABLE hint_unlocks (
+    id              CHAR(36)    NOT NULL,
+    user_id         CHAR(36)    NOT NULL,
+    hint_id         CHAR(36)    NOT NULL,
+    contest_id      CHAR(36)    NULL,         -- NULL = platform scope
+    cost_at_unlock  INT         NOT NULL DEFAULT 0,
+    unlocked_at     DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    UNIQUE KEY uniq_hint_unlock_scope (user_id, hint_id, contest_id),
+
+    FOREIGN KEY fk_hu_user    (user_id) REFERENCES users(id)         ON DELETE CASCADE,
+    FOREIGN KEY fk_hu_hint    (hint_id) REFERENCES problem_hints(id) ON DELETE CASCADE,
+    FOREIGN KEY fk_hu_contest (contest_id) REFERENCES contests(id)   ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ----------------------------------------------------------
+-- 5.7 Problem Prerequisites — v2.1 Part 8
+-- ----------------------------------------------------------
+
+CREATE TABLE problem_prerequisites (
+    problem_id       CHAR(36) NOT NULL,
+    prerequisite_id  CHAR(36) NOT NULL,
+
+    PRIMARY KEY (problem_id, prerequisite_id),
+
+    CONSTRAINT chk_no_self_prereq CHECK (problem_id <> prerequisite_id),
+
+    FOREIGN KEY fk_pp_problem      (problem_id)      REFERENCES problems(id) ON DELETE CASCADE,
+    FOREIGN KEY fk_pp_prerequisite (prerequisite_id) REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 -- ==========================================================
 -- 6. Submissions
 -- ==========================================================
@@ -365,7 +444,7 @@ CREATE TABLE submissions (
     team_id         CHAR(36)     NULL,
     problem_id      CHAR(36)     NOT NULL,
     instance_id     CHAR(36)     NULL,
-    contest_id      CHAR(36)     NULL,   -- NULL = practice (non-contest) submission
+    contest_id      CHAR(36)     NULL,
 
     flag            VARCHAR(1024) NULL,
     is_correct      TINYINT(1)   NOT NULL DEFAULT 0,
@@ -383,50 +462,38 @@ CREATE TABLE submissions (
     FOREIGN KEY fk_submissions_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- User / problem lookup
 CREATE INDEX idx_sub_user          ON submissions(user_id);
 CREATE INDEX idx_sub_problem       ON submissions(problem_id);
 CREATE INDEX idx_sub_instance      ON submissions(instance_id);
--- Fast "has user solved this problem?" check
 CREATE INDEX idx_sub_user_problem  ON submissions(user_id, problem_id);
--- First-blood queries
 CREATE INDEX idx_sub_problem_correct ON submissions(problem_id, is_correct);
--- Scoreboard timeline
 CREATE INDEX idx_sub_user_time     ON submissions(user_id, created_at);
--- Contest submission dedup & scoreboard
 CREATE INDEX idx_sub_contest_user_problem_correct
     ON submissions(contest_id, user_id, problem_id, is_correct);
--- 非赛事正确提交去重：WHERE user_id = ? AND problem_id = ? AND is_correct = 1 AND contest_id IS NULL
 CREATE INDEX idx_sub_user_problem_noc ON submissions(user_id, problem_id, is_correct, contest_id);
 
 
 -- ==========================================================
 -- 6.1 Refresh Tokens (Persistent, DB-backed)
 -- ==========================================================
--- Refresh token 不走 Redis，持久化到 MySQL，避免 Redis 重启丢失。
--- 存储 SHA256 哈希，不存明文。
--- 每次 refresh rotation 旧 token 标记 revoked=1，插入新行。
 
 CREATE TABLE refresh_tokens (
     id          CHAR(36)    NOT NULL,
     user_id     CHAR(36)    NOT NULL,
-    token_hash  CHAR(64)    NOT NULL,       -- SHA256(refresh_token)
-    jti         CHAR(36)    NOT NULL,       -- 关联 access token 的 jti，用于登出时吊销 access
+    token_hash  CHAR(64)    NOT NULL,
+    jti         CHAR(36)    NOT NULL,
     expires_at  DATETIME    NOT NULL,
     revoked     TINYINT(1)  NOT NULL DEFAULT 0,
-    ip_address  VARCHAR(45) NULL,           -- 签发时的客户端 IP
-    user_agent  VARCHAR(512) NULL,          -- 签发时的 UA（可选，用于会话管理）
+    ip_address  VARCHAR(45) NULL,
+    user_agent  VARCHAR(512) NULL,
     created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
 
-    -- 登录时快速校验 token 有效性
     UNIQUE KEY uniq_rt_hash (token_hash),
 
-    -- 按用户查询活跃会话（"管理登录设备"功能）
     INDEX idx_rt_user_active (user_id, revoked, expires_at),
 
-    -- 定时清理过期 token
     INDEX idx_rt_expires (expires_at),
 
     CONSTRAINT fk_rt_user FOREIGN KEY (user_id)
@@ -466,7 +533,7 @@ CREATE INDEX idx_ci_expired             ON challenge_instances(expired_at, statu
 CREATE INDEX idx_ci_user_problem_active ON challenge_instances(user_id, problem_id, status);
 
 -- ==========================================================
--- 8. Attachments
+-- 8. Attachments — 单附件包约束（v2.1 Part 6）
 -- ==========================================================
 
 CREATE TABLE attachments (
@@ -480,6 +547,9 @@ CREATE TABLE attachments (
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
+
+    -- DB 层强制：一题一附件包
+    UNIQUE KEY uniq_attachment_problem (problem_id),
 
     FOREIGN KEY fk_attachments_problem (problem_id)
         REFERENCES problems(id) ON DELETE CASCADE
@@ -526,21 +596,15 @@ CREATE INDEX idx_ibt_status  ON image_build_tasks(status);
 -- ==========================================================
 -- 10. Contest Admins (Resource-level RBAC)
 -- ==========================================================
--- A user listed here has contest-scoped admin rights.
--- root and site_admin implicitly have all contest rights;
--- they do NOT need entries here.
--- Maximum 10 admins per contest is enforced at service layer.
 
 CREATE TABLE contest_admins (
     id          CHAR(36)    NOT NULL,
     contest_id  CHAR(36)    NOT NULL,
     user_id     CHAR(36)    NOT NULL,
 
-    -- 'admin'    : full contest management (problems, participants, meta)
-    -- 'observer' : read-only; useful for judges / invigilators
     role        VARCHAR(16) NOT NULL DEFAULT 'admin',
 
-    granted_by  CHAR(36)    NULL,   -- the site_admin / root who granted this
+    granted_by  CHAR(36)    NULL,
     granted_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
@@ -557,19 +621,49 @@ CREATE INDEX idx_contest_admins_contest ON contest_admins(contest_id);
 CREATE INDEX idx_contest_admins_user    ON contest_admins(user_id);
 
 -- ==========================================================
--- 11. Contest Challenges
+-- 11. Contest Challenges — 赛事题目实例（v2.1 Part 1.1 / Part 3.2）
+-- ==========================================================
+-- 双 Scope 计分核心：每条 contest_challenges 行携带完整的赛事计分配置。
+--   * contest_score      — 赛事基础分值（自由设置）
+--   * is_dynamic_score   — 是否启用 CTFd 多项式衰减
+--   * initial_score / min_score / decay_constant — 动态参数（is_dynamic_score=1 时必填）
+-- current_score 由 service 层根据 solve_count 实时计算，不入库。
 -- ==========================================================
 
 CREATE TABLE contest_challenges (
-    contest_id     CHAR(36) NOT NULL,
-    challenge_id   CHAR(36) NOT NULL,
-    score_override INT      NULL,   -- NULL = use problems.base_score
+    contest_id        CHAR(36)   NOT NULL,
+    challenge_id      CHAR(36)   NOT NULL,
+
+    contest_score     INT        NOT NULL DEFAULT 500,
+    is_dynamic_score  TINYINT(1) NOT NULL DEFAULT 0,
+    initial_score     INT        NULL,
+    min_score         INT        NULL,
+    decay_constant    INT        NULL,
+
+    sort_order        INT        NOT NULL DEFAULT 0,
+    created_at        DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME   NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                     ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (contest_id, challenge_id),
+
+    CONSTRAINT chk_contest_score_pos CHECK (contest_score > 0),
+    CONSTRAINT chk_dynamic_params CHECK (
+        (is_dynamic_score = 0)
+        OR (
+            is_dynamic_score = 1
+            AND initial_score  IS NOT NULL AND initial_score  > 0
+            AND min_score      IS NOT NULL AND min_score      > 0
+            AND decay_constant IS NOT NULL AND decay_constant > 0
+            AND min_score < initial_score
+        )
+    ),
 
     FOREIGN KEY fk_cc_contest   (contest_id)   REFERENCES contests(id)  ON DELETE CASCADE,
     FOREIGN KEY fk_cc_challenge (challenge_id) REFERENCES problems(id)  ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE INDEX idx_cc_contest_sort ON contest_challenges(contest_id, sort_order);
 
 -- ==========================================================
 -- 12. Contest Participants
@@ -578,13 +672,9 @@ CREATE TABLE contest_challenges (
 CREATE TABLE contest_participants (
     id            CHAR(36)  NOT NULL,
     contest_id    CHAR(36)  NOT NULL,
-    user_id       CHAR(36)  NULL,   -- NULL when team participates
-    team_id       CHAR(36)  NULL,   -- NULL when individual participates
+    user_id       CHAR(36)  NULL,
+    team_id       CHAR(36)  NULL,
 
-    -- Registration workflow
-    -- 'pending'  : awaiting contest_admin approval
-    -- 'approved' : confirmed participant
-    -- 'rejected' : denied by contest_admin
     status        VARCHAR(16) NOT NULL DEFAULT 'approved',
 
     registered_at DATETIME  NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -598,9 +688,7 @@ CREATE TABLE contest_participants (
     FOREIGN KEY fk_cp_team    (team_id)    REFERENCES teams(id)    ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- Prevent duplicate individual registration
 CREATE UNIQUE INDEX uniq_cp_contest_user ON contest_participants(contest_id, user_id);
--- Prevent duplicate team registration
 CREATE UNIQUE INDEX uniq_cp_contest_team ON contest_participants(contest_id, team_id);
 
 -- ==========================================================
@@ -655,14 +743,6 @@ CREATE TABLE contest_leaderboards (
 -- ==========================================================
 -- 15. User Activity Logs
 -- ==========================================================
--- General-purpose audit log.
--- action_type examples:
---   login, logout, submit_flag, join_team, leave_team
---   contest_admin_add, contest_admin_remove
---   contest_create, contest_update
---   problem_publish, problem_archive
---   user_ban, user_unban
--- (role_change events go to role_change_logs for structured queries)
 
 CREATE TABLE user_activity_logs (
     id          CHAR(36)    NOT NULL,
@@ -680,18 +760,15 @@ CREATE TABLE user_activity_logs (
 
 CREATE INDEX idx_ual_action_time ON user_activity_logs(action_type, created_at);
 CREATE INDEX idx_ual_user        ON user_activity_logs(user_id);
--- 添加覆盖索引，加速 "某用户最近活跃时间" 查询
 CREATE INDEX idx_ual_user_time   ON user_activity_logs(user_id, created_at DESC);
 
 -- ==========================================================
 -- 16. Role Change Logs (Structured Audit)
 -- ==========================================================
--- Only for global role mutations (root upgrades/downgrades site_admin).
--- contest_admin grants are tracked in user_activity_logs.
 
 CREATE TABLE role_change_logs (
     id          CHAR(36)     NOT NULL,
-    operator_id CHAR(36)     NULL,    -- who performed the change (root)
+    operator_id CHAR(36)     NULL,
     target_id   CHAR(36)     NOT NULL,
     old_role    VARCHAR(16)  NOT NULL,
     new_role    VARCHAR(16)  NOT NULL,
@@ -710,25 +787,19 @@ CREATE INDEX idx_rcl_operator ON role_change_logs(operator_id);
 -- ==========================================================
 -- 17. User Follows (Social)
 -- ==========================================================
--- 单向关注模型（follow），非双向好友。
--- follower_id 关注了 followee_id。
 
 CREATE TABLE user_follows (
     id          CHAR(36)    NOT NULL,
-    follower_id CHAR(36)    NOT NULL,  -- 关注者
-    followee_id CHAR(36)    NOT NULL,  -- 被关注者
+    follower_id CHAR(36)    NOT NULL,
+    followee_id CHAR(36)    NOT NULL,
     created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
 
-    -- 不能重复关注
     UNIQUE KEY uniq_follow (follower_id, followee_id),
-    -- 不能关注自己
     CONSTRAINT chk_no_self_follow CHECK (follower_id <> followee_id),
 
-    -- 查"某人的粉丝列表"：WHERE followee_id = ? ORDER BY created_at
     INDEX idx_followee (followee_id, created_at),
-    -- 查"某人关注了谁"：WHERE follower_id = ? ORDER BY created_at
     INDEX idx_follower (follower_id, created_at),
 
     CONSTRAINT fk_follow_follower FOREIGN KEY (follower_id)

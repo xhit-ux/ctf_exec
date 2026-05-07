@@ -99,9 +99,14 @@ func (r *ProblemRepository) StartDraftCleanupScheduler(interval, staleAfter time
 
 func (r *ProblemRepository) GetProblemSubmissionMeta(id string) (*models.ProblemSubmissionMeta, error) {
 	meta := &models.ProblemSubmissionMeta{}
+	var hash sql.NullString
+	var pattern sql.NullString
 	query := `
-		SELECT p.id, p.title, p.base_score, p.status,
-		       IFNULL(pf.flag_hash, ''), IFNULL(pf.flag_rule, 'exact'), IFNULL(pf.flag_type, 'static')
+		SELECT p.id, p.title, p.platform_score, p.status, p.deploy_mode,
+		       IFNULL(pf.flag_type, 'static'),
+		       IFNULL(pf.flag_rule, 'exact'),
+		       pf.flag_hash,
+		       pf.flag_pattern
 		FROM problems p
 		JOIN problem_flags pf ON pf.problem_id = p.id
 		WHERE p.id = ?
@@ -109,16 +114,24 @@ func (r *ProblemRepository) GetProblemSubmissionMeta(id string) (*models.Problem
 	if err := r.db.QueryRow(query, strings.TrimSpace(id)).Scan(
 		&meta.ID,
 		&meta.Title,
-		&meta.Points,
+		&meta.PlatformScore,
 		&meta.Status,
-		&meta.FlagHash,
-		&meta.FlagRule,
+		&meta.DeployMode,
 		&meta.FlagType,
+		&meta.FlagRule,
+		&hash,
+		&pattern,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, apperr.New(apperr.ErrNotFound, "题目不存在")
 		}
 		return nil, fmt.Errorf("查询题目元数据失败: %w", err)
+	}
+	if hash.Valid {
+		meta.FlagHash = strings.TrimSpace(hash.String)
+	}
+	if pattern.Valid {
+		meta.FlagPattern = strings.TrimSpace(pattern.String)
 	}
 	return meta, nil
 }
@@ -142,13 +155,13 @@ func (r *ProblemRepository) GetFlagHashByProblemID(id string) (string, error) {
 
 func (r *ProblemRepository) GetProblems() ([]*models.Problem, error) {
 	query := `
-		SELECT p.id, p.title, p.category, p.type, p.description, p.base_score,
+		SELECT p.id, p.title, p.category, p.type, p.description, p.platform_score,
 		       p.difficulty, p.deploy_mode, p.use_kata, p.status,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		WHERE p.status = 'ready'
-		GROUP BY p.id, p.title, p.category, p.type, p.description, p.base_score,
+		GROUP BY p.id, p.title, p.category, p.type, p.description, p.platform_score,
 		         p.difficulty, p.deploy_mode, p.use_kata, p.status
 		ORDER BY p.created_at DESC
 	`
@@ -168,7 +181,7 @@ func (r *ProblemRepository) GetProblems() ([]*models.Problem, error) {
 			&p.Category,
 			&p.Type,
 			&p.Description,
-			&p.BaseScore,
+			&p.PlatformScore,
 			&p.Difficulty,
 			&p.DeployMode,
 			&p.UseKata,
@@ -187,7 +200,7 @@ func (r *ProblemRepository) GetProblems() ([]*models.Problem, error) {
 
 func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Problem, error) {
 	query := `
-		SELECT p.id, p.title, p.category, p.type, p.description, p.base_score,
+		SELECT p.id, p.title, p.category, p.type, p.description, p.platform_score,
 		       p.difficulty, p.deploy_mode, p.use_kata, p.status,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags,
 		       IF(COUNT(s.id) > 0, 1, 0) as is_solved
@@ -195,7 +208,7 @@ func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Prob
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		LEFT JOIN submissions s ON p.id = s.problem_id AND s.user_id = ? AND s.is_correct = 1
 		WHERE p.status = 'ready'
-		GROUP BY p.id, p.title, p.category, p.type, p.description, p.base_score,
+		GROUP BY p.id, p.title, p.category, p.type, p.description, p.platform_score,
 		         p.difficulty, p.deploy_mode, p.use_kata, p.status
 		ORDER BY p.created_at DESC
 	`
@@ -216,7 +229,7 @@ func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Prob
 			&p.Category,
 			&p.Type,
 			&p.Description,
-			&p.BaseScore,
+			&p.PlatformScore,
 			&p.Difficulty,
 			&p.DeployMode,
 			&p.UseKata,
@@ -236,29 +249,43 @@ func (r *ProblemRepository) GetProblemsWithStatus(userID string) ([]*models.Prob
 }
 
 func (r *ProblemRepository) GetProblemByID(id string) (*models.Problem, error) {
+	return r.getProblemByID(id, "")
+}
+
+// GetProblemByIDForUser 按用户视角返回详情（含 instance/connection_info/hints/prerequisites/is_solved/is_locked）。
+// userID 为空表示匿名访问，等价于 GetProblemByID。
+func (r *ProblemRepository) GetProblemByIDForUser(id, userID string) (*models.Problem, error) {
+	return r.getProblemByID(id, strings.TrimSpace(userID))
+}
+
+func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, error) {
 	query := `
-		SELECT p.id, p.title, p.category, p.type, p.description, p.base_score,
-		       p.difficulty, p.deploy_mode, p.use_kata, p.status,
+		SELECT p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
+		       p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_at, p.updated_at,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		WHERE p.id = ? AND p.status = 'ready'
-		GROUP BY p.id, p.title, p.category, p.type, p.description, p.base_score,
-		         p.difficulty, p.deploy_mode, p.use_kata, p.status
+		GROUP BY p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
+		         p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_at, p.updated_at
 	`
 	p := &models.Problem{}
 	var tagsJSON string
+	var author sql.NullString
 	if err := r.db.QueryRow(query, strings.TrimSpace(id)).Scan(
 		&p.ID,
 		&p.Title,
+		&author,
 		&p.Category,
 		&p.Type,
 		&p.Description,
-		&p.BaseScore,
+		&p.PlatformScore,
 		&p.Difficulty,
 		&p.DeployMode,
 		&p.UseKata,
 		&p.Status,
+		&p.CreatedAt,
+		&p.UpdatedAt,
 		&tagsJSON,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -266,137 +293,72 @@ func (r *ProblemRepository) GetProblemByID(id string) (*models.Problem, error) {
 		}
 		return nil, fmt.Errorf("查询题目失败: %w", err)
 	}
+	if author.Valid {
+		v := strings.TrimSpace(author.String)
+		if v != "" {
+			p.Author = &v
+		}
+	}
 	if err := json.Unmarshal([]byte(tagsJSON), &p.Tags); err != nil {
 		p.Tags = []string{}
 	}
-	attachments, err := r.ListProblemAttachments(p.ID)
+
+	// 单附件。
+	attachment, err := r.GetProblemAttachment(p.ID)
 	if err != nil {
 		return nil, err
 	}
-	p.Attachments = attachments
+	p.Attachment = attachment
+
+	// 提示与前置依赖（platform scope）。
+	if hints, hintErr := r.ListProblemHints(p.ID, userID, nil); hintErr == nil {
+		// 未解锁的 content 抹掉。
+		for _, h := range hints {
+			if !h.IsUnlocked {
+				h.Content = ""
+			}
+		}
+		p.Hints = hints
+	}
+	if prereqs, prErr := r.ListProblemPrerequisites(p.ID, userID); prErr == nil {
+		p.Prerequisites = prereqs
+	}
+
+	// 容器实例 + connection_info（仅容器题）。
+	if userID != "" && (p.Type == "container_web" || p.Type == "container_tcp") {
+		if inst, instErr := r.GetChallengeInstance(p.ID, userID); instErr == nil && inst != nil {
+			p.Instance = &models.InstanceView{
+				Status:    inst.Status,
+				AccessURL: inst.AccessURL,
+				StartedAt: inst.StartedAt,
+				ExpiresAt: inst.ExpiredAt,
+			}
+			if container, _ := r.getProblemContainer(p.ID); container != nil {
+				p.Connection = models.BuildConnectionInfo(p.Type, inst, container)
+			}
+		}
+	}
+
+	// is_solved / is_locked（仅有 userID 时计算）。
+	if userID != "" {
+		var solved int
+		_ = r.db.QueryRow(`SELECT COUNT(*) FROM submissions WHERE problem_id = ? AND user_id = ? AND is_correct = 1`,
+			p.ID, userID).Scan(&solved)
+		p.IsSolved = solved > 0
+
+		if all, lockErr := r.AreAllPrerequisitesSolvedByUser(p.ID, userID); lockErr == nil {
+			p.IsLocked = !all
+		}
+	}
+
 	return p, nil
 }
 
-func (r *ProblemRepository) CreateProblem(req *models.CreateProblemRequest) (*models.Problem, error) {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("开启事务失败: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	id := uuid.New().String()
-	status := strings.ToLower(strings.TrimSpace(req.Status))
-	if status == "" {
-		status = "draft"
-	}
-	typeName := strings.ToLower(strings.TrimSpace(req.Type))
-	if typeName == "" {
-		typeName = "static"
-	}
-	deployMode := strings.ToLower(strings.TrimSpace(req.DeployMode))
-	if deployMode == "" {
-		deployMode = "shared"
-	}
-
-	_, err = tx.Exec(`
-		INSERT INTO problems (
-			id, title, category, type, description, base_score, difficulty,
-			deploy_mode, use_kata, status, created_by
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, id, strings.TrimSpace(req.Title), strings.TrimSpace(req.Category), typeName,
-		nullIfEmpty(req.Description), req.BaseScore, strings.TrimSpace(req.Difficulty),
-		deployMode, req.UseKata, status, nullIfEmpty(req.CreatedBy))
-	if err != nil {
-		return nil, fmt.Errorf("创建题目失败: %w", err)
-	}
-
-	if err = r.upsertFlagTx(tx, id, &req.Flag); err != nil {
-		return nil, err
-	}
-	if req.Container != nil {
-		if err = r.upsertContainerTx(tx, id, req.Container); err != nil {
-			return nil, err
-		}
-	}
-	if err = r.syncProblemTagsTx(tx, id, req.Tags); err != nil {
-		return nil, err
-	}
-
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("提交事务失败: %w", err)
-	}
-	return r.GetAdminProblemByID(id)
-}
-
-func (r *ProblemRepository) UpdateProblem(problemID string, req *models.UpdateProblemRequest) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("开启事务失败: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-		}
-	}()
-
-	var exists string
-	if scanErr := tx.QueryRow(`SELECT id FROM problems WHERE id = ?`, strings.TrimSpace(problemID)).Scan(&exists); scanErr != nil {
-		if scanErr == sql.ErrNoRows {
-			return apperr.New(apperr.ErrNotFound, "题目不存在")
-		}
-		return fmt.Errorf("查询题目失败: %w", scanErr)
-	}
-
-	typeName := strings.ToLower(strings.TrimSpace(req.Type))
-	if typeName == "" {
-		typeName = "static"
-	}
-	deployMode := strings.ToLower(strings.TrimSpace(req.DeployMode))
-	if deployMode == "" {
-		deployMode = "shared"
-	}
-	status := strings.ToLower(strings.TrimSpace(req.Status))
-	if status == "" {
-		status = "draft"
-	}
-
-	_, err = tx.Exec(`
-		UPDATE problems
-		SET title = ?, category = ?, type = ?, description = ?, base_score = ?, difficulty = ?,
-		    deploy_mode = ?, use_kata = ?, status = ?, updated_at = NOW()
-		WHERE id = ?
-	`, strings.TrimSpace(req.Title), strings.TrimSpace(req.Category), typeName,
-		nullIfEmpty(req.Description), req.BaseScore, strings.TrimSpace(req.Difficulty),
-		deployMode, req.UseKata, status, strings.TrimSpace(problemID))
-	if err != nil {
-		return fmt.Errorf("更新题目失败: %w", err)
-	}
-
-	if err = r.upsertFlagTx(tx, strings.TrimSpace(problemID), &req.Flag); err != nil {
-		return err
-	}
-	if req.Container != nil {
-		if err = r.upsertContainerTx(tx, strings.TrimSpace(problemID), req.Container); err != nil {
-			return err
-		}
-	} else {
-		if _, err = tx.Exec(`DELETE FROM problem_containers WHERE problem_id = ?`, strings.TrimSpace(problemID)); err != nil {
-			return fmt.Errorf("清理容器配置失败: %w", err)
-		}
-	}
-	if err = r.syncProblemTagsTx(tx, strings.TrimSpace(problemID), req.Tags); err != nil {
-		return err
-	}
-
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("提交事务失败: %w", err)
-	}
-	return nil
-}
+// 注：v3.0 后取消了"一键创建/更新整道题目"的接口。
+// 题目录入由 5 步向导驱动：
+//   CreateProblemDraft → UpdateProblemBasic → UpsertProblemFlag
+//   → (UpsertProblemContainer | SaveProblemImage) → SaveProblemAttachment
+//   → PublishProblem。
 
 func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	cleanID := strings.TrimSpace(problemID)
@@ -438,24 +400,26 @@ func (r *ProblemRepository) GetProblemAccessMeta(problemID string) (scope string
 func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Problem, error) {
 	p := &models.Problem{}
 	query := `
-		SELECT p.id, p.title, p.category, p.type, p.description, p.base_score,
+		SELECT p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
 		       p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		WHERE p.id = ?
-		GROUP BY p.id, p.title, p.category, p.type, p.description, p.base_score,
+		GROUP BY p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
 		         p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by
 	`
 	var tagsJSON string
+	var author sql.NullString
 	var createdBy sql.NullString
 	if err := r.db.QueryRow(query, strings.TrimSpace(problemID)).Scan(
 		&p.ID,
 		&p.Title,
+		&author,
 		&p.Category,
 		&p.Type,
 		&p.Description,
-		&p.BaseScore,
+		&p.PlatformScore,
 		&p.Difficulty,
 		&p.DeployMode,
 		&p.UseKata,
@@ -467,6 +431,12 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 			return nil, apperr.New(apperr.ErrNotFound, "题目不存在")
 		}
 		return nil, fmt.Errorf("查询管理端题目失败: %w", err)
+	}
+	if author.Valid {
+		v := strings.TrimSpace(author.String)
+		if v != "" {
+			p.Author = &v
+		}
 	}
 	if createdBy.Valid {
 		v := strings.TrimSpace(createdBy.String)
@@ -480,8 +450,10 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 
 	flag, _ := r.getProblemFlag(problemID)
 	container, _ := r.getProblemContainer(problemID)
+	attachment, _ := r.GetProblemAttachment(problemID)
 	p.Flag = flag
 	p.Container = container
+	p.Attachment = attachment
 	return p, nil
 }
 
@@ -502,13 +474,13 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 	}
 
 	query := fmt.Sprintf(`
-		SELECT p.id, p.title, p.category, p.type, p.description, p.base_score,
+		SELECT p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
 		       p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		%s
-		GROUP BY p.id, p.title, p.category, p.type, p.description, p.base_score,
+		GROUP BY p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
 		         p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by
 		ORDER BY p.updated_at DESC
 	`, where)
@@ -523,14 +495,16 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 	for rows.Next() {
 		p := &models.Problem{}
 		var tagsJSON string
+		var author sql.NullString
 		var createdBy sql.NullString
 		if err := rows.Scan(
 			&p.ID,
 			&p.Title,
+			&author,
 			&p.Category,
 			&p.Type,
 			&p.Description,
-			&p.BaseScore,
+			&p.PlatformScore,
 			&p.Difficulty,
 			&p.DeployMode,
 			&p.UseKata,
@@ -539,6 +513,12 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 			&tagsJSON,
 		); err != nil {
 			return nil, fmt.Errorf("扫描题目失败: %w", err)
+		}
+		if author.Valid {
+			v := strings.TrimSpace(author.String)
+			if v != "" {
+				p.Author = &v
+			}
 		}
 		if createdBy.Valid {
 			v := strings.TrimSpace(createdBy.String)
@@ -554,63 +534,103 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 	return items, nil
 }
 
-func (r *ProblemRepository) upsertFlagTx(tx *sql.Tx, problemID string, req *models.CreateFlagRequest) error {
+// upsertFlagTx 写入 problem_flags。
+// 严格遵循 flag_mode_explain.md 的合法组合矩阵：
+//   - static + (exact|case_insensitive)  → 仅写 flag_hash，flag_pattern=NULL
+//   - static + (regex|contains)          → 仅写 flag_pattern，flag_hash=NULL
+//   - dynamic + (exact|case_insensitive) → flag_hash 与 flag_pattern 均 NULL，
+//                                          运行期由 challenge_instances.flag_value 即席校验
+//   - dynamic + (regex|contains)         → 业务上不支持，handler 已拦截
+func (r *ProblemRepository) upsertFlagTx(tx *sql.Tx, problemID string, req *models.SaveProblemFlagRequest) error {
 	if req == nil {
 		return fmt.Errorf("flag 配置不能为空")
 	}
-	flagRule := strings.TrimSpace(req.FlagRule)
-	if flagRule == "" {
-		flagRule = "exact"
-	}
+
 	flagType := strings.ToLower(strings.TrimSpace(req.FlagType))
-	if flagType == "" {
-		flagType = "static"
+	if flagType != "static" && flagType != "dynamic" {
+		return fmt.Errorf("非法 flag_type: %s", req.FlagType)
+	}
+	flagRule := utils.NormalizeFlagRule(req.FlagRule)
+	if flagRule == "" {
+		return fmt.Errorf("非法 flag_rule: %s", req.FlagRule)
 	}
 	flagInject := strings.ToLower(strings.TrimSpace(req.FlagInject))
 	if flagInject == "" {
 		flagInject = "env"
 	}
+	if flagInject != "env" && flagInject != "sidecar" {
+		return fmt.Errorf("非法 flag_inject: %s", req.FlagInject)
+	}
 	flagEnvKey := strings.TrimSpace(req.FlagEnvKey)
 	if flagEnvKey == "" {
-		flagEnvKey = "FLAG"
+		flagEnvKey = "EXEC_FLAG"
 	}
 
 	var flagHash interface{}
-	if flagType == "static" {
-		plain := strings.TrimSpace(req.FlagPlain)
-		if plain == "" {
-			return fmt.Errorf("静态 flag 不能为空")
+	var flagPattern interface{}
+
+	switch flagType {
+	case "static":
+		switch flagRule {
+		case utils.FlagRuleExact, utils.FlagRuleCaseInsensitive:
+			h, hashErr := utils.PrepareStaticFlagHash(flagRule, req.FlagValue)
+			if hashErr != nil {
+				return hashErr
+			}
+			flagHash = h
+		case utils.FlagRuleRegex, utils.FlagRuleContains:
+			pattern := strings.TrimSpace(req.FlagValue)
+			if pattern == "" {
+				return fmt.Errorf("static + %s 必须提供 pattern", flagRule)
+			}
+			if err := utils.ValidateFlagPattern(flagRule, pattern); err != nil {
+				return err
+			}
+			flagPattern = pattern
 		}
-		if strings.EqualFold(flagRule, "case_insensitive") {
-			plain = strings.ToLower(plain)
+	case "dynamic":
+		if flagRule == utils.FlagRuleRegex || flagRule == utils.FlagRuleContains {
+			return fmt.Errorf("dynamic flag 不支持 regex/contains 规则")
 		}
-		h := utils.HashFlag(plain)
-		flagHash = h
-	} else {
-		flagHash = nil
+	}
+
+	var sidecarPattern interface{}
+	if req.FlagSidecarPattern != nil {
+		v := strings.TrimSpace(*req.FlagSidecarPattern)
+		if v != "" {
+			sidecarPattern = v
+		}
+	}
+	var example interface{}
+	if req.FlagExample != nil {
+		v := strings.TrimSpace(*req.FlagExample)
+		if v != "" {
+			example = v
+		}
 	}
 
 	_, err := tx.Exec(`
 		INSERT INTO problem_flags (
-			problem_id, flag_rule, flag_hash, flag_example, flag_type,
+			problem_id, flag_type, flag_rule, flag_hash, flag_pattern, flag_example,
 			flag_inject, flag_env_key, flag_sidecar_pattern
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
+			flag_type = VALUES(flag_type),
 			flag_rule = VALUES(flag_rule),
 			flag_hash = VALUES(flag_hash),
+			flag_pattern = VALUES(flag_pattern),
 			flag_example = VALUES(flag_example),
-			flag_type = VALUES(flag_type),
 			flag_inject = VALUES(flag_inject),
 			flag_env_key = VALUES(flag_env_key),
 			flag_sidecar_pattern = VALUES(flag_sidecar_pattern)
-	`, problemID, flagRule, flagHash, req.FlagExample, flagType, flagInject, flagEnvKey, req.FlagSidecarPattern)
+	`, problemID, flagType, flagRule, flagHash, flagPattern, example, flagInject, flagEnvKey, sidecarPattern)
 	if err != nil {
 		return fmt.Errorf("写入 flag 配置失败: %w", err)
 	}
 	return nil
 }
 
-func (r *ProblemRepository) upsertContainerTx(tx *sql.Tx, problemID string, req *models.CreateContainerRequest) error {
+func (r *ProblemRepository) upsertContainerTx(tx *sql.Tx, problemID string, req *models.SaveProblemContainerRequest) error {
 	if req == nil {
 		return nil
 	}
@@ -630,6 +650,25 @@ func (r *ProblemRepository) upsertContainerTx(tx *sql.Tx, problemID string, req 
 	if ttl <= 0 {
 		ttl = 3600
 	}
+	var sidecarImage interface{}
+	if req.SidecarImage != nil {
+		v := strings.TrimSpace(*req.SidecarImage)
+		if v != "" {
+			sidecarImage = v
+		}
+	}
+	var sidecarPort interface{}
+	if req.SidecarPort != nil && *req.SidecarPort > 0 {
+		sidecarPort = *req.SidecarPort
+	}
+	var ingressTpl interface{}
+	if req.IngressHostTpl != nil {
+		v := strings.TrimSpace(*req.IngressHostTpl)
+		if v != "" {
+			ingressTpl = v
+		}
+	}
+
 	_, err := tx.Exec(`
 		INSERT INTO problem_containers (
 			problem_id, image_name, image_tag, challenge_port,
@@ -652,13 +691,13 @@ func (r *ProblemRepository) upsertContainerTx(tx *sql.Tx, problemID string, req 
 		strings.TrimSpace(req.ImageName),
 		imageTag,
 		req.ChallengePort,
-		strings.TrimSpace(req.SidecarImage),
-		req.SidecarPort,
+		sidecarImage,
+		sidecarPort,
 		cpu,
 		memory,
 		nullJSON(req.Env),
 		ttl,
-		req.IngressHostTpl,
+		ingressTpl,
 	)
 	if err != nil {
 		return fmt.Errorf("写入容器配置失败: %w", err)
@@ -693,22 +732,25 @@ func (r *ProblemRepository) syncProblemTagsTx(tx *sql.Tx, problemID string, tags
 func (r *ProblemRepository) getProblemFlag(problemID string) (*models.ProblemFlag, error) {
 	flag := &models.ProblemFlag{}
 	var hash sql.NullString
-	var example sql.NullString
 	var pattern sql.NullString
+	var example sql.NullString
+	var sidecarPattern sql.NullString
 	query := `
-		SELECT problem_id, flag_rule, flag_hash, flag_example, flag_type, flag_inject, flag_env_key, flag_sidecar_pattern
+		SELECT problem_id, flag_type, flag_rule, flag_hash, flag_pattern, flag_example,
+		       flag_inject, flag_env_key, flag_sidecar_pattern
 		FROM problem_flags
 		WHERE problem_id = ?
 	`
 	err := r.db.QueryRow(query, strings.TrimSpace(problemID)).Scan(
 		&flag.ProblemID,
+		&flag.FlagType,
 		&flag.FlagRule,
 		&hash,
+		&pattern,
 		&example,
-		&flag.FlagType,
 		&flag.FlagInject,
 		&flag.FlagEnvKey,
-		&pattern,
+		&sidecarPattern,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -720,12 +762,16 @@ func (r *ProblemRepository) getProblemFlag(problemID string) (*models.ProblemFla
 		v := hash.String
 		flag.FlagHash = &v
 	}
+	if pattern.Valid {
+		v := pattern.String
+		flag.FlagPattern = &v
+	}
 	if example.Valid {
 		v := example.String
 		flag.FlagExample = &v
 	}
-	if pattern.Valid {
-		v := pattern.String
+	if sidecarPattern.Valid {
+		v := sidecarPattern.String
 		flag.FlagSidecarPattern = &v
 	}
 	return flag, nil
@@ -733,6 +779,8 @@ func (r *ProblemRepository) getProblemFlag(problemID string) (*models.ProblemFla
 
 func (r *ProblemRepository) getProblemContainer(problemID string) (*models.ProblemContainer, error) {
 	container := &models.ProblemContainer{}
+	var sidecarImage sql.NullString
+	var sidecarPort sql.NullInt64
 	var env sql.NullString
 	var ingress sql.NullString
 	query := `
@@ -746,8 +794,8 @@ func (r *ProblemRepository) getProblemContainer(problemID string) (*models.Probl
 		&container.ImageName,
 		&container.ImageTag,
 		&container.ChallengePort,
-		&container.SidecarImage,
-		&container.SidecarPort,
+		&sidecarImage,
+		&sidecarPort,
 		&container.CPULimit,
 		&container.MemoryLimit,
 		&env,
@@ -760,6 +808,16 @@ func (r *ProblemRepository) getProblemContainer(problemID string) (*models.Probl
 		}
 		return nil, err
 	}
+	if sidecarImage.Valid {
+		v := strings.TrimSpace(sidecarImage.String)
+		if v != "" {
+			container.SidecarImage = &v
+		}
+	}
+	if sidecarPort.Valid && sidecarPort.Int64 > 0 {
+		v := int(sidecarPort.Int64)
+		container.SidecarPort = &v
+	}
 	if env.Valid {
 		container.Env = json.RawMessage(env.String)
 	}
@@ -770,49 +828,65 @@ func (r *ProblemRepository) getProblemContainer(problemID string) (*models.Probl
 	return container, nil
 }
 
-func (r *ProblemRepository) ListProblemAttachments(problemID string) ([]*models.Attachment, error) {
-	rows, err := r.db.Query(`
+// GetActiveInstanceFlagValue 取该用户在该题目下的当前 running/pending 实例的 flag_value（明文）。
+// 不存在时返回 ("", nil)。
+func (r *ProblemRepository) GetActiveInstanceFlagValue(userID, problemID string) (string, error) {
+	var flag sql.NullString
+	err := r.db.QueryRow(`
+		SELECT flag_value
+		FROM challenge_instances
+		WHERE user_id = ? AND problem_id = ?
+		  AND status IN ('running', 'pending')
+		LIMIT 1
+	`, strings.TrimSpace(userID), strings.TrimSpace(problemID)).Scan(&flag)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil
+		}
+		return "", fmt.Errorf("查询实例 flag 失败: %w", err)
+	}
+	if !flag.Valid {
+		return "", nil
+	}
+	return strings.TrimSpace(flag.String), nil
+}
+
+// GetProblemAttachment 返回该题目唯一的附件（v2.1：一题一包）。
+// 不存在时返回 (nil, nil)。
+func (r *ProblemRepository) GetProblemAttachment(problemID string) (*models.Attachment, error) {
+	item := &models.Attachment{}
+	var sha sql.NullString
+	err := r.db.QueryRow(`
 		SELECT id, problem_id, file_name, bucket_name, object_key, file_size, sha256, created_at
 		FROM attachments
 		WHERE problem_id = ?
-		ORDER BY created_at DESC
-	`, strings.TrimSpace(problemID))
+		LIMIT 1
+	`, strings.TrimSpace(problemID)).Scan(
+		&item.ID,
+		&item.ProblemID,
+		&item.FileName,
+		&item.BucketName,
+		&item.ObjectKey,
+		&item.FileSize,
+		&sha,
+		&item.CreatedAt,
+	)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("查询附件失败: %w", err)
 	}
-	defer rows.Close()
-
-	items := make([]*models.Attachment, 0)
-	for rows.Next() {
-		item := &models.Attachment{}
-		var sha sql.NullString
-		if scanErr := rows.Scan(
-			&item.ID,
-			&item.ProblemID,
-			&item.FileName,
-			&item.BucketName,
-			&item.ObjectKey,
-			&item.FileSize,
-			&sha,
-			&item.CreatedAt,
-		); scanErr != nil {
-			return nil, fmt.Errorf("读取附件失败: %w", scanErr)
+	if sha.Valid {
+		v := strings.TrimSpace(sha.String)
+		if v != "" {
+			item.Sha256 = &v
 		}
-		if sha.Valid {
-			v := strings.TrimSpace(sha.String)
-			if v != "" {
-				item.Sha256 = &v
-			}
-		}
-		if item.FilePath == "" {
-			item.FilePath = item.ObjectKey
-		}
-		items = append(items, item)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("读取附件失败: %w", err)
+	if item.FilePath == "" {
+		item.FilePath = item.ObjectKey
 	}
-	return items, nil
+	return item, nil
 }
 
 func (r *ProblemRepository) ReplaceProblemAttachment(problemID, fileName, bucketName, objectKey string, fileSize int64, sha256 string) (*models.Attachment, error) {
@@ -886,9 +960,10 @@ func (r *ProblemRepository) CreateProblemDraft(req *models.CreateProblemDraftReq
 	if typeName == "" {
 		typeName = "static"
 	}
+	// 草稿默认 platform_score=1（满足 chk_platform_score >= 1），等待 Step1 覆盖。
 	_, err := r.db.Exec(`
-		INSERT INTO problems (id, title, category, type, description, base_score, difficulty, deploy_mode, use_kata, status, created_by)
-		VALUES (?, '', ?, ?, NULL, 0, 'easy', 'shared', 0, 'draft', ?)
+		INSERT INTO problems (id, title, category, type, description, platform_score, difficulty, deploy_mode, use_kata, status, created_by)
+		VALUES (?, '', ?, ?, NULL, 1, 'easy', 'shared', 0, 'draft', ?)
 	`, id, strings.TrimSpace(req.Category), typeName, nullIfEmpty(createdBy))
 	if err != nil {
 		return "", fmt.Errorf("创建草稿失败: %w", err)
@@ -899,11 +974,13 @@ func (r *ProblemRepository) CreateProblemDraft(req *models.CreateProblemDraftReq
 func (r *ProblemRepository) UpdateProblemBasic(problemID string, req *models.UpdateProblemBasicRequest) error {
 	_, err := r.db.Exec(`
 		UPDATE problems
-		SET title = ?, category = ?, type = ?, description = ?, base_score = ?, difficulty = ?,
-		    deploy_mode = ?, use_kata = ?, updated_at = NOW()
+		SET title = ?, author = ?, category = ?, type = ?, description = ?,
+		    platform_score = ?, difficulty = ?, deploy_mode = ?, use_kata = ?,
+		    updated_at = NOW()
 		WHERE id = ?
-	`, strings.TrimSpace(req.Title), strings.TrimSpace(req.Category), strings.TrimSpace(req.Type),
-		nullIfEmpty(req.Description), req.BaseScore, strings.TrimSpace(req.Difficulty),
+	`, strings.TrimSpace(req.Title), nullIfEmpty(req.Author),
+		strings.TrimSpace(req.Category), strings.TrimSpace(req.Type),
+		nullIfEmpty(req.Description), req.PlatformScore, strings.TrimSpace(req.Difficulty),
 		strings.TrimSpace(req.DeployMode), req.UseKata, strings.TrimSpace(problemID))
 	if err != nil {
 		return fmt.Errorf("保存基础信息失败: %w", err)
@@ -911,7 +988,7 @@ func (r *ProblemRepository) UpdateProblemBasic(problemID string, req *models.Upd
 	return nil
 }
 
-func (r *ProblemRepository) UpsertProblemFlag(problemID string, req *models.CreateFlagRequest) error {
+func (r *ProblemRepository) UpsertProblemFlag(problemID string, req *models.SaveProblemFlagRequest) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("开启事务失败: %w", err)
@@ -930,7 +1007,7 @@ func (r *ProblemRepository) UpsertProblemFlag(problemID string, req *models.Crea
 	return nil
 }
 
-func (r *ProblemRepository) UpsertProblemContainer(problemID string, req *models.CreateContainerRequest) error {
+func (r *ProblemRepository) UpsertProblemContainer(problemID string, req *models.SaveProblemContainerRequest) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("开启事务失败: %w", err)
@@ -955,16 +1032,42 @@ func (r *ProblemRepository) UpsertProblemContainer(problemID string, req *models
 	return nil
 }
 
+// PublishProblem 校验并发布题目。校验清单见 v3.0 Part 7.4：
+//   1. title / description / category / difficulty 完整
+//   2. platform_score 落在难度区间
+//   3. flag 已配置（且 dynamic 不允许 regex/contains）
+//   4. container 题：镜像配置完整 + 镜像构建成功
+//   5. container_web：ingress_host_tpl 存在（缺失时自动从全局模板填充）
 func (r *ProblemRepository) PublishProblem(problemID string) error {
 	detail, err := r.GetAdminProblemByID(problemID)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(detail.Title) == "" || detail.Description == nil || strings.TrimSpace(*detail.Description) == "" {
-		return apperr.New(apperr.ErrBadRequest, "基础信息不完整，无法发布")
+	if strings.TrimSpace(detail.Title) == "" {
+		return apperr.New(apperr.ErrBadRequest, "title 不能为空")
+	}
+	if detail.Description == nil || strings.TrimSpace(*detail.Description) == "" {
+		return apperr.New(apperr.ErrBadRequest, "description 不能为空")
+	}
+	if strings.TrimSpace(detail.Category) == "" {
+		return apperr.New(apperr.ErrBadRequest, "category 不能为空")
+	}
+	if strings.TrimSpace(detail.Difficulty) == "" {
+		return apperr.New(apperr.ErrBadRequest, "difficulty 不能为空")
+	}
+	if dr, ok := models.GetDifficultyRange(detail.Difficulty); ok {
+		if detail.PlatformScore < dr.Min || detail.PlatformScore > dr.Max {
+			return apperr.New(apperr.ErrBadRequest,
+				fmt.Sprintf("difficulty=%s 要求 platform_score 在 [%d, %d] 范围内，当前=%d",
+					detail.Difficulty, dr.Min, dr.Max, detail.PlatformScore))
+		}
 	}
 	if detail.Flag == nil {
 		return apperr.New(apperr.ErrBadRequest, "Flag 未配置，无法发布")
+	}
+	if detail.Flag.FlagType == "dynamic" &&
+		(detail.Flag.FlagRule == utils.FlagRuleRegex || detail.Flag.FlagRule == utils.FlagRuleContains) {
+		return apperr.New(apperr.ErrBadRequest, "dynamic flag 不支持 regex/contains 规则")
 	}
 	if detail.Type == "container_web" || detail.Type == "container_tcp" {
 		if detail.Container == nil {
@@ -979,8 +1082,8 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 			_, _ = r.db.Exec(`UPDATE problems SET type = 'static' WHERE id = ?`, strings.TrimSpace(problemID))
 			detail.Type = "static"
 		} else {
-			if strings.TrimSpace(detail.Container.ImageName) == "" || strings.TrimSpace(detail.Container.SidecarImage) == "" {
-				return apperr.New(apperr.ErrBadRequest, "容器镜像配置不完整，无法发布")
+			if strings.TrimSpace(detail.Container.ImageName) == "" {
+				return apperr.New(apperr.ErrBadRequest, "image_name 不能为空，无法发布")
 			}
 			buildTask, getBuildErr := r.GetLatestImageBuildTask(problemID)
 			if getBuildErr != nil {

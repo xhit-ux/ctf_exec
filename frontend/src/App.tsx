@@ -46,7 +46,16 @@ export default function App() {
         <Routes>
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Index />} />
-            <Route path="problem" element={<RequiresDesktop><Problems /></RequiresDesktop>} />
+            <Route
+              path="problem"
+              element={
+                <ProtectedRoute>
+                  <RequiresDesktop>
+                    <Problems />
+                  </RequiresDesktop>
+                </ProtectedRoute>
+              }
+            />
             <Route path="contests" element={<Contests />} />
             <Route path="contests/:id" element={<LegacyContestRedirect />} />
             <Route path="contest/:contestId" element={<ContestLayout />}>
@@ -125,7 +134,7 @@ export default function App() {
             <Route
               path="problem/:id/edit"
               element={
-                <ProtectedRoute requiredRoles={["root", "site_admin", "contest_admin"]}>
+                <ProtectedRoute>
                   <RequiresDesktop>
                     <ProblemPublish />
                   </RequiresDesktop>

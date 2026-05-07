@@ -172,14 +172,47 @@ func (h *ContestHandler) AddChallengeToContestGin(c *gin.Context) {
 		writeBadRequest(c, "无效的 challenge_id")
 		return
 	}
+	if err := validateContestChallengeScoring(&req); err != nil {
+		writeBadRequest(c, err.Error())
+		return
+	}
 
-	if err := h.repo.AddChallengeToContest(contestID, req.ChallengeID, req.ScoreOverride); err != nil {
-		writeError(c, err, http.StatusInternalServerError)
+	if err := h.repo.AddChallengeToContest(contestID, req.ChallengeID, &req); err != nil {
+		writeError(c, err, http.StatusBadRequest)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "赛事题目编排成功"})
 }
+
+// validateContestChallengeScoring 校验 v2.1 双 Scope 计分配置（5 字段动态衰减）。
+func validateContestChallengeScoring(req *models.ContestChallengeBindRequest) error {
+	if req.IsDynamicScore {
+		if req.InitialScore == nil || req.MinScore == nil || req.DecayConstant == nil {
+			return errSimple("动态计分需提供 initial_score/min_score/decay_constant")
+		}
+		if *req.InitialScore <= 0 || *req.MinScore < 0 {
+			return errSimple("initial_score 必须 > 0，min_score 必须 ≥ 0")
+		}
+		if *req.MinScore > *req.InitialScore {
+			return errSimple("min_score 不能大于 initial_score")
+		}
+		if *req.DecayConstant <= 0 {
+			return errSimple("decay_constant 必须 > 0")
+		}
+		return nil
+	}
+	if req.ContestScore == nil || *req.ContestScore <= 0 {
+		return errSimple("非动态计分需提供 contest_score (>0)")
+	}
+	return nil
+}
+
+type simpleHandlerErr string
+
+func (e simpleHandlerErr) Error() string { return string(e) }
+
+func errSimple(msg string) error { return simpleHandlerErr(msg) }
 
 func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 	if ok := h.ensureCanEditContestProblems(c); !ok {
@@ -199,6 +232,59 @@ func (h *ContestHandler) RemoveChallengeFromContestGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "赛事题目移除成功"})
+}
+
+// UpdateContestChallengeGin 更新已绑定的赛事题目计分配置（v3.0：5 字段动态衰减）。
+func (h *ContestHandler) UpdateContestChallengeGin(c *gin.Context) {
+	if ok := h.ensureCanEditContestProblems(c); !ok {
+		return
+	}
+
+	contestID := strings.TrimSpace(c.Param("id"))
+	contestChallengeID := strings.TrimSpace(c.Param("challengeID"))
+	if contestID == "" || contestChallengeID == "" {
+		writeBadRequest(c, "无效的参数")
+		return
+	}
+
+	var req models.UpdateContestChallengeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "请求体格式错误")
+		return
+	}
+	if err := validateContestChallengeScoringUpdate(&req); err != nil {
+		writeBadRequest(c, err.Error())
+		return
+	}
+
+	if err := h.repo.UpdateContestChallenge(contestID, contestChallengeID, &req); err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "赛事题目计分已更新"})
+}
+
+// validateContestChallengeScoringUpdate 局部更新校验：仅当切换为动态时强制 5 字段齐备。
+func validateContestChallengeScoringUpdate(req *models.UpdateContestChallengeRequest) error {
+	if req.IsDynamicScore != nil && *req.IsDynamicScore {
+		if req.InitialScore == nil || req.MinScore == nil || req.DecayConstant == nil {
+			return errSimple("启用动态计分需同时提供 initial_score/min_score/decay_constant")
+		}
+		if *req.InitialScore <= 0 || *req.MinScore < 0 {
+			return errSimple("initial_score 必须 > 0，min_score 必须 ≥ 0")
+		}
+		if *req.MinScore > *req.InitialScore {
+			return errSimple("min_score 不能大于 initial_score")
+		}
+		if *req.DecayConstant <= 0 {
+			return errSimple("decay_constant 必须 > 0")
+		}
+	}
+	if req.ContestScore != nil && *req.ContestScore < 0 {
+		return errSimple("contest_score 不能为负值")
+	}
+	return nil
 }
 
 func (h *ContestHandler) JoinContestGin(c *gin.Context) {

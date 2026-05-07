@@ -1,6 +1,6 @@
 import React from 'react';
 import { useProblemPublish } from '../ProblemPublishContext';
-import { ProblemCategory } from '../types';
+import { ProblemCategory, DIFFICULTY_SCORE_RANGE, Difficulty } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { IconChip, IconGlobe, IconKey, IconPuzzle, IconTerminal } from '../icons';
@@ -60,6 +60,15 @@ export default function Step1BasicInfo() {
 
   const handleNext = async () => {
     if (!state.category || !state.title.trim()) return;
+    // 校验 platform_score 是否在难度区间内（v2.1 Part 3.1）。
+    const range = DIFFICULTY_SCORE_RANGE[state.difficulty];
+    const score = Number(state.platformScore) || 0;
+    if (score < range.min || score > range.max) {
+      window.alert(
+        `platform_score 必须在 [${range.min}, ${range.max}] 区间内（当前难度=${state.difficulty}）`,
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const problemType = toProblemType(state.category, state.useContainer);
@@ -74,13 +83,15 @@ export default function Step1BasicInfo() {
 
       await saveProblemBasic(problemID, {
         title: state.title.trim(),
+        author: state.author?.trim() || undefined,
         category: state.category,
         type: problemType,
         description: state.description,
-        base_score: Number(state.baseScore) || 0,
+        platform_score: score,
         difficulty: toDifficulty(state.difficulty),
         deploy_mode: state.deployMode || 'per_user',
         use_kata: false,
+        tags: state.tags,
       });
 
       nextStep();
@@ -137,53 +148,49 @@ export default function Step1BasicInfo() {
           <label className="block text-sm font-medium text-gray-700">难度</label>
           <select
             value={state.difficulty}
-            onChange={(e) => updateState({ difficulty: e.target.value as any })}
+            onChange={(e) => {
+              const next = e.target.value as Difficulty;
+              const range = DIFFICULTY_SCORE_RANGE[next];
+              const clamp = Math.min(Math.max(state.platformScore, range.min), range.max);
+              updateState({ difficulty: next, platformScore: clamp });
+            }}
             className="field-select mt-1"
           >
-            <option value="Easy">简单</option>
-            <option value="Medium">中等</option>
-            <option value="Hard">困难</option>
-            <option value="Expert">专家</option>
+            <option value="Easy">简单 [1, 200]</option>
+            <option value="Medium">中等 [200, 500]</option>
+            <option value="Hard">困难 [500, 1000]</option>
+            <option value="Expert">专家 [1000, 2000]</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">基础分值</label>
+          <label className="block text-sm font-medium text-gray-700">
+            平台分值（platform_score）
+          </label>
           <input
             type="number"
-            value={state.baseScore}
-            onChange={(e) => updateState({ baseScore: Number(e.target.value) })}
+            min={DIFFICULTY_SCORE_RANGE[state.difficulty].min}
+            max={DIFFICULTY_SCORE_RANGE[state.difficulty].max}
+            value={state.platformScore}
+            onChange={(e) => updateState({ platformScore: Number(e.target.value) })}
             className="field-input mt-1"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            须在 [{DIFFICULTY_SCORE_RANGE[state.difficulty].min},{' '}
+            {DIFFICULTY_SCORE_RANGE[state.difficulty].max}] 区间内。赛事动态计分（contest_score、衰减）请在赛事题目编排时配置。
+          </p>
         </div>
-      </div>
 
-      <div className="col-span-2 pt-4 border-t border-gray-100">
-        <div className="flex items-center space-x-3 mb-4">
+        <div className="col-span-2">
+          <label className="block text-sm font-medium text-gray-700">作者（author，可选）</label>
           <input
-            type="checkbox"
-            id="dynamic_score"
-            checked={state.isDynamicScore}
-            onChange={(e) => updateState({ isDynamicScore: e.target.checked })}
-            className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+            type="text"
+            value={state.author || ''}
+            onChange={(e) => updateState({ author: e.target.value })}
+            className="field-input mt-1"
+            placeholder="题目作者展示名"
           />
-          <label htmlFor="dynamic_score" className="text-sm font-medium text-gray-700">
-            启用动态分值
-          </label>
         </div>
-
-        {state.isDynamicScore && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-amber-50 items-center p-4 rounded-lg border border-amber-100">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">最低分</label>
-              <input type="number" value={state.minScore} onChange={e => updateState({minScore: Number(e.target.value)})} className="field-input mt-1" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">每次衰减</label>
-              <input type="number" value={state.decayDec} onChange={e => updateState({decayDec: Number(e.target.value)})} className="field-input mt-1" />
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="col-span-2">

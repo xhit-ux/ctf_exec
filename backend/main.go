@@ -204,11 +204,15 @@ func main() {
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
 			problems.GET(":id", probHandler.GetProblemDetailGin)
 
+			problems.GET(":id/hints", probHandler.ListProblemHintsGin)
+			problems.GET(":id/prerequisites", probHandler.ListProblemPrerequisitesGin)
+
 			problemAuth := problems.Group("")
 			problemAuth.Use(middleware.GinAuthMiddlewareWithRepo(userRepo, sessionStore))
 			problemAuth.GET(":id/instance", probHandler.GetProblemInstanceGin)
 			problemAuth.POST(":id/instance/start", probHandler.StartProblemInstanceGin)
 			problemAuth.DELETE(":id/instance", probHandler.DestroyProblemInstanceGin)
+			problemAuth.POST("/hints/:hintID/unlock", probHandler.UnlockHintGin)
 		}
 
 		// 赛事公开路由
@@ -276,8 +280,12 @@ func main() {
 				adminProblems.POST(":id/attachment", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemAttachmentGin)
 				adminProblems.GET(":id/build-task", middleware.RequireSiteAdminOrRoot(), probHandler.GetProblemBuildTaskGin)
 				adminProblems.POST(":id/publish", middleware.RequireSiteAdminOrRoot(), probHandler.PublishProblemGin)
-				adminProblems.PUT(":id", middleware.RequireRoles("root", "site_admin", "contest_admin"), probHandler.UpdateProblemGin)
 				adminProblems.DELETE(":id", middleware.RequireSiteAdminOrRoot(), probHandler.DeleteProblemGin)
+
+				adminProblems.POST(":id/hints", middleware.RequireSiteAdminOrRoot(), probHandler.CreateProblemHintGin)
+				adminProblems.PUT(":id/hints/:hintID", middleware.RequireSiteAdminOrRoot(), probHandler.UpdateProblemHintGin)
+				adminProblems.DELETE(":id/hints/:hintID", middleware.RequireSiteAdminOrRoot(), probHandler.DeleteProblemHintGin)
+				adminProblems.PUT(":id/prerequisites", middleware.RequireSiteAdminOrRoot(), probHandler.SetProblemPrerequisitesGin)
 			}
 
 			adminContests := admin.Group("/contests")
@@ -292,6 +300,7 @@ func main() {
 
 				adminContests.PUT(":id", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.UpdateContestGin)
 				adminContests.POST(":id/challenges", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.AddChallengeToContestGin)
+				adminContests.PATCH(":id/challenges/:challengeID", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.UpdateContestChallengeGin)
 				adminContests.DELETE(":id/challenges/:challengeID", middleware.RequireContestAdmin(userRepo, contestAdminRepo), contestHandler.RemoveChallengeFromContestGin)
 				adminContests.GET(":id/submissions", middleware.RequireContestAdminView(userRepo, contestAdminRepo), contestHandler.ListContestSubmissionsGin)
 			}

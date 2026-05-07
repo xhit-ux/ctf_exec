@@ -88,9 +88,31 @@ export default function ContestProblems() {
                   <td className="px-3 py-3 font-semibold text-gray-800">{item.title}</td>
                   <td className="px-3 py-3 text-gray-600">{item.category || '-'}</td>
                   <td className="px-3 py-3 text-gray-600">{item.difficulty || '-'}</td>
-                  <td className="px-3 py-3 text-center font-bold text-amber-700">{item.score_override ?? item.points ?? 0}</td>
-                  <td className="px-3 py-3 text-center">{item.is_solved ? <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">已解出</span> : <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">未解出</span>}</td>
-                  <td className="px-3 py-3 text-right"><Link className="font-semibold text-amber-700 hover:text-amber-800" to={`/problem/${item.id}?contest_id=${contest.id}`}>进入题目</Link></td>
+                  <td className="px-3 py-3 text-center font-bold text-amber-700">
+                    {item.current_score}
+                    {item.is_dynamic_score && (
+                      <span className="ml-1 text-[10px] font-normal text-amber-500" title="动态衰减">
+                        ↘
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {item.is_locked ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">已锁定</span>
+                    ) : item.is_solved ? (
+                      <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">已解出</span>
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600">未解出</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Link
+                      className="font-semibold text-amber-700 hover:text-amber-800"
+                      to={`/problem/${item.problem_id}?contest_id=${contest.id}`}
+                    >
+                      进入题目
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

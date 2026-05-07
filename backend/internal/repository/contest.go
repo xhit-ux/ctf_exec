@@ -192,17 +192,105 @@ func (r *ContestRepository) DeleteContest(contestID string) error {
 	return nil
 }
 
-func (r *ContestRepository) AddChallengeToContest(contestID string, challengeID string, scoreOverride *int) error {
+// AddChallengeToContest 编排题目入赛事，写入 contest_challenges 全部 5 个计分字段。
+func (r *ContestRepository) AddChallengeToContest(contestID, challengeID string, req *models.ContestChallengeBindRequest) error {
+	if req == nil {
+		return fmt.Errorf("绑定参数为空")
+	}
+	contestScore := 500
+	if req.ContestScore != nil && *req.ContestScore > 0 {
+		contestScore = *req.ContestScore
+	}
+	sortOrder := 0
+	if req.SortOrder != nil {
+		sortOrder = *req.SortOrder
+	}
+
+	var initial, minScore, decay interface{}
+	if req.IsDynamicScore {
+		if req.InitialScore == nil || req.MinScore == nil || req.DecayConstant == nil {
+			return fmt.Errorf("启用动态计分时 initial_score/min_score/decay_constant 必填")
+		}
+		if *req.InitialScore <= 0 || *req.MinScore <= 0 || *req.DecayConstant <= 0 {
+			return fmt.Errorf("动态计分参数必须 > 0")
+		}
+		if *req.MinScore >= *req.InitialScore {
+			return fmt.Errorf("min_score 必须小于 initial_score")
+		}
+		initial = *req.InitialScore
+		minScore = *req.MinScore
+		decay = *req.DecayConstant
+	}
+
 	query := `
-		INSERT INTO contest_challenges (contest_id, challenge_id, score_override)
-		VALUES (?, ?, ?)
-		ON DUPLICATE KEY UPDATE score_override = VALUES(score_override)
+		INSERT INTO contest_challenges (
+			contest_id, challenge_id,
+			contest_score, is_dynamic_score, initial_score, min_score, decay_constant,
+			sort_order
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			contest_score    = VALUES(contest_score),
+			is_dynamic_score = VALUES(is_dynamic_score),
+			initial_score    = VALUES(initial_score),
+			min_score        = VALUES(min_score),
+			decay_constant   = VALUES(decay_constant),
+			sort_order       = VALUES(sort_order)
 	`
 
-	if _, err := r.db.Exec(query, contestID, challengeID, scoreOverride); err != nil {
+	if _, err := r.db.Exec(query, contestID, challengeID, contestScore, req.IsDynamicScore, initial, minScore, decay, sortOrder); err != nil {
 		return fmt.Errorf("添加赛事题目失败: %w", err)
 	}
 
+	return nil
+}
+
+// UpdateContestChallenge 更新已绑定的赛事题目计分配置。
+func (r *ContestRepository) UpdateContestChallenge(contestID, challengeID string, req *models.UpdateContestChallengeRequest) error {
+	if req == nil {
+		return fmt.Errorf("更新参数为空")
+	}
+	sets := make([]string, 0, 6)
+	args := make([]interface{}, 0, 8)
+	if req.ContestScore != nil {
+		if *req.ContestScore <= 0 {
+			return fmt.Errorf("contest_score 必须 > 0")
+		}
+		sets = append(sets, "contest_score = ?")
+		args = append(args, *req.ContestScore)
+	}
+	if req.IsDynamicScore != nil {
+		sets = append(sets, "is_dynamic_score = ?")
+		args = append(args, *req.IsDynamicScore)
+	}
+	if req.InitialScore != nil {
+		sets = append(sets, "initial_score = ?")
+		args = append(args, *req.InitialScore)
+	}
+	if req.MinScore != nil {
+		sets = append(sets, "min_score = ?")
+		args = append(args, *req.MinScore)
+	}
+	if req.DecayConstant != nil {
+		sets = append(sets, "decay_constant = ?")
+		args = append(args, *req.DecayConstant)
+	}
+	if req.SortOrder != nil {
+		sets = append(sets, "sort_order = ?")
+		args = append(args, *req.SortOrder)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	args = append(args, contestID, challengeID)
+	query := "UPDATE contest_challenges SET " + strings.Join(sets, ", ") + " WHERE contest_id = ? AND challenge_id = ?"
+	result, err := r.db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("更新赛事题目计分失败: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return apperr.New(apperr.ErrNotFound, "赛事题目关联不存在")
+	}
 	return nil
 }
 
@@ -299,21 +387,31 @@ func (r *ContestRepository) IsTeamMember(teamID, userID string) (bool, error) {
 	return cnt > 0, nil
 }
 
-// ListContestChallengesForUser 返回赛事题目及用户在该赛事下的解题状态。
+// ListContestChallengesForUser 返回赛事题目（user 视角）。
+// current_score 由 service 层根据 solve_count + 动态参数计算并覆盖。
 func (r *ContestRepository) ListContestChallengesForUser(contestID, userID string) ([]*models.ContestChallengeView, error) {
 	query := `
-		SELECT p.id, p.title, p.category, p.difficulty, p.base_score, cc.score_override,
-		       IF(COUNT(s.id) > 0, 1, 0) AS is_solved
+		SELECT p.id, p.title, p.category, p.difficulty,
+		       cc.contest_score, cc.is_dynamic_score, cc.initial_score, cc.min_score, cc.decay_constant,
+		       cc.sort_order,
+		       (
+		           SELECT COUNT(DISTINCT COALESCE(s2.user_id, s2.team_id))
+		           FROM submissions s2
+		           WHERE s2.problem_id = p.id AND s2.contest_id = cc.contest_id AND s2.is_correct = 1
+		       ) AS solve_count,
+		       (
+		           SELECT COUNT(1)
+		           FROM submissions s3
+		           WHERE s3.problem_id = p.id AND s3.contest_id = cc.contest_id
+		             AND s3.is_correct = 1 AND s3.user_id = ?
+		       ) AS my_solve
 		FROM contest_challenges cc
 		JOIN problems p ON p.id = cc.challenge_id
-		LEFT JOIN submissions s
-		  ON s.problem_id = p.id AND s.user_id = ? AND s.contest_id = ? AND s.is_correct = 1
 		WHERE cc.contest_id = ?
-		GROUP BY p.id, p.title, p.category, p.difficulty, p.base_score, cc.score_override
-		ORDER BY p.id ASC
+		ORDER BY cc.sort_order ASC, p.id ASC
 	`
 
-	rows, err := r.db.Query(query, userID, contestID, contestID)
+	rows, err := r.db.Query(query, userID, contestID)
 	if err != nil {
 		return nil, fmt.Errorf("查询赛事题目失败: %w", err)
 	}
@@ -322,11 +420,38 @@ func (r *ContestRepository) ListContestChallengesForUser(contestID, userID strin
 	list := make([]*models.ContestChallengeView, 0)
 	for rows.Next() {
 		item := &models.ContestChallengeView{}
-		var solved int
-		if err := rows.Scan(&item.ID, &item.Title, &item.Category, &item.Difficulty, &item.Points, &item.ScoreOverride, &solved); err != nil {
+		var initial, minScore, decay sql.NullInt64
+		var mySolve int
+		if err := rows.Scan(
+			&item.ProblemID,
+			&item.Title,
+			&item.Category,
+			&item.Difficulty,
+			&item.CurrentScore,
+			&item.IsDynamicScore,
+			&initial,
+			&minScore,
+			&decay,
+			&item.SortOrder,
+			&item.SolveCount,
+			&mySolve,
+		); err != nil {
 			return nil, fmt.Errorf("扫描赛事题目失败: %w", err)
 		}
-		item.IsSolved = solved == 1
+		item.ID = item.ProblemID
+		if initial.Valid {
+			v := int(initial.Int64)
+			item.InitialScore = &v
+		}
+		if minScore.Valid {
+			v := int(minScore.Int64)
+			item.MinScore = &v
+		}
+		if decay.Valid {
+			v := int(decay.Int64)
+			item.DecayConstant = &v
+		}
+		item.IsSolved = mySolve > 0
 		list = append(list, item)
 	}
 
@@ -343,28 +468,60 @@ func (r *ContestRepository) IsProblemInContest(contestID string, problemID strin
 	return cnt > 0, nil
 }
 
-// GetContestChallengeScore 获取赛事题目实际分值。
-func (r *ContestRepository) GetContestChallengeScore(contestID string, problemID string) (int, error) {
-	var override sql.NullInt64
-	var points int
+// GetContestChallengeScoringConfig 返回赛事题目的完整计分配置。
+// 由 service 层结合 solve_count 计算 current_score。
+func (r *ContestRepository) GetContestChallengeScoringConfig(contestID, problemID string) (*models.ContestChallenge, error) {
+	cc := &models.ContestChallenge{
+		ContestID: contestID,
+		ProblemID: problemID,
+	}
+	var initial, minScore, decay sql.NullInt64
 	query := `
-		SELECT cc.score_override, p.base_score
-		FROM contest_challenges cc
-		JOIN problems p ON p.id = cc.challenge_id
-		WHERE cc.contest_id = ? AND cc.challenge_id = ?
+		SELECT contest_score, is_dynamic_score, initial_score, min_score, decay_constant, sort_order
+		FROM contest_challenges
+		WHERE contest_id = ? AND challenge_id = ?
 	`
-	err := r.db.QueryRow(query, contestID, problemID).Scan(&override, &points)
+	err := r.db.QueryRow(query, contestID, problemID).Scan(
+		&cc.ContestScore,
+		&cc.IsDynamicScore,
+		&initial,
+		&minScore,
+		&decay,
+		&cc.SortOrder,
+	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return 0, apperr.New(apperr.ErrNotFound, "赛事题目不存在")
+			return nil, apperr.New(apperr.ErrNotFound, "赛事题目不存在")
 		}
-		return 0, fmt.Errorf("获取赛事题目分值失败: %w", err)
+		return nil, fmt.Errorf("获取赛事题目分值配置失败: %w", err)
 	}
+	if initial.Valid {
+		v := int(initial.Int64)
+		cc.InitialScore = &v
+	}
+	if minScore.Valid {
+		v := int(minScore.Int64)
+		cc.MinScore = &v
+	}
+	if decay.Valid {
+		v := int(decay.Int64)
+		cc.DecayConstant = &v
+	}
+	return cc, nil
+}
 
-	if override.Valid {
-		return int(override.Int64), nil
+// CountContestSolves 统计赛事中题目的去重解答数（按主体——个人或团队——去重）。
+func (r *ContestRepository) CountContestSolves(contestID, problemID string) (int, error) {
+	var cnt int
+	err := r.db.QueryRow(`
+		SELECT COUNT(DISTINCT COALESCE(user_id, team_id))
+		FROM submissions
+		WHERE contest_id = ? AND problem_id = ? AND is_correct = 1
+	`, contestID, problemID).Scan(&cnt)
+	if err != nil {
+		return 0, fmt.Errorf("统计赛事解题数失败: %w", err)
 	}
-	return points, nil
+	return cnt, nil
 }
 
 // HasSolvedInContest 校验主体在赛事中是否已正确解过该题。

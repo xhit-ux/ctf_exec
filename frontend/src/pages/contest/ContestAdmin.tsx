@@ -6,6 +6,7 @@ import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../../utils
 import {
   ContestAdmin as ContestAdminRecord,
   ContestChallenge,
+  ContestChallengeUpdatePayload,
   ContestSubmissionItem,
   addContestAdmin,
   addContestChallenge,
@@ -16,6 +17,7 @@ import {
   removeContestAdmin,
   removeContestChallenge,
   updateContest,
+  updateContestChallenge,
 } from '../../utils/contestApi'
 import { useContestContext } from './ContestLayout'
 
@@ -137,15 +139,20 @@ export default function ContestAdmin() {
 
   const handleAddChallenge = async () => {
     resetMsg()
-    const challengeID = Number(newChallengeID)
-    if (!Number.isInteger(challengeID) || challengeID <= 0) {
-      setError('请输入正确的题目 ID')
+    const challengeID = newChallengeID.trim()
+    if (!challengeID) {
+      setError('请输入题目 ID（UUID）')
       return
     }
     setBusy(true)
     try {
-      const scoreOverride = newScoreOverride.trim() === '' ? undefined : Number(newScoreOverride)
-      await addContestChallenge(contest.id, challengeID, scoreOverride)
+      const contestScore =
+        newScoreOverride.trim() === '' ? undefined : Number(newScoreOverride)
+      await addContestChallenge(contest.id, {
+        challenge_id: challengeID,
+        contest_score: Number.isFinite(contestScore) ? contestScore : undefined,
+        is_dynamic_score: false,
+      })
       setChallenges(await fetchContestChallenges(contest.id))
       setNewChallengeID('')
       setNewScoreOverride('')
@@ -204,15 +211,54 @@ export default function ContestAdmin() {
     }
   }
 
-  const handleRemoveChallenge = async (challengeID: number) => {
+  const handleRemoveChallenge = async (contestChallengeID: string) => {
     resetMsg()
     setBusy(true)
     try {
-      await removeContestChallenge(contest.id, challengeID)
+      await removeContestChallenge(contest.id, contestChallengeID)
       setChallenges(await fetchContestChallenges(contest.id))
       setSuccess('题目已移除')
     } catch (err) {
       setError(fromUnknownError(err, '移除题目失败'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const [scoringEdit, setScoringEdit] = useState<{
+    open: boolean
+    target?: ContestChallenge
+    form: ContestChallengeUpdatePayload
+  }>({ open: false, form: {} })
+
+  const openScoringEdit = (item: ContestChallenge) => {
+    setScoringEdit({
+      open: true,
+      target: item,
+      form: {
+        contest_score: item.current_score,
+        is_dynamic_score: item.is_dynamic_score,
+        initial_score: item.initial_score ?? null,
+        min_score: item.min_score ?? null,
+        decay_constant: item.decay_constant ?? null,
+        sort_order: item.sort_order ?? null,
+      },
+    })
+  }
+
+  const closeScoringEdit = () => setScoringEdit({ open: false, form: {} })
+
+  const submitScoringEdit = async () => {
+    if (!scoringEdit.target) return
+    resetMsg()
+    setBusy(true)
+    try {
+      await updateContestChallenge(contest.id, scoringEdit.target.id, scoringEdit.form)
+      setChallenges(await fetchContestChallenges(contest.id))
+      setSuccess('赛事题目计分已更新')
+      closeScoringEdit()
+    } catch (err) {
+      setError(fromUnknownError(err, '更新赛事题目计分失败'))
     } finally {
       setBusy(false)
     }
@@ -331,26 +377,163 @@ export default function ContestAdmin() {
           </div>
 
           <div className="glass-table-wrap overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-500">
-                  <th className="px-3 py-3 text-left">ID</th>
-                  <th className="px-3 py-3 text-left">标题</th>
-                  <th className="px-3 py-3 text-center">分值</th>
+                  <th className="px-3 py-3 text-left">题目</th>
+                  <th className="px-3 py-3 text-center">当前分</th>
+                  <th className="px-3 py-3 text-center">动态衰减</th>
+                  <th className="px-3 py-3 text-center">解出</th>
                   <th className="px-3 py-3 text-right">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {challenges.map((item) => (
                   <tr key={item.id} className="border-b border-gray-100 last:border-b-0">
-                    <td className="px-3 py-3 text-gray-600">#{item.id}</td>
-                    <td className="px-3 py-3 font-semibold text-gray-800">{item.title}</td>
-                    <td className="px-3 py-3 text-center font-bold text-amber-700">{item.score_override ?? item.points ?? 0}</td>
-                    <td className="px-3 py-3 text-right"><button type="button" disabled={!canEditAdminModules || busy} onClick={() => handleRemoveChallenge(item.id)} className="text-sm font-semibold text-red-600 disabled:opacity-50">移除</button></td>
+                    <td className="px-3 py-3 font-semibold text-gray-800">
+                      <div>{item.title}</div>
+                      <div className="text-[11px] font-mono text-gray-400">{item.problem_id}</div>
+                    </td>
+                    <td className="px-3 py-3 text-center font-bold text-amber-700">
+                      {item.current_score}
+                    </td>
+                    <td className="px-3 py-3 text-center text-xs text-gray-600">
+                      {item.is_dynamic_score
+                        ? `${item.initial_score ?? '-'} → ${item.min_score ?? '-'} (N=${item.decay_constant ?? '-'})`
+                        : '固定'}
+                    </td>
+                    <td className="px-3 py-3 text-center text-gray-600">
+                      {item.solve_count ?? 0}
+                    </td>
+                    <td className="px-3 py-3 text-right space-x-3">
+                      <button
+                        type="button"
+                        disabled={!canEditAdminModules || busy}
+                        onClick={() => openScoringEdit(item)}
+                        className="text-sm font-semibold text-amber-700 disabled:opacity-50"
+                      >
+                        计分配置
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canEditAdminModules || busy}
+                        onClick={() => handleRemoveChallenge(item.id)}
+                        className="text-sm font-semibold text-red-600 disabled:opacity-50"
+                      >
+                        移除
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {scoringEdit.open && scoringEdit.target && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">计分配置 — {scoringEdit.target.title}</h3>
+              <button type="button" onClick={closeScoringEdit} className="text-gray-500 hover:text-gray-800">×</button>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-amber-500"
+                checked={Boolean(scoringEdit.form.is_dynamic_score)}
+                onChange={(e) =>
+                  setScoringEdit((prev) => ({
+                    ...prev,
+                    form: { ...prev.form, is_dynamic_score: e.target.checked },
+                  }))
+                }
+              />
+              <span>启用 CTFd 多项式动态衰减</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs text-gray-600">
+                contest_score / 固定分
+                <input
+                  type="number"
+                  className="glass-input mt-1"
+                  value={scoringEdit.form.contest_score ?? ''}
+                  onChange={(e) =>
+                    setScoringEdit((prev) => ({
+                      ...prev,
+                      form: { ...prev.form, contest_score: e.target.value === '' ? null : Number(e.target.value) },
+                    }))
+                  }
+                />
+              </label>
+              <label className="text-xs text-gray-600">
+                sort_order
+                <input
+                  type="number"
+                  className="glass-input mt-1"
+                  value={scoringEdit.form.sort_order ?? ''}
+                  onChange={(e) =>
+                    setScoringEdit((prev) => ({
+                      ...prev,
+                      form: { ...prev.form, sort_order: e.target.value === '' ? null : Number(e.target.value) },
+                    }))
+                  }
+                />
+              </label>
+              {scoringEdit.form.is_dynamic_score && (
+                <>
+                  <label className="text-xs text-gray-600">
+                    initial_score
+                    <input
+                      type="number"
+                      className="glass-input mt-1"
+                      value={scoringEdit.form.initial_score ?? ''}
+                      onChange={(e) =>
+                        setScoringEdit((prev) => ({
+                          ...prev,
+                          form: { ...prev.form, initial_score: e.target.value === '' ? null : Number(e.target.value) },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="text-xs text-gray-600">
+                    min_score
+                    <input
+                      type="number"
+                      className="glass-input mt-1"
+                      value={scoringEdit.form.min_score ?? ''}
+                      onChange={(e) =>
+                        setScoringEdit((prev) => ({
+                          ...prev,
+                          form: { ...prev.form, min_score: e.target.value === '' ? null : Number(e.target.value) },
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="col-span-2 text-xs text-gray-600">
+                    decay_constant N
+                    <input
+                      type="number"
+                      className="glass-input mt-1"
+                      value={scoringEdit.form.decay_constant ?? ''}
+                      onChange={(e) =>
+                        setScoringEdit((prev) => ({
+                          ...prev,
+                          form: { ...prev.form, decay_constant: e.target.value === '' ? null : Number(e.target.value) },
+                        }))
+                      }
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={closeScoringEdit} className="btn-secondary text-sm">取消</button>
+              <button type="button" onClick={submitScoringEdit} disabled={busy} className="btn-primary text-sm disabled:opacity-50">
+                {busy ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
         </div>
       )}

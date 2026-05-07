@@ -52,13 +52,15 @@ export async function createProblemDraft(payload: { category: string; type: 'sta
 
 export async function saveProblemBasic(problemID: string, payload: {
   title: string
+  author?: string
   category: string
   type: 'static' | 'container_web' | 'container_tcp'
   description: string
-  base_score: number
+  platform_score: number
   difficulty: 'easy' | 'medium' | 'hard' | 'expert'
   deploy_mode: 'shared' | 'per_user'
   use_kata: boolean
+  tags?: string[]
 }): Promise<void> {
   const response = await apiFetch(apiUrl(`/api/admin/problems/${problemID}/basic`), {
     method: 'PATCH',
@@ -69,8 +71,11 @@ export async function saveProblemBasic(problemID: string, payload: {
 }
 
 export async function saveProblemFlag(problemID: string, payload: {
-  flag_plain: string
-  flag_rule: 'exact' | 'case_insensitive'
+  // static + (exact|case_insensitive) → 明文 flag
+  // static + (regex|contains)         → pattern
+  // dynamic                            → 留空
+  flag_value: string
+  flag_rule: 'exact' | 'case_insensitive' | 'regex' | 'contains'
   flag_type: 'static' | 'dynamic'
   flag_inject: 'env' | 'sidecar'
   flag_env_key: string
@@ -89,13 +94,14 @@ export async function saveProblemContainer(problemID: string, payload: {
   image_name: string
   image_tag: string
   challenge_port: number
-  sidecar_image: string
-  sidecar_port: number
+  // sidecar 可选：要么两者都给，要么两者都为 null。
+  sidecar_image: string | null
+  sidecar_port: number | null
   cpu_limit: string
   memory_limit: string
   env?: unknown
   ttl_seconds: number
-  ingress_host_tpl?: string
+  ingress_host_tpl?: string | null
 }): Promise<void> {
   const response = await apiFetch(apiUrl(`/api/admin/problems/${problemID}/container`), {
     method: 'PATCH',

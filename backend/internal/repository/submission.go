@@ -34,9 +34,10 @@ func (r *SubmissionRepository) CreateSubmission(userID string, req *models.Creat
 		return nil, fmt.Errorf("创建提交记录失败: %w", err)
 	}
 
+	uid := userID
 	return &models.Submission{
 		ID:        submissionID,
-		UserID:    userID,
+		UserID:    &uid,
 		TeamID:    req.TeamID,
 		ContestID: req.ContestID,
 		ProblemID: req.ProblemID,
@@ -66,12 +67,17 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 
 	for rows.Next() {
 		s := &models.Submission{}
+		var userIDVal sql.NullString
 		var teamID sql.NullString
 		var contestID sql.NullString
 		var ipAddress sql.NullString
-		err := rows.Scan(&s.ID, &s.UserID, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &ipAddress, &s.CreatedAt, &s.ProblemTitle)
+		err := rows.Scan(&s.ID, &userIDVal, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &ipAddress, &s.CreatedAt, &s.ProblemTitle)
 		if err != nil {
 			return nil, fmt.Errorf("扫描提交记录失败: %w", err)
+		}
+		if userIDVal.Valid {
+			v := userIDVal.String
+			s.UserID = &v
 		}
 		if teamID.Valid {
 			v := teamID.String

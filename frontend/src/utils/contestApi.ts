@@ -15,14 +15,42 @@ export type Contest = {
   updated_at?: string
 }
 
+// v3.0：赛事题目实例（contest_challenges 行）。current_score 由后端按多项式实时计算。
 export type ContestChallenge = {
-  id: number
+  id: string
+  problem_id: string
   title: string
   category?: string
   difficulty?: string
-  points?: number
-  score_override?: number | null
+  current_score: number
+  is_dynamic_score: boolean
+  initial_score?: number | null
+  min_score?: number | null
+  decay_constant?: number | null
+  solve_count?: number
   is_solved?: boolean
+  is_locked?: boolean
+  sort_order?: number
+}
+
+// v3.0：管理端绑定/更新所用 5 字段计分配置。
+export type ContestChallengeBindPayload = {
+  challenge_id: string
+  contest_score?: number | null
+  is_dynamic_score?: boolean
+  initial_score?: number | null
+  min_score?: number | null
+  decay_constant?: number | null
+  sort_order?: number | null
+}
+
+export type ContestChallengeUpdatePayload = {
+  contest_score?: number | null
+  is_dynamic_score?: boolean
+  initial_score?: number | null
+  min_score?: number | null
+  decay_constant?: number | null
+  sort_order?: number | null
 }
 
 export type ContestScoreboardEntry = {
@@ -216,13 +244,32 @@ export async function updateContest(contestID: string, payload: {
   await mustOK(response, '更新赛事失败')
 }
 
-export async function addContestChallenge(contestID: string, challengeID: number, scoreOverride?: number): Promise<void> {
+export async function addContestChallenge(
+  contestID: string,
+  payload: ContestChallengeBindPayload,
+): Promise<void> {
   const response = await apiFetch(apiUrl(`/api/admin/contests/${contestID}/challenges`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ challenge_id: challengeID, score_override: Number.isFinite(scoreOverride) ? scoreOverride : undefined }),
+    body: JSON.stringify(payload),
   })
   await mustOK(response, '添加赛事题目失败')
+}
+
+export async function updateContestChallenge(
+  contestID: string,
+  contestChallengeID: string,
+  payload: ContestChallengeUpdatePayload,
+): Promise<void> {
+  const response = await apiFetch(
+    apiUrl(`/api/admin/contests/${contestID}/challenges/${encodeURIComponent(contestChallengeID)}`),
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  )
+  await mustOK(response, '更新赛事题目计分失败')
 }
 
 export async function createAdminProblem(payload: CreateAdminProblemPayload): Promise<void> {
@@ -266,10 +313,14 @@ export async function fetchAdminProblems(params?: {
   return Array.isArray(body?.items) ? body.items : []
 }
 
-export async function removeContestChallenge(contestID: string, challengeID: number): Promise<void> {
-  const response = await apiFetch(apiUrl(`/api/admin/contests/${contestID}/challenges/${challengeID}`), {
-    method: 'DELETE',
-  })
+export async function removeContestChallenge(
+  contestID: string,
+  contestChallengeID: string,
+): Promise<void> {
+  const response = await apiFetch(
+    apiUrl(`/api/admin/contests/${contestID}/challenges/${encodeURIComponent(contestChallengeID)}`),
+    { method: 'DELETE' },
+  )
   await mustOK(response, '移除赛事题目失败')
 }
 

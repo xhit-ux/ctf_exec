@@ -121,7 +121,28 @@ func (s *ContestServiceImpl) GetContestChallengesForUser(contestID, userID, user
 		}
 	}
 
-	return s.contestRepo.ListContestChallengesForUser(contestID, userID)
+	items, err := s.contestRepo.ListContestChallengesForUser(contestID, userID)
+	if err != nil {
+		return nil, err
+	}
+	// 对动态计分题目：用 CTFd 公式覆盖 current_score。
+	// repo 阶段返回的 CurrentScore=contest_score（占位），这里精确计算。
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		if it.IsDynamicScore && it.InitialScore != nil && it.MinScore != nil && it.DecayConstant != nil {
+			cfg := &models.ContestChallenge{
+				IsDynamicScore: true,
+				ContestScore:   it.CurrentScore,
+				InitialScore:   it.InitialScore,
+				MinScore:       it.MinScore,
+				DecayConstant:  it.DecayConstant,
+			}
+			it.CurrentScore = ComputeContestCurrentScore(cfg, it.SolveCount)
+		}
+	}
+	return items, nil
 }
 
 func (s *ContestServiceImpl) GetContestScoreboard(contestID, boardType string, limit int) ([]*models.ContestScoreboardEntry, error) {
@@ -227,12 +248,57 @@ func (s *ContestServiceImpl) ValidateContestSubmission(contestID, userID string,
 		}
 	}
 
-	score, err := s.contestRepo.GetContestChallengeScore(contestID, problemID)
+	cfg, err := s.contestRepo.GetContestChallengeScoringConfig(contestID, problemID)
 	if err != nil {
 		return nil, 0, err
 	}
+	solveCount, err := s.contestRepo.CountContestSolves(contestID, problemID)
+	if err != nil {
+		return nil, 0, err
+	}
+	// 当前提交者也算一次解题，按 v2.1 公式 N=solveCount+1 计入。
+	score := ComputeContestCurrentScore(cfg, solveCount+1)
 
 	return &scope, score, nil
+}
+
+// ComputeContestCurrentScore 计算赛事题目的当前分值。
+//
+// CTFd 多项式衰减公式（v2.1 Part 3.2）：
+//
+//	current = max(min, ⌈ (min - initial) / decay² · N² + initial ⌉)
+//
+// 其中 N 为该题已解题主体数（含本次提交）。
+// 当 is_dynamic_score = false 时，固定返回 contest_score。
+func ComputeContestCurrentScore(cfg *models.ContestChallenge, solveCount int) int {
+	if cfg == nil {
+		return 0
+	}
+	if !cfg.IsDynamicScore {
+		return cfg.ContestScore
+	}
+	if cfg.InitialScore == nil || cfg.MinScore == nil || cfg.DecayConstant == nil {
+		return cfg.ContestScore
+	}
+	if solveCount <= 0 {
+		return *cfg.InitialScore
+	}
+	initial := float64(*cfg.InitialScore)
+	minScore := float64(*cfg.MinScore)
+	decay := float64(*cfg.DecayConstant)
+	if decay <= 0 {
+		return *cfg.InitialScore
+	}
+	n := float64(solveCount)
+	current := (minScore-initial)/(decay*decay)*n*n + initial
+	rounded := int(current + 0.999999) // 向上取整
+	if rounded < *cfg.MinScore {
+		rounded = *cfg.MinScore
+	}
+	if rounded > *cfg.InitialScore {
+		rounded = *cfg.InitialScore
+	}
+	return rounded
 }
 
 func (s *ContestServiceImpl) ApplyContestSolve(contestID string, scope *models.ContestParticipantScope, score int, solvedAt time.Time) error {

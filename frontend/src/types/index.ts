@@ -1,19 +1,27 @@
-export type Problem = {
-    id: number
-    title: string
-    category: 'web' | 'pwn' | 'crypto' | 'reverse' | 'misc'
-    points: number
-    difficulty: '简单' | '中等' | '困难'
-    tags?: string[]
-    description: string
-    is_solved: boolean
-    // Flag is hidden from frontend in API response
+// 与后端 v3.0 题目规范对齐的核心类型。
+// 详细的 ProblemView/ProblemAttachment/ProblemHint/ProblemPrerequisiteRef/InstanceView
+// 以及解析逻辑请参考 utils/problemView.ts。
+import type {
+  ProblemView,
+  ProblemCategory,
+  ProblemDifficulty,
+  ProblemType,
+} from '../utils/problemView'
+
+export type {
+  ProblemView,
+  ProblemCategory,
+  ProblemDifficulty,
+  ProblemType,
 }
 
+// Problem 是 ProblemView 的别名，保留旧 import 路径不破坏。
+export type Problem = ProblemView
+
 export type Submission = {
-    problemId: number | string
-    problemTitle?: string
-    flag: string
-    correct: boolean
-    time: string
+  problemId: number | string
+  problemTitle?: string
+  flag: string
+  correct: boolean
+  time: string
 }
