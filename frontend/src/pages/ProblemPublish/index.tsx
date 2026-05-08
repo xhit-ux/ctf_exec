@@ -1,10 +1,10 @@
 import React from 'react';
 import { ProblemPublishProvider, useProblemPublish } from './ProblemPublishContext';
 import Step1BasicInfo from './steps/Step1BasicInfo';
-import Step3FlagConfig from './steps/Step3FlagConfig';
-import Step4Attachments from './steps/Step4Attachments';
-import Step5ContainerEnv from './steps/Step5ContainerEnv';
-import Step6Review from './steps/Step6Review';
+import Step2FlagConfig from './steps/Step2FlagConfig';
+import Step3Attachments from './steps/Step3Attachments';
+import Step4ContainerEnv from './steps/Step4ContainerEnv';
+import Step5Review from './steps/Step5Review';
 
 function WizardSteps() {
   const { currentStep } = useProblemPublish();
@@ -69,10 +69,10 @@ function WizardSteps() {
 
         <div className="mt-1">
           {currentStep === 1 && <Step1BasicInfo />}
-          {currentStep === 2 && <Step3FlagConfig />}
-          {currentStep === 3 && <Step4Attachments />}
-          {currentStep === 4 && <Step5ContainerEnv />}
-          {currentStep === 5 && <Step6Review />}
+          {currentStep === 2 && <Step2FlagConfig />}
+          {currentStep === 3 && <Step3Attachments />}
+          {currentStep === 4 && <Step4ContainerEnv />}
+          {currentStep === 5 && <Step5Review />}
         </div>
       </div>
     </div>

@@ -291,7 +291,7 @@ func ComputeContestCurrentScore(cfg *models.ContestChallenge, solveCount int) in
 	}
 	n := float64(solveCount)
 	current := (minScore-initial)/(decay*decay)*n*n + initial
-	rounded := int(current + 0.999999) // 向上取整
+	rounded := int(current) // 向下取整
 	if rounded < *cfg.MinScore {
 		rounded = *cfg.MinScore
 	}
