@@ -26,8 +26,12 @@ export const DIFFICULTY_SCORE_RANGE: Record<Difficulty, { min: number; max: numb
 
 export interface ProblemPublishState {
   problemId?: string;
+  sourceProblemId?: string;
   category?: ProblemCategory;
   useContainer: boolean;
+  isEditingExisting: boolean;
+  attachmentLocked: boolean;
+  imageLocked: boolean;
 
   // Step 1 基础信息（platform scope 固定分值；contest_score 在赛事侧配置）。
   title: string;
@@ -36,7 +40,7 @@ export interface ProblemPublishState {
   platformScore: number;
   description: string;
   tags: string[];
-  status: 'draft' | 'published' | 'hidden';
+  status: 'draft' | 'ready' | 'hidden';
 
   // Step 2 Flag 配置
   flagType: FlagType;
@@ -78,6 +82,9 @@ export interface ProblemPublishState {
 
 export const initialProblemState: ProblemPublishState = {
   useContainer: true,
+  isEditingExisting: false,
+  attachmentLocked: false,
+  imageLocked: false,
   enableSidecar: false,
   title: '',
   difficulty: 'Easy',

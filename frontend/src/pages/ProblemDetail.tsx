@@ -9,10 +9,8 @@ import {
   categoryLabel,
   difficultyLabel,
   normalizeProblem,
-  ProblemHint,
-  ProblemPrerequisiteRef,
-  ProblemView,
 } from '../utils/problemView'
+import type { ProblemHint, ProblemPrerequisiteRef, ProblemView } from '../utils/problemView'
 import {
   destroyProblemInstance,
   fetchProblemInstance,
@@ -77,7 +75,7 @@ function PrerequisitesSection({ items }: { items: ProblemPrerequisiteRef[] }) {
               </div>
             </div>
             <Link
-              to={`/problem/${it.id}`}
+              to={`/problems/${it.id}`}
               className="text-xs px-3 py-1.5 rounded-md border border-gray-200 hover:bg-gray-100"
             >
               查看
@@ -139,8 +137,8 @@ function HintSection({
 
 export default function ProblemDetail() {
   const { user } = useAuth()
-  const { id } = useParams()
-  const problemID = String(id ?? '').trim()
+  const { id, problemId } = useParams()
+  const problemID = String(problemId ?? id ?? '').trim()
   const [searchParams] = useSearchParams()
   const contestID = searchParams.get('contest_id') || undefined
 
@@ -412,7 +410,7 @@ export default function ProblemDetail() {
         <h2 className="text-xl font-medium">{problem.title}</h2>
         {canEditProblem && (
           <Link
-            to={`/problem/${problem.id}/edit`}
+            to={`/problems/${problem.id}/edit`}
             className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
           >
             编辑题目

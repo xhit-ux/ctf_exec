@@ -520,7 +520,7 @@ export default function ContestDetail() {
                       </td>
                       <td className="py-3 px-3 text-right">
                         <Link
-                          to={`/problem/${item.id}?contest_id=${contestID}`}
+                          to={`/problems/${item.id}?contest_id=${contestID}`}
                           className="text-blue-600 font-semibold hover:text-blue-700"
                         >
                           去提交

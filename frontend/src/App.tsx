@@ -1,5 +1,5 @@
 import React from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 import AuthenticatedRoute from './components/auth/AuthenticatedRoute'
@@ -39,6 +39,27 @@ function LegacyContestRedirect() {
   return <Navigate to={id ? `/contest/${id}` : '/contests'} replace />
 }
 
+function LegacyProblemListRedirect() {
+  return <Navigate to="/problems" replace />
+}
+
+function LegacyProblemDetailRedirect() {
+  const { id } = useParams()
+  const location = useLocation()
+  return <Navigate to={{ pathname: id ? `/problems/${id}` : '/problems', search: location.search }} replace />
+}
+
+function LegacyProblemEditRedirect() {
+  const { id } = useParams()
+  const location = useLocation()
+  return <Navigate to={{ pathname: id ? `/problems/${id}/edit` : '/problems/new', search: location.search }} replace />
+}
+
+function LegacyProblemPublishRedirect() {
+  const location = useLocation()
+  return <Navigate to={{ pathname: '/problems/new', search: location.search }} replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -47,11 +68,42 @@ export default function App() {
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Index />} />
             <Route
-              path="problem"
+              path="problems"
               element={
                 <ProtectedRoute>
                   <RequiresDesktop>
                     <Problems />
+                  </RequiresDesktop>
+                </ProtectedRoute>
+              }
+            />
+            <Route path="problem" element={<LegacyProblemListRedirect />} />
+            <Route
+              path="problems/new"
+              element={
+                <ProtectedRoute requiredRoles={["root", "site_admin", "contest_admin"]}>
+                  <RequiresDesktop>
+                    <ProblemPublish />
+                  </RequiresDesktop>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="problems/:problemId/edit"
+              element={
+                <ProtectedRoute>
+                  <RequiresDesktop>
+                    <ProblemPublish />
+                  </RequiresDesktop>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="problems/:problemId"
+              element={
+                <ProtectedRoute>
+                  <RequiresDesktop>
+                    <ProblemDetail />
                   </RequiresDesktop>
                 </ProtectedRoute>
               }
@@ -123,33 +175,15 @@ export default function App() {
             />
             <Route
               path="problem/publish"
-              element={
-                <ProtectedRoute requiredRoles={["root", "site_admin", "contest_admin"]}>
-                  <RequiresDesktop>
-                    <ProblemPublish />
-                  </RequiresDesktop>
-                </ProtectedRoute>
-              }
+              element={<LegacyProblemPublishRedirect />}
             />
             <Route
               path="problem/:id/edit"
-              element={
-                <ProtectedRoute>
-                  <RequiresDesktop>
-                    <ProblemPublish />
-                  </RequiresDesktop>
-                </ProtectedRoute>
-              }
+              element={<LegacyProblemEditRedirect />}
             />
             <Route
               path="problem/:id"
-              element={
-                <ProtectedRoute>
-                  <RequiresDesktop>
-                    <ProblemDetail />
-                  </RequiresDesktop>
-                </ProtectedRoute>
-              }
+              element={<LegacyProblemDetailRedirect />}
             />
             <Route
               path="profile"

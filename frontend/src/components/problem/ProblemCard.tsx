@@ -1,5 +1,6 @@
 import React from 'react'
-import { categoryLabel, ProblemView } from '../../utils/problemView'
+import { categoryLabel } from '../../utils/problemView'
+import type { ProblemView } from '../../utils/problemView'
 
 export default function ProblemCard({ p }: { p: ProblemView }) {
   const tags = p.tags

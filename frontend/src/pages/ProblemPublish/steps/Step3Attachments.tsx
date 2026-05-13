@@ -45,6 +45,12 @@ export default function Step4Attachments() {
       return;
     }
 
+    if (state.attachmentLocked) {
+      alert('当前草稿已从原题继承附件，不能直接替换。请先移除原题附件或新建草稿。')
+      e.target.value = ''
+      return
+    }
+
     if (e.target.files.length > 1) {
       alert('仅支持上传单个文件。如有多个文件，请先打包后再上传。');
     }
@@ -97,6 +103,10 @@ export default function Step4Attachments() {
   };
 
   const removeAttachment = () => {
+    if (state.attachmentLocked) {
+      alert('当前草稿继承了原题附件，不能删除。')
+      return
+    }
     updateState({ attachment: null });
   };
 
@@ -113,12 +123,19 @@ export default function Step4Attachments() {
         </p>
       </div>
 
-      <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:bg-gray-50 transition cursor-pointer relative">
+      {state.attachmentLocked && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          当前草稿已继承原题附件，仅允许查看，不支持直接替换或删除。
+        </div>
+      )}
+
+      <div className={`border-2 border-dashed border-gray-300 rounded-xl p-6 text-center transition relative ${state.attachmentLocked ? 'bg-gray-50 opacity-70 cursor-not-allowed' : 'hover:bg-gray-50 cursor-pointer'}`}>
         <input
           type="file"
           accept={ACCEPT_ARCHIVE_TYPES}
+          disabled={state.attachmentLocked}
           onChange={handleFileUpload}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
         />
         <div className="mb-2 inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-50 text-amber-700">
           <IconUpload className="w-5 h-5" />
@@ -146,7 +163,7 @@ export default function Step4Attachments() {
                 </div>
               </div>
             </div>
-            <button onClick={removeAttachment} className="btn-danger !py-1.5 !px-3 text-xs">
+            <button onClick={removeAttachment} disabled={state.attachmentLocked} className="btn-danger !py-1.5 !px-3 text-xs disabled:opacity-50">
               删除
             </button>
           </div>

@@ -258,6 +258,7 @@ CREATE TABLE problems (
 
     status             VARCHAR(16)   NOT NULL DEFAULT 'draft',
     created_by         CHAR(36)      NULL,
+    source_problem_id  CHAR(36)      NULL,
 
     created_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -273,7 +274,9 @@ CREATE TABLE problems (
     CONSTRAINT chk_platform_score_nn   CHECK (platform_score >= 0),
 
     FOREIGN KEY fk_problems_created_by (created_by)
-        REFERENCES users(id) ON DELETE SET NULL
+        REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY fk_problems_source_problem (source_problem_id)
+        REFERENCES problems(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE INDEX idx_problems_status   ON problems(status);

@@ -16,6 +16,52 @@ export type BuildTaskView = {
   error_log?: string
 }
 
+export type ProblemPublishAdminDetail = {
+  id: string
+  title: string
+  category: string
+  type: 'static' | 'container_web' | 'container_tcp'
+  description?: string | null
+  author?: string | null
+  platform_score: number
+  difficulty: 'easy' | 'medium' | 'hard' | 'expert'
+  deploy_mode?: 'shared' | 'per_user' | string
+  use_kata?: boolean
+  status: 'draft' | 'ready' | 'hidden'
+  source_problem_id?: string | null
+  tags?: string[]
+  flag?: {
+    flag_type?: 'static' | 'dynamic'
+    flag_rule?: 'exact' | 'case_insensitive' | 'regex' | 'contains'
+    flag_example?: string | null
+    flag_inject?: 'env' | 'sidecar'
+    flag_env_key?: string | null
+    flag_sidecar_pattern?: string | null
+    flag_pattern?: string | null
+  } | null
+  container?: {
+    image_name?: string
+    image_tag?: string
+    challenge_port?: number
+    sidecar_image?: string | null
+    sidecar_port?: number | null
+    cpu_limit?: string
+    memory_limit?: string
+    ttl_seconds?: number
+    ingress_host_tpl?: string | null
+  } | null
+  attachment?: {
+    id: string
+    file_name?: string
+    file_size?: number
+    sha256?: string | null
+    bucket_name?: string | null
+    object_key?: string | null
+    file_path?: string | null
+  } | null
+  build_task?: BuildTaskView | null
+}
+
 export type PublishProblemResult = {
   published: boolean
   building: boolean
@@ -36,7 +82,7 @@ async function mustOK(response: Response, fallback: string): Promise<void> {
   throw new Error(message)
 }
 
-export async function createProblemDraft(payload: { category: string; type: 'static' | 'container_web' | 'container_tcp' }): Promise<string> {
+export async function createProblemDraft(payload: { category: string; type: 'static' | 'container_web' | 'container_tcp'; source_problem_id?: string }): Promise<string> {
   const response = await apiFetch(apiUrl('/api/admin/problems'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -48,6 +94,12 @@ export async function createProblemDraft(payload: { category: string; type: 'sta
     throw new Error('创建题目草稿失败：未返回 problem_id')
   }
   return body.problem_id
+}
+
+export async function fetchProblemPublishDraft(problemID: string): Promise<ProblemPublishAdminDetail> {
+  const response = await apiFetch(apiUrl(`/api/admin/problems/${encodeURIComponent(problemID)}`))
+  await mustOK(response, '获取题目详情失败')
+  return await response.json() as ProblemPublishAdminDetail
 }
 
 export async function saveProblemBasic(problemID: string, payload: {

@@ -12,20 +12,21 @@ import (
 // Problem 题目模板（platform scope）。
 // v2.1 关键字段：platform_score 受难度区间约束；动态计分配置不在此层。
 type Problem struct {
-	ID            string     `json:"id"`
-	Title         string     `json:"title"`
-	Category      string     `json:"category"`
-	Type          string     `json:"type"`
-	Description   *string    `json:"description,omitempty"`
-	Author        *string    `json:"author,omitempty"`
-	PlatformScore int        `json:"platform_score"`
-	Difficulty    string     `json:"difficulty"`
-	DeployMode    string     `json:"deploy_mode"`
-	UseKata       bool       `json:"use_kata"`
-	Status        string     `json:"status"`
-	CreatedBy     *string    `json:"created_by,omitempty"`
-	CreatedAt     *time.Time `json:"created_at,omitempty"`
-	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	Category        string     `json:"category"`
+	Type            string     `json:"type"`
+	Description     *string    `json:"description,omitempty"`
+	Author          *string    `json:"author,omitempty"`
+	PlatformScore   int        `json:"platform_score"`
+	Difficulty      string     `json:"difficulty"`
+	DeployMode      string     `json:"deploy_mode"`
+	UseKata         bool       `json:"use_kata"`
+	Status          string     `json:"status"`
+	CreatedBy       *string    `json:"created_by,omitempty"`
+	SourceProblemID *string    `json:"source_problem_id,omitempty"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 
 	Tags          []string           `json:"tags,omitempty"`
 	Attachment    *Attachment        `json:"attachment,omitempty"`
@@ -174,8 +175,9 @@ type ProblemSubmissionMeta struct {
 
 // CreateProblemDraftRequest 创建草稿（仅需分类与类型）。
 type CreateProblemDraftRequest struct {
-	Category string `json:"category"`
-	Type     string `json:"type"`
+	Category        string  `json:"category"`
+	Type            string  `json:"type"`
+	SourceProblemID *string `json:"source_problem_id,omitempty"`
 }
 
 // UpdateProblemBasicRequest Step1 基本信息保存。
@@ -275,8 +277,9 @@ func GetDifficultyRange(difficulty string) (DifficultyScoreRange, bool) {
 //   - type=container_tcp   且 instance.status=running                 → {tcp: nc <host> <port>}
 //
 // container_tcp 优先级：access_url > "host:port"（含 schema 时去掉 schema），
-//                       否则用 instance.node_port + access_url 中的 host。
-//                       提取失败时返回 nil（避免半残数据）。
+//
+//	否则用 instance.node_port + access_url 中的 host。
+//	提取失败时返回 nil（避免半残数据）。
 func BuildConnectionInfo(problemType string, instance *ChallengeInstance, container *ProblemContainer) *ConnectionInfo {
 	if instance == nil || instance.Status != "running" {
 		return nil

@@ -30,7 +30,7 @@ export type ProblemPrerequisiteRef = {
   is_solved: boolean
 }
 
-export type ProblemInstanceStatus = 'idle' | 'pending' | 'running' | 'failed' | 'destroyed'
+export type ProblemInstanceStatus = 'idle' | 'pending' | 'running' | 'failed' | 'stopping' | 'destroyed'
 
 export type ProblemInstanceView = {
   status: ProblemInstanceStatus
@@ -209,7 +209,8 @@ function normalizeInstance(value: unknown): ProblemInstanceView | null | undefin
   if (value === null) return null
   if (!value || typeof value !== 'object') return undefined
   const raw = value as Record<string, unknown>
-  const status = String(raw.status ?? 'idle').toLowerCase() as ProblemInstanceStatus
+  const rawStatus = String(raw.status ?? 'idle').toLowerCase()
+  const status = (rawStatus === 'destroyed' ? 'stopping' : rawStatus) as ProblemInstanceStatus
   return {
     status,
     access_url: typeof raw.access_url === 'string' ? raw.access_url : null,

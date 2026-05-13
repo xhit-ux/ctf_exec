@@ -401,17 +401,18 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 	p := &models.Problem{}
 	query := `
 		SELECT p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
-		       p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by,
+		       p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by, p.source_problem_id,
 		       IFNULL(CAST(JSON_ARRAYAGG(pt.tag) AS CHAR), '[]') as tags
 		FROM problems p
 		LEFT JOIN problem_tags pt ON p.id = pt.problem_id
 		WHERE p.id = ?
 		GROUP BY p.id, p.title, p.author, p.category, p.type, p.description, p.platform_score,
-		         p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by
+		         p.difficulty, p.deploy_mode, p.use_kata, p.status, p.created_by, p.source_problem_id
 	`
 	var tagsJSON string
 	var author sql.NullString
 	var createdBy sql.NullString
+	var sourceProblemID sql.NullString
 	if err := r.db.QueryRow(query, strings.TrimSpace(problemID)).Scan(
 		&p.ID,
 		&p.Title,
@@ -425,6 +426,7 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 		&p.UseKata,
 		&p.Status,
 		&createdBy,
+		&sourceProblemID,
 		&tagsJSON,
 	); err != nil {
 		if err == sql.ErrNoRows {
@@ -442,6 +444,12 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 		v := strings.TrimSpace(createdBy.String)
 		if v != "" {
 			p.CreatedBy = &v
+		}
+	}
+	if sourceProblemID.Valid {
+		v := strings.TrimSpace(sourceProblemID.String)
+		if v != "" {
+			p.SourceProblemID = &v
 		}
 	}
 	if err := json.Unmarshal([]byte(tagsJSON), &p.Tags); err != nil {
@@ -539,7 +547,7 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 //   - static + (exact|case_insensitive)  → 仅写 flag_hash，flag_pattern=NULL
 //   - static + (regex|contains)          → 仅写 flag_pattern，flag_hash=NULL
 //   - dynamic + (exact|case_insensitive) → flag_hash 与 flag_pattern 均 NULL，
-//                                          运行期由 challenge_instances.flag_value 即席校验
+//     运行期由 challenge_instances.flag_value 即席校验
 //   - dynamic + (regex|contains)         → 业务上不支持，handler 已拦截
 func (r *ProblemRepository) upsertFlagTx(tx *sql.Tx, problemID string, req *models.SaveProblemFlagRequest) error {
 	if req == nil {
@@ -955,24 +963,150 @@ func nullJSON(v json.RawMessage) interface{} {
 }
 
 func (r *ProblemRepository) CreateProblemDraft(req *models.CreateProblemDraftRequest, createdBy string) (string, error) {
-	id := uuid.New().String()
-	typeName := strings.ToLower(strings.TrimSpace(req.Type))
-	if typeName == "" {
-		typeName = "static"
+	cleanCategory := strings.TrimSpace(req.Category)
+	cleanType := strings.ToLower(strings.TrimSpace(req.Type))
+	if cleanType == "" {
+		cleanType = "static"
 	}
-	// 草稿默认 platform_score=1（满足 chk_platform_score >= 1），等待 Step1 覆盖。
-	_, err := r.db.Exec(`
-		INSERT INTO problems (id, title, category, type, description, platform_score, difficulty, deploy_mode, use_kata, status, created_by)
-		VALUES (?, '', ?, ?, NULL, 1, 'easy', 'shared', 0, 'draft', ?)
-	`, id, strings.TrimSpace(req.Category), typeName, nullIfEmpty(createdBy))
+	cleanSourceID := ""
+	if req != nil && req.SourceProblemID != nil {
+		cleanSourceID = strings.TrimSpace(*req.SourceProblemID)
+	}
+
+	if cleanSourceID == "" {
+		id := uuid.New().String()
+		// 草稿默认 platform_score=1（满足 chk_platform_score >= 1），等待 Step1 覆盖。
+		_, err := r.db.Exec(`
+			INSERT INTO problems (id, title, category, type, description, platform_score, difficulty, deploy_mode, use_kata, status, created_by, source_problem_id)
+			VALUES (?, '', ?, ?, NULL, 1, 'easy', 'shared', 0, 'draft', ?, NULL)
+		`, id, cleanCategory, cleanType, nullIfEmpty(createdBy))
+		if err != nil {
+			return "", fmt.Errorf("创建草稿失败: %w", err)
+		}
+		return id, nil
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var sourceTitle, sourceCategory, sourceType, sourceDeployMode, sourceDifficulty string
+	var sourceDescription sql.NullString
+	var sourceAuthor sql.NullString
+	var platformScore int
+	var useKata bool
+	if scanErr := tx.QueryRow(`
+		SELECT title, category, type, description, author, platform_score, difficulty, deploy_mode, use_kata
+		FROM problems
+		WHERE id = ?
+	`, cleanSourceID).Scan(&sourceTitle, &sourceCategory, &sourceType, &sourceDescription, &sourceAuthor, &platformScore, &sourceDifficulty, &sourceDeployMode, &useKata); scanErr != nil {
+		if scanErr == sql.ErrNoRows {
+			return "", apperr.New(apperr.ErrNotFound, "源题目不存在")
+		}
+		return "", fmt.Errorf("读取源题目失败: %w", scanErr)
+	}
+
+	id := uuid.New().String()
+	_, err = tx.Exec(`
+		INSERT INTO problems (
+			id, title, category, type, description, author, platform_score, difficulty,
+			deploy_mode, use_kata, status, created_by, source_problem_id
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)
+	`,
+		id,
+		sourceTitle,
+		sourceCategory,
+		sourceType,
+		nullIfEmpty(sourceDescription.String),
+		nullIfEmpty(sourceAuthor.String),
+		platformScore,
+		sourceDifficulty,
+		sourceDeployMode,
+		useKata,
+		nullIfEmpty(createdBy),
+		cleanSourceID,
+	)
 	if err != nil {
 		return "", fmt.Errorf("创建草稿失败: %w", err)
+	}
+
+	if _, err = tx.Exec(`
+		INSERT INTO problem_flags (problem_id, flag_type, flag_rule, flag_hash, flag_pattern, flag_example, flag_inject, flag_env_key, flag_sidecar_pattern)
+		SELECT ?, flag_type, flag_rule, flag_hash, flag_pattern, flag_example, flag_inject, flag_env_key, flag_sidecar_pattern
+		FROM problem_flags WHERE problem_id = ?
+	`, id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制 flag 配置失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO attachments (id, problem_id, file_name, bucket_name, object_key, file_size, sha256, created_at)
+		SELECT ?, ?, file_name, bucket_name, object_key, file_size, sha256, created_at
+		FROM attachments WHERE problem_id = ?
+	`, uuid.New().String(), id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制附件失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO problem_containers (problem_id, image_name, image_tag, challenge_port, sidecar_image, sidecar_port, cpu_limit, memory_limit, env, ttl_seconds, ingress_host_tpl)
+		SELECT ?, image_name, image_tag, challenge_port, sidecar_image, sidecar_port, cpu_limit, memory_limit, env, ttl_seconds, ingress_host_tpl
+		FROM problem_containers WHERE problem_id = ?
+	`, id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制容器配置失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO problem_tags (problem_id, tag)
+		SELECT ?, tag FROM problem_tags WHERE problem_id = ?
+	`, id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制题目标签失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO problem_hints (id, problem_id, content, cost, sort_order, is_visible, created_at)
+		SELECT ?, ?, content, cost, sort_order, is_visible, created_at
+		FROM problem_hints WHERE problem_id = ?
+	`, uuid.New().String(), id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制提示失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO problem_prerequisites (problem_id, prerequisite_id)
+		SELECT ?, prerequisite_id FROM problem_prerequisites WHERE problem_id = ?
+	`, id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制前置题目失败: %w", err)
+	}
+	if _, err = tx.Exec(`
+		INSERT INTO image_build_tasks (
+			id, problem_id, file_path, file_size, status, current_step, image_repo, image_tag,
+			error_log, retry_count, max_retry, worker_id, claimed_at, started_at, finished_at
+		)
+		SELECT ?, ?, file_path, file_size, status, current_step, image_repo, image_tag,
+			error_log, retry_count, max_retry, worker_id, claimed_at, started_at, finished_at
+		FROM image_build_tasks WHERE problem_id = ? ORDER BY started_at DESC LIMIT 1
+	`, uuid.New().String(), id, cleanSourceID); err != nil {
+		return "", fmt.Errorf("复制镜像构建任务失败: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return "", fmt.Errorf("提交事务失败: %w", err)
 	}
 	return id, nil
 }
 
 func (r *ProblemRepository) UpdateProblemBasic(problemID string, req *models.UpdateProblemBasicRequest) error {
-	_, err := r.db.Exec(`
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	_, err = tx.Exec(`
 		UPDATE problems
 		SET title = ?, author = ?, category = ?, type = ?, description = ?,
 		    platform_score = ?, difficulty = ?, deploy_mode = ?, use_kata = ?,
@@ -984,6 +1118,14 @@ func (r *ProblemRepository) UpdateProblemBasic(problemID string, req *models.Upd
 		strings.TrimSpace(req.DeployMode), req.UseKata, strings.TrimSpace(problemID))
 	if err != nil {
 		return fmt.Errorf("保存基础信息失败: %w", err)
+	}
+
+	if err = r.syncProblemTagsTx(tx, strings.TrimSpace(problemID), req.Tags); err != nil {
+		return err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
 	}
 	return nil
 }
@@ -1033,15 +1175,18 @@ func (r *ProblemRepository) UpsertProblemContainer(problemID string, req *models
 }
 
 // PublishProblem 校验并发布题目。校验清单见 v3.0 Part 7.4：
-//   1. title / description / category / difficulty 完整
-//   2. platform_score 落在难度区间
-//   3. flag 已配置（且 dynamic 不允许 regex/contains）
-//   4. container 题：镜像配置完整 + 镜像构建成功
-//   5. container_web：ingress_host_tpl 存在（缺失时自动从全局模板填充）
+//  1. title / description / category / difficulty 完整
+//  2. platform_score 落在难度区间
+//  3. flag 已配置（且 dynamic 不允许 regex/contains）
+//  4. container 题：镜像配置完整 + 镜像构建成功
+//  5. container_web：ingress_host_tpl 存在（缺失时自动从全局模板填充）
 func (r *ProblemRepository) PublishProblem(problemID string) error {
 	detail, err := r.GetAdminProblemByID(problemID)
 	if err != nil {
 		return err
+	}
+	if detail.SourceProblemID != nil && strings.TrimSpace(*detail.SourceProblemID) != "" {
+		return r.publishDraftToSource(detail, strings.TrimSpace(*detail.SourceProblemID))
 	}
 	if strings.TrimSpace(detail.Title) == "" {
 		return apperr.New(apperr.ErrBadRequest, "title 不能为空")
@@ -1118,6 +1263,83 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 	_, err = r.db.Exec(`UPDATE problems SET status = 'ready', updated_at = NOW() WHERE id = ?`, strings.TrimSpace(problemID))
 	if err != nil {
 		return fmt.Errorf("发布题目失败: %w", err)
+	}
+	return nil
+}
+
+func (r *ProblemRepository) publishDraftToSource(detail *models.Problem, sourceID string) error {
+	cleanDraftID := strings.TrimSpace(detail.ID)
+	cleanSourceID := strings.TrimSpace(sourceID)
+	if cleanDraftID == "" || cleanSourceID == "" {
+		return apperr.New(apperr.ErrBadRequest, "无效的草稿或源题目ID")
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启事务失败: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var sourceExists int
+	if err = tx.QueryRow(`SELECT COUNT(1) FROM problems WHERE id = ?`, cleanSourceID).Scan(&sourceExists); err != nil {
+		return fmt.Errorf("校验源题目失败: %w", err)
+	}
+	if sourceExists == 0 {
+		return apperr.New(apperr.ErrNotFound, "源题目不存在")
+	}
+
+	if _, err = tx.Exec(`
+		UPDATE problems
+		SET title = ?, author = ?, category = ?, type = ?, description = ?, platform_score = ?,
+		    difficulty = ?, deploy_mode = ?, use_kata = ?, status = 'ready', updated_at = NOW()
+		WHERE id = ?
+	`, detail.Title, detail.Author, detail.Category, detail.Type, detail.Description, detail.PlatformScore,
+		detail.Difficulty, detail.DeployMode, detail.UseKata, cleanSourceID); err != nil {
+		return fmt.Errorf("回写源题目失败: %w", err)
+	}
+
+	cleanupStatements := []string{
+		`DELETE FROM attachments WHERE problem_id = ?`,
+		`DELETE FROM problem_flags WHERE problem_id = ?`,
+		`DELETE FROM problem_containers WHERE problem_id = ?`,
+		`DELETE FROM problem_tags WHERE problem_id = ?`,
+		`DELETE FROM problem_hints WHERE problem_id = ?`,
+		`DELETE FROM problem_prerequisites WHERE problem_id = ?`,
+		`DELETE FROM image_build_tasks WHERE problem_id = ?`,
+		`DELETE FROM challenge_instances WHERE problem_id = ?`,
+		`DELETE FROM flag_mappings WHERE problem_id = ?`,
+	}
+	for _, stmt := range cleanupStatements {
+		if _, err = tx.Exec(stmt, cleanSourceID); err != nil {
+			return fmt.Errorf("清理源题目旧数据失败: %w", err)
+		}
+	}
+
+	moveStatements := []string{
+		`UPDATE attachments SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE problem_flags SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE problem_containers SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE problem_tags SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE problem_hints SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE problem_prerequisites SET problem_id = ? WHERE problem_id = ?`,
+		`UPDATE image_build_tasks SET problem_id = ? WHERE problem_id = ?`,
+	}
+	for _, stmt := range moveStatements {
+		if _, err = tx.Exec(stmt, cleanSourceID, cleanDraftID); err != nil {
+			return fmt.Errorf("迁移草稿数据失败: %w", err)
+		}
+	}
+
+	if _, err = tx.Exec(`DELETE FROM problems WHERE id = ?`, cleanDraftID); err != nil {
+		return fmt.Errorf("删除草稿失败: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
 	}
 	return nil
 }

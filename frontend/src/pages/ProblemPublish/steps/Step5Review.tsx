@@ -122,7 +122,7 @@ export default function Step6Review() {
   const tryFinalizePublish = async (problemID: string) => {
     const result = await publishProblem(problemID);
     if (result.published) {
-      navigate('/problem');
+      navigate(state.sourceProblemId ? `/problems/${state.sourceProblemId}` : `/problems/${problemID}`);
       return true;
     }
     return false;
@@ -187,7 +187,7 @@ export default function Step6Review() {
       if (result.published) {
         setPublishing(false);
         setModalOpen(false);
-        navigate(`/problem/${state.problemId}`);
+        navigate(state.sourceProblemId ? `/problems/${state.sourceProblemId}` : `/problems/${state.problemId}`);
         return;
       }
       if (result.building) {

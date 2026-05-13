@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useState, ReactNode } from 'react';
 import { ProblemPublishState, initialProblemState } from './types';
 
 interface ProblemPublishContextType {
   state: ProblemPublishState;
   updateState: (updates: Partial<ProblemPublishState>) => void;
+  resetState: () => void;
   currentStep: number;
   setStep: (step: number) => void;
   nextStep: () => void;
@@ -19,27 +20,32 @@ export const ProblemPublishProvider = ({ children }: { children: ReactNode }) =>
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const updateState = (updates: Partial<ProblemPublishState>) => {
+  const updateState = useCallback((updates: Partial<ProblemPublishState>) => {
     setState((prev) => ({ ...prev, ...updates }));
-  };
+  }, []);
 
-  const setStep = (step: number) => {
+  const resetState = useCallback(() => {
+    setState({ ...initialProblemState });
+  }, []);
+
+  const setStep = useCallback((step: number) => {
     setCurrentStep(step);
-  };
+  }, []);
 
-  const nextStep = () => {
+  const nextStep = useCallback(() => {
     setCurrentStep((prev) => Math.min(prev + 1, 5));
-  };
+  }, []);
 
-  const prevStep = () => {
+  const prevStep = useCallback(() => {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
-  };
+  }, []);
 
   return (
     <ProblemPublishContext.Provider
       value={{
         state,
         updateState,
+        resetState,
         currentStep,
         setStep,
         nextStep,

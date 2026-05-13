@@ -42,7 +42,8 @@ func (h *ProblemHandler) CreateProblemDraftGin(c *gin.Context) {
 		writeBadRequest(c, "请求体格式错误")
 		return
 	}
-	if strings.TrimSpace(req.Category) == "" {
+	req.Category = normalizeProblemCategory(req.Category)
+	if req.Category == "" {
 		writeBadRequest(c, "category 不能为空")
 		return
 	}
@@ -72,7 +73,8 @@ func (h *ProblemHandler) SaveProblemBasicGin(c *gin.Context) {
 	}
 	req.Type = normalizeProblemType(req.Type)
 	req.DeployMode = normalizeDeployMode(req.DeployMode)
-	if req.Type == "" || req.DeployMode == "" {
+	req.Category = normalizeProblemCategory(req.Category)
+	if req.Type == "" || req.DeployMode == "" || req.Category == "" {
 		writeBadRequest(c, "type/deploy_mode 不合法")
 		return
 	}
@@ -90,6 +92,9 @@ func (h *ProblemHandler) SaveProblemBasicGin(c *gin.Context) {
 	if req.PlatformScore < rng.Min || req.PlatformScore > rng.Max {
 		writeBadRequest(c, fmt.Sprintf("platform_score 必须在 [%d,%d] 区间内（难度=%s）", rng.Min, rng.Max, difficulty))
 		return
+	}
+	if len(req.Tags) == 0 && req.Category != "" {
+		req.Tags = []string{req.Category}
 	}
 	if err := h.repo.UpdateProblemBasic(id, &req); err != nil {
 		writeError(c, err, http.StatusInternalServerError)
@@ -715,6 +720,18 @@ func normalizeProblemType(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "static", "container_web", "container_tcp":
 		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return ""
+	}
+}
+
+func normalizeProblemCategory(raw string) string {
+	v := strings.ToLower(strings.TrimSpace(raw))
+	switch v {
+	case "web", "pwn", "crypto", "reverse", "misc":
+		return v
+	case "rev":
+		return "reverse"
 	default:
 		return ""
 	}

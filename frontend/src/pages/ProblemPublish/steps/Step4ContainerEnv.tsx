@@ -16,6 +16,10 @@ export default function Step5ContainerEnv() {
       window.alert('请先完成基础信息并保存草稿');
       return;
     }
+    if (state.imageLocked) {
+      window.alert('当前草稿已继承原题镜像配置，不能直接重新上传。请先新建草稿。');
+      return;
+    }
     if (!state.internalPort || state.internalPort <= 0) {
       window.alert('请先填写内部端口');
       return;
@@ -105,6 +109,12 @@ export default function Step5ContainerEnv() {
         </div>
       </div>
 
+      {state.imageLocked && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          当前草稿已继承原题镜像配置，镜像地址与上传文件仅支持查看，不支持直接替换。
+        </div>
+      )}
+
       {state.useContainer && (
       <>
       <div className="p-3.5 border border-gray-200 rounded-lg hover:border-amber-300 transition bg-gray-50">
@@ -115,6 +125,7 @@ export default function Step5ContainerEnv() {
             <select
               value={state.uploadType || 'docker_save'}
               onChange={(e) => updateState({ uploadType: e.target.value as any })}
+              disabled={state.imageLocked}
               className="field-select mt-1"
             >
               <option value="docker_save">docker save 镜像包（load）</option>
@@ -123,20 +134,22 @@ export default function Step5ContainerEnv() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700">可用端口最小值</label>
-            <input
+              <input
               type="number"
               value={state.hostPortMin || 20000}
               onChange={(e) => updateState({ hostPortMin: Number(e.target.value) })}
+              disabled={state.imageLocked}
               className="field-input mt-1"
               placeholder="20000"
             />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700">可用端口最大值</label>
-            <input
+              <input
               type="number"
               value={state.hostPortMax || 30000}
               onChange={(e) => updateState({ hostPortMax: Number(e.target.value) })}
+              disabled={state.imageLocked}
               className="field-input mt-1"
               placeholder="30000"
             />
@@ -144,10 +157,11 @@ export default function Step5ContainerEnv() {
         </div>
         {!state.imageTaskStatus || state.imageTaskStatus === 'failed' ? (
           <div>
-            <div className="border-2 border-dashed border-gray-300 bg-white rounded-xl p-4 text-center cursor-pointer relative mt-2 hover:bg-gray-50 transition">
+            <div className={`border-2 border-dashed border-gray-300 bg-white rounded-xl p-4 text-center relative mt-2 transition ${state.imageLocked ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'}`}>
               <input 
                 type="file" 
                 accept=".tar,.gz,.tgz"
+                disabled={state.imageLocked}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
@@ -168,6 +182,7 @@ export default function Step5ContainerEnv() {
               type="text" 
               value={state.registryImage || ''}
               onChange={(e) => updateState({ registryImage: e.target.value })}
+              disabled={state.imageLocked}
               className="field-input mt-2"
               placeholder="例如：reg.ctf.local/ctf/web-sqli-2026"
             />
@@ -182,7 +197,7 @@ export default function Step5ContainerEnv() {
                   <p className="text-xs text-gray-500">构建会在点击发布后执行</p>
                 </div>
               </div>
-              {state.imageTaskStatus === 'uploaded' && (
+              {state.imageTaskStatus === 'uploaded' && !state.imageLocked && (
                 <button onClick={() => updateState({ imageTaskStatus: undefined, imageTaskProgress: 0, registryImage: undefined })} className="text-xs text-amber-700 hover:text-amber-800 underline">重新上传</button>
               )}
             </div>

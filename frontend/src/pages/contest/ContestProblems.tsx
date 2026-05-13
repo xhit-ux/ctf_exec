@@ -108,7 +108,7 @@ export default function ContestProblems() {
                   <td className="px-3 py-3 text-right">
                     <Link
                       className="font-semibold text-amber-700 hover:text-amber-800"
-                      to={`/problem/${item.problem_id}?contest_id=${contest.id}`}
+                      to={`/problems/${item.problem_id}?contest_id=${contest.id}`}
                     >
                       进入题目
                     </Link>

@@ -6,7 +6,8 @@ import { apiFetch } from '../utils/authClient'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/common/PageHeader'
 import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/tabAccent'
-import { categoryLabel, normalizeProblemList, ProblemDifficulty, ProblemView } from '../utils/problemView'
+import { categoryLabel, normalizeProblemList } from '../utils/problemView'
+import type { ProblemDifficulty, ProblemView } from '../utils/problemView'
 
 const categories = ['all', 'web', 'pwn', 'crypto', 'reverse', 'misc'] as const
 
@@ -21,7 +22,7 @@ export default function Problems() {
   const [problems, setProblems] = useState<ProblemView[]>([])
   const [loading, setLoading] = useState(true)
   const isProblemPublisher = user?.role === 'root' || user?.role === 'site_admin' || user?.role === 'contest_admin'
-  const publishEntryPath = user?.role === 'contest_admin' ? '/contests' : '/problem/publish'
+  const publishEntryPath = user?.role === 'contest_admin' ? '/contests' : '/problems/new'
   const publishEntryLabel = user?.role === 'contest_admin' ? '进入赛事发布空间' : '发布题目'
 
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function Problems() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             {filtered.map((p) => (
-              <Link key={p.id} to={`/problem/${p.id}`} className="h-full block transform transition-transform hover:-translate-y-1 hover:shadow-lg rounded-xl">
+              <Link key={p.id} to={`/problems/${p.id}`} className="h-full block transform transition-transform hover:-translate-y-1 hover:shadow-lg rounded-xl">
                 <ProblemCard p={p} />
               </Link>
             ))}
