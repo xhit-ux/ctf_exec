@@ -486,10 +486,16 @@ func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 }
 
 func (h *ProblemHandler) ListAdminProblemsGin(c *gin.Context) {
+	claims, _ := middleware.GetClaims(c)
+	createdBy := ""
+	if claims != nil && claims.Role == "contest_admin" {
+		createdBy = claims.UserID
+	}
 	items, err := h.repo.ListAdminProblems(
 		strings.TrimSpace(c.Query("keyword")),
 		strings.TrimSpace(c.Query("scope")),
 		strings.TrimSpace(c.Query("status")),
+		createdBy,
 	)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)

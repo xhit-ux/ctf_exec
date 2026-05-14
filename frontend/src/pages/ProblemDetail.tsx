@@ -166,7 +166,7 @@ export default function ProblemDetail() {
     setMsg(null)
     setFlag('')
 
-    apiFetch(apiUrl(`/api/problems/detail?id=${encodeURIComponent(problemID)}`))
+    apiFetch(apiUrl(`/api/problems/${encodeURIComponent(problemID)}`))
       .then((res) => {
         if (res.ok) return res.json()
         throw new Error('Failed to fetch problem')
@@ -451,6 +451,10 @@ export default function ProblemDetail() {
                 <div className="text-sm text-gray-500">状态</div>
                 <div className="font-medium">{problem.is_solved ? '已解出' : '未解出'}</div>
               </div>
+              <div>
+                <div className="text-sm text-gray-500">解题人数</div>
+                <div className="font-medium">{problem.solves_count ?? problem.solve_count ?? 0}</div>
+              </div>
               <div className="col-span-2 md:col-span-1">
                 <div className="text-sm text-gray-500 mb-1">标签</div>
                 {problem.tags.length === 0 ? (
@@ -604,7 +608,7 @@ export default function ProblemDetail() {
                   {instanceState.status === 'starting'
                     ? '启动中...'
                     : instanceState.status === 'running'
-                      ? '重启实例'
+                      ? '续期/重启实例'
                       : '启动容器实例'}
                 </button>
                 <button

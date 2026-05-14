@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/authz"
@@ -126,6 +127,16 @@ func (h *ContestHandler) UpdateContestGin(c *gin.Context) {
 	}
 	if !isValidContestVisibility(req.Visibility) {
 		writeBadRequest(c, "visibility 仅支持 public/invite_only/private")
+		return
+	}
+
+	contest, err := h.repo.GetContestByID(contestID)
+	if err != nil {
+		writeError(c, err, http.StatusNotFound)
+		return
+	}
+	if contest.EndTime != nil && time.Now().After(*contest.EndTime) {
+		writeForbidden(c, "赛事已结束，无法修改赛事信息")
 		return
 	}
 

@@ -117,7 +117,7 @@ function ProblemPublishBootstrap() {
 
   useEffect(() => {
     let active = true
-    const isEditRoute = location.pathname.endsWith('/edit')
+    const isEditRoute = Boolean(problemId && problemId !== 'new')
 
     const loadDraft = async () => {
       if (!isAuthenticated) {

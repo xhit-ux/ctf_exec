@@ -19,7 +19,7 @@ export type {
 export type Problem = ProblemView
 
 export type Submission = {
-  problemId: number | string
+  problemId: string
   problemTitle?: string
   flag: string
   correct: boolean

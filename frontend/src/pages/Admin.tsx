@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { apiUrl } from '../utils/api'
 import { apiFetch } from '../utils/authClient'
@@ -8,6 +9,7 @@ import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/ta
 type AdminTab =
   | 'overview'
   | 'problem'
+  | 'problem-manage'
   | 'contest'
   | 'user-status'
   | 'root-users'
@@ -27,6 +29,20 @@ type ProblemListItem = {
   category: string
   points: number
   difficulty: string
+}
+
+type AdminProblemItem = {
+  id: string
+  title: string
+  author?: string | null
+  category: string
+  type: string
+  difficulty: string
+  platform_score: number
+  status: string
+  created_by: string
+  tags: string[]
+  description?: string | null
 }
 
 type AdminUserListItem = {
@@ -124,6 +140,12 @@ export default function Admin() {
   })
   const [creatingProblem, setCreatingProblem] = useState(false)
 
+  const [adminProblems, setAdminProblems] = useState<AdminProblemItem[]>([])
+  const [adminProblemKeyword, setAdminProblemKeyword] = useState('')
+  const [adminProblemStatus, setAdminProblemStatus] = useState('')
+  const [adminProblemsLoading, setAdminProblemsLoading] = useState(false)
+  const [deletingProblemID, setDeletingProblemID] = useState('')
+
   const [contestForm, setContestForm] = useState({
     title: '',
     description: '',
@@ -217,6 +239,48 @@ export default function Admin() {
       canceled = true
     }
   }, [])
+
+  useEffect(() => {
+    let canceled = false
+
+    const loadAdminProblems = async () => {
+      if (activeTab !== 'problem-manage') return
+
+      let keepLoading = false
+      setAdminProblemsLoading(true)
+      setError('')
+      try {
+        const params = new URLSearchParams()
+        if (adminProblemKeyword.trim()) params.set('keyword', adminProblemKeyword.trim())
+        if (adminProblemStatus) params.set('status', adminProblemStatus)
+
+        const res = await apiFetch(apiUrl(`/api/admin/problems?${params.toString()}`))
+
+        if (res.status === 401) {
+          keepLoading = true
+          return
+        }
+        if (!res.ok) {
+          setError(await readSafeErrorMessage(res, '加载题目列表失败'))
+          return
+        }
+
+        const data = await res.json()
+        if (!canceled) {
+          setAdminProblems(Array.isArray(data?.items) ? data.items : [])
+        }
+      } catch (err) {
+        if (!canceled) setError(fromUnknownError(err, '加载题目列表失败'))
+      } finally {
+        if (!canceled && !keepLoading) setAdminProblemsLoading(false)
+      }
+    }
+
+    loadAdminProblems()
+    return () => {
+      canceled = true
+    }
+  }, [activeTab, adminProblemKeyword, adminProblemStatus])
 
   useEffect(() => {
     let canceled = false
@@ -401,6 +465,31 @@ export default function Admin() {
       { title: '当前角色', value: user?.role || '-', hint: isRoot ? 'root 拥有最高权限' : 'site_admin 负责站点管理' },
     ]
   }, [problems.length, contests.length, user?.role, isRoot])
+
+  const deleteProblem = async (problemID: string, title: string) => {
+    if (!window.confirm(`确定要删除题目「${title}」吗？此操作不可撤销。`)) return
+
+    setDeletingProblemID(problemID)
+    setError('')
+    setSuccessHint('')
+    try {
+      const res = await apiFetch(apiUrl(`/api/admin/problems/${encodeURIComponent(problemID)}`), {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        setError(await readSafeErrorMessage(res, '删除题目失败'))
+        return
+      }
+
+      setAdminProblems((prev) => prev.filter((p) => p.id !== problemID))
+      setSuccessHint(`题目「${title}」已删除`)
+    } catch (err) {
+      setError(fromUnknownError(err, '网络异常，删除题目失败'))
+    } finally {
+      setDeletingProblemID('')
+    }
+  }
 
   const submitProblem = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -616,6 +705,7 @@ export default function Admin() {
       <div className="flex flex-wrap gap-2">
         <button onClick={() => handleTabSwitch('overview')} className={`tab-pill ${activeTab === 'overview' ? 'tab-pill--active' : ''}`} style={activeTab === 'overview' ? tabAccentStyle(tabAccent) : undefined}>概览</button>
         <button onClick={() => handleTabSwitch('problem')} className={`tab-pill ${activeTab === 'problem' ? 'tab-pill--active' : ''}`} style={activeTab === 'problem' ? tabAccentStyle(tabAccent) : undefined}>新建题目</button>
+        <button onClick={() => handleTabSwitch('problem-manage')} className={`tab-pill ${activeTab === 'problem-manage' ? 'tab-pill--active' : ''}`} style={activeTab === 'problem-manage' ? tabAccentStyle(tabAccent) : undefined}>题目管理</button>
         <button onClick={() => handleTabSwitch('contest')} className={`tab-pill ${activeTab === 'contest' ? 'tab-pill--active' : ''}`} style={activeTab === 'contest' ? tabAccentStyle(tabAccent) : undefined}>新建赛事</button>
         <button onClick={() => handleTabSwitch('user-status')} className={`tab-pill ${activeTab === 'user-status' ? 'tab-pill--active' : ''}`} style={activeTab === 'user-status' ? tabAccentStyle(tabAccent) : undefined}>用户封禁/解封</button>
         {isRoot && <button onClick={() => handleTabSwitch('root-users')} className={`tab-pill ${activeTab === 'root-users' ? 'tab-pill--active' : ''}`} style={activeTab === 'root-users' ? tabAccentStyle(tabAccent) : undefined}>Root 角色治理</button>}
@@ -668,6 +758,105 @@ export default function Admin() {
               <textarea value={problemForm.description} onChange={(e) => setProblemForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="题目描述" className={`${INPUT_CLASS} min-h-32`} />
               <button type="submit" disabled={creatingProblem} className="btn-primary w-fit">{creatingProblem ? '创建中...' : '创建题目'}</button>
             </form>
+          )}
+
+          {activeTab === 'problem-manage' && (
+            <div className={CARD_CLASS}>
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-bold text-gray-900">题目管理</h2>
+                  <Link to="/problems/new" className="px-3 py-1.5 rounded-md bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700">
+                    新建题目
+                  </Link>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    value={adminProblemKeyword}
+                    onChange={(e) => setAdminProblemKeyword(e.target.value)}
+                    placeholder="搜索标题..."
+                    className="w-full lg:w-56 glass-input"
+                  />
+                  <select
+                    value={adminProblemStatus}
+                    onChange={(e) => setAdminProblemStatus(e.target.value)}
+                    className="glass-input"
+                  >
+                    <option value="">全部状态</option>
+                    <option value="draft">草稿</option>
+                    <option value="ready">已发布</option>
+                    <option value="hidden">隐藏</option>
+                  </select>
+                </div>
+              </div>
+
+              {adminProblemsLoading ? (
+                <div className="text-sm text-gray-500 py-8 text-center">加载中...</div>
+              ) : adminProblems.length === 0 ? (
+                <div className="text-sm text-gray-500 py-8 text-center border border-gray-200 rounded-lg">
+                  暂无题目，点击「新建题目」创建第一个题目。
+                </div>
+              ) : (
+                <div className={TABLE_WRAP_CLASS}>
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-semibold">标题</th>
+                        <th className="text-left px-3 py-2 font-semibold">分类</th>
+                        <th className="text-left px-3 py-2 font-semibold">难度</th>
+                        <th className="text-left px-3 py-2 font-semibold">分值</th>
+                        <th className="text-left px-3 py-2 font-semibold">状态</th>
+                        <th className="text-left px-3 py-2 font-semibold">标签</th>
+                        <th className="text-left px-3 py-2 font-semibold">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adminProblems.map((item) => (
+                        <tr key={item.id} className="border-t border-gray-100">
+                          <td className="px-3 py-3">
+                            <div className="font-semibold text-gray-900">{item.title}</div>
+                            {item.author && <div className="text-xs text-gray-500">by {item.author}</div>}
+                          </td>
+                          <td className="px-3 py-3">
+                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">{item.category}</span>
+                          </td>
+                          <td className="px-3 py-3 text-gray-700">{item.difficulty}</td>
+                          <td className="px-3 py-3 text-gray-700">{item.platform_score}</td>
+                          <td className="px-3 py-3">
+                            <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                              item.status === 'ready' ? 'bg-emerald-100 text-emerald-700' :
+                              item.status === 'draft' ? 'bg-amber-100 text-amber-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>{item.status}</span>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {item.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="inline-flex px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-600">{tag}</span>
+                              ))}
+                              {item.tags.length > 3 && <span className="text-xs text-gray-400">+{item.tags.length - 3}</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-3">
+                            <div className="flex gap-2">
+                              <Link to={`/problems/${item.id}/edit`} className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
+                                编辑
+                              </Link>
+                              <button
+                                onClick={() => deleteProblem(item.id, item.title)}
+                                disabled={deletingProblemID === item.id}
+                                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-60"
+                              >
+                                {deletingProblemID === item.id ? '删除中...' : '删除'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
 
           {activeTab === 'contest' && (

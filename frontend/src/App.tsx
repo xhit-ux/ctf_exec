@@ -60,6 +60,22 @@ function LegacyProblemPublishRedirect() {
   return <Navigate to={{ pathname: '/problems/new', search: location.search }} replace />
 }
 
+function SpecContestScoreboardRedirect() {
+  const { cid } = useParams()
+  return <Navigate to={cid ? `/contest/${cid}/board` : '/contests'} replace />
+}
+
+function SpecContestManageRedirect() {
+  const { cid } = useParams()
+  return <Navigate to={cid ? `/contest/${cid}/admin` : '/contests'} replace />
+}
+
+function SpecContestProblemDetailRedirect() {
+  const { cid, id } = useParams()
+  const location = useLocation()
+  return <Navigate to={{ pathname: cid && id ? `/problems/${id}` : '/problems', search: cid ? `contest_id=${cid}` : undefined }} replace />
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -110,6 +126,9 @@ export default function App() {
             />
             <Route path="contests" element={<Contests />} />
             <Route path="contests/:id" element={<LegacyContestRedirect />} />
+            <Route path="contests/:cid/scoreboard" element={<SpecContestScoreboardRedirect />} />
+            <Route path="contests/:cid/manage" element={<SpecContestManageRedirect />} />
+            <Route path="contests/:cid/problems/:id" element={<SpecContestProblemDetailRedirect />} />
             <Route path="contest/:contestId" element={<ContestLayout />}>
               <Route index element={<ContestOverview />} />
               <Route path="problems" element={<ContestProblems />} />

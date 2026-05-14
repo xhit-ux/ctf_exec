@@ -465,9 +465,9 @@ func (r *ProblemRepository) GetAdminProblemByID(problemID string) (*models.Probl
 	return p, nil
 }
 
-func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*models.Problem, error) {
-	args := make([]interface{}, 0, 2)
-	conds := make([]string, 0, 2)
+func (r *ProblemRepository) ListAdminProblems(keyword, _, status, createdBy string) ([]*models.Problem, error) {
+	args := make([]interface{}, 0, 3)
+	conds := make([]string, 0, 3)
 	if strings.TrimSpace(keyword) != "" {
 		conds = append(conds, "p.title LIKE ?")
 		args = append(args, "%"+strings.TrimSpace(keyword)+"%")
@@ -475,6 +475,10 @@ func (r *ProblemRepository) ListAdminProblems(keyword, _, status string) ([]*mod
 	if strings.TrimSpace(status) != "" {
 		conds = append(conds, "p.status = ?")
 		args = append(args, strings.TrimSpace(status))
+	}
+	if strings.TrimSpace(createdBy) != "" {
+		conds = append(conds, "p.created_by = ?")
+		args = append(args, strings.TrimSpace(createdBy))
 	}
 	where := ""
 	if len(conds) > 0 {
@@ -1185,11 +1189,11 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 	if err != nil {
 		return err
 	}
-	if detail.SourceProblemID != nil && strings.TrimSpace(*detail.SourceProblemID) != "" {
-		return r.publishDraftToSource(detail, strings.TrimSpace(*detail.SourceProblemID))
-	}
 	if strings.TrimSpace(detail.Title) == "" {
 		return apperr.New(apperr.ErrBadRequest, "title 不能为空")
+	}
+	if len(strings.TrimSpace(detail.Title)) > 128 {
+		return apperr.New(apperr.ErrBadRequest, "title 不能超过 128 个字符")
 	}
 	if detail.Description == nil || strings.TrimSpace(*detail.Description) == "" {
 		return apperr.New(apperr.ErrBadRequest, "description 不能为空")
@@ -1258,6 +1262,10 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 				}
 			}
 		}
+	}
+
+	if detail.SourceProblemID != nil && strings.TrimSpace(*detail.SourceProblemID) != "" {
+		return r.publishDraftToSource(detail, strings.TrimSpace(*detail.SourceProblemID))
 	}
 
 	_, err = r.db.Exec(`UPDATE problems SET status = 'ready', updated_at = NOW() WHERE id = ?`, strings.TrimSpace(problemID))

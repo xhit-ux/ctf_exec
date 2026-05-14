@@ -36,6 +36,11 @@ func main() {
 		log.Fatal("SECURITY: JWT_SECRET 为空或仍为默认值，服务拒绝启动")
 	}
 
+	// 确保数据库存在，若不存在则从 db/final.sql 自动初始化
+	if err := db.EnsureDatabaseExists(cfg.Database, "../db/final.sql"); err != nil {
+		log.Fatalf("数据库初始化检查失败: %v", err)
+	}
+
 	// 初始化数据库
 	sqlDB, err := db.InitDB(cfg.Database)
 	if err != nil {

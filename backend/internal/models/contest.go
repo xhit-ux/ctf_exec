@@ -105,25 +105,6 @@ type ContestChallengeView struct {
 	SortOrder      int    `json:"sort_order"`
 }
 
-// ContestChallengeAdminView 赛事管理员视角的题目实例视图。
-type ContestChallengeAdminView struct {
-	ID             string `json:"id"`
-	ProblemID      string `json:"problem_id"`
-	Title          string `json:"title"`
-	Category       string `json:"category"`
-	Difficulty     string `json:"difficulty"`
-	PlatformScore  int    `json:"platform_score"`
-	ContestScore   int    `json:"contest_score"`
-	IsDynamicScore bool   `json:"is_dynamic_score"`
-	InitialScore   *int   `json:"initial_score,omitempty"`
-	MinScore       *int   `json:"min_score,omitempty"`
-	DecayConstant  *int   `json:"decay_constant,omitempty"`
-	CurrentScore   int    `json:"current_score"`
-	SolveCount     int    `json:"solve_count"`
-	SortOrder      int    `json:"sort_order"`
-	Status         string `json:"status"`
-}
-
 // ContestScoreboardEntry 赛事榜条目，兼容个人/团队榜。
 type ContestScoreboardEntry struct {
 	Rank          int        `json:"rank"`
