@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/middleware"
+	minio "github.com/ctf_exec/backend/internal/minio"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -20,10 +23,12 @@ type ProblemHandler struct {
 	repo             *repository.ProblemRepository
 	contestRepo      *repository.ContestRepository
 	contestAdminRepo repository.ContestAdminRepository
+	minioClient      *minio.Client
+	cfg              *config.Config
 }
 
-func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository) *ProblemHandler {
-	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo}
+func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository, minioClient *minio.Client, cfg *config.Config) *ProblemHandler {
+	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo, minioClient: minioClient, cfg: cfg}
 }
 
 func (h *ProblemHandler) CreateProblemDraftGin(c *gin.Context) {
@@ -290,23 +295,13 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 		return
 	}
 
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		writeError(c, cfgErr, http.StatusInternalServerError)
-		return
-	}
-	if cfg.MinIO.Enabled {
-		writeBadRequest(c, "MinIO 附件上传暂未启用")
-		return
-	}
-
 	detail, err := h.repo.GetAdminProblemByID(id)
 	if err != nil {
 		writeError(c, err, http.StatusNotFound)
 		return
 	}
 
-	if err := c.Request.ParseMultipartForm(cfg.Upload.MaxAttachmentSize); err != nil {
+	if err := c.Request.ParseMultipartForm(h.cfg.Upload.MaxAttachmentSize); err != nil {
 		writeBadRequest(c, "解析表单失败")
 		return
 	}
@@ -318,7 +313,7 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 	}
 	defer file.Close()
 
-	if err := utils.ValidateAttachmentArchive(header, cfg.Upload.MaxAttachmentSize); err != nil {
+	if err := utils.ValidateAttachmentArchive(header, h.cfg.Upload.MaxAttachmentSize); err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
 	}
@@ -328,30 +323,67 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 		return
 	}
 
+	// 清理旧附件（双路：本地或 MinIO）
 	if existing, lookupErr := h.repo.GetProblemAttachment(id); lookupErr != nil {
 		writeError(c, lookupErr, http.StatusInternalServerError)
 		return
 	} else if existing != nil {
-		oldPath := resolveAttachmentFSPath(cfg.Upload.StaticPath, existing.ObjectKey)
-		if oldPath != "" {
-			_ = utils.DeleteFile(oldPath)
+		if existing.BucketName == "local" {
+			oldPath := resolveAttachmentFSPath(h.cfg.Upload.StaticPath, existing.ObjectKey)
+			if oldPath != "" {
+				_ = utils.DeleteFile(oldPath)
+			}
+		} else if h.cfg.MinIO.Enabled && h.minioClient != nil {
+			cat, objName := parseMinIOObjectKey(existing.ObjectKey)
+			_ = h.minioClient.Remove(c.Request.Context(), cat, objName)
 		}
 	}
 
 	category := normalizeAttachmentCategory(detail.Category)
 	fileName := fmt.Sprintf("%s%s", id, ext)
-	storagePath := filepath.ToSlash(filepath.Join("static", "attachments", category, fileName))
-	fsPath := filepath.Join(cfg.Upload.StaticPath, "attachments", category, fileName)
 
-	written, sha, err := utils.SaveUploadedFileAs(file, fsPath)
-	if err != nil {
-		writeError(c, err, http.StatusInternalServerError)
-		return
+	var bucketName, objectKey string
+	var written int64
+	var sha string
+
+	if h.cfg.MinIO.Enabled && h.minioClient != nil {
+		// MinIO 上传
+		objectKey = filepath.ToSlash(filepath.Join(category, fileName))
+		bucketName = h.minioClient.BucketName(category)
+
+		hash256 := sha256.New()
+		teeReader := io.TeeReader(file, hash256)
+
+		if err := h.minioClient.Upload(c.Request.Context(), category, fileName, teeReader, header.Size, header.Header.Get("Content-Type")); err != nil {
+			writeError(c, err, http.StatusInternalServerError)
+			return
+		}
+
+		// MinIO: TeeReader 边上传边计算 SHA256
+		written = header.Size
+		sha = fmt.Sprintf("%x", hash256.Sum(nil))
+	} else {
+		// 本地存储
+		storagePath := filepath.ToSlash(filepath.Join("static", "attachments", category, fileName))
+		fsPath := filepath.Join(h.cfg.Upload.StaticPath, "attachments", category, fileName)
+
+		var shaErr error
+		written, sha, shaErr = utils.SaveUploadedFileAs(file, fsPath)
+		if shaErr != nil {
+			writeError(c, shaErr, http.StatusInternalServerError)
+			return
+		}
+		bucketName = "local"
+		objectKey = storagePath
 	}
 
-	item, err := h.repo.ReplaceProblemAttachment(id, header.Filename, "local", storagePath, written, sha)
+	item, err := h.repo.ReplaceProblemAttachment(id, header.Filename, bucketName, objectKey, written, sha)
 	if err != nil {
-		_ = utils.DeleteFile(fsPath)
+		if bucketName == "local" {
+			_ = utils.DeleteFile(filepath.Join(h.cfg.Upload.StaticPath, "attachments", category, fileName))
+		} else {
+			_ = h.minioClient.Remove(c.Request.Context(), category, fileName)
+		}
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
@@ -359,13 +391,59 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "附件上传成功",
 		"attachment": gin.H{
-			"id":        item.ID,
-			"file_name": item.FileName,
-			"file_size": item.FileSize,
-			"sha256":    item.Sha256,
-			"file_path": item.ObjectKey,
+			"id":           item.ID,
+			"file_name":    item.FileName,
+			"file_size":    item.FileSize,
+			"sha256":       item.Sha256,
+			"file_path":    item.ObjectKey,
+			"download_url": fmt.Sprintf("/api/problems/%s/attachment", id),
 		},
 	})
+}
+
+// GetProblemAttachmentDownloadGin 附件下载端点，根据 bucket_name 走本地静态文件或 MinIO 预签名 URL。
+func (h *ProblemHandler) GetProblemAttachmentDownloadGin(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+
+	attachment, err := h.repo.GetProblemAttachment(id)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	if attachment == nil {
+		writeNotFound(c, "该题目没有附件")
+		return
+	}
+
+	if attachment.BucketName == "local" {
+		c.Redirect(http.StatusFound, "/static/"+attachment.ObjectKey)
+		return
+	}
+
+	if h.minioClient == nil {
+		writeInternal(c, "MinIO 客户端未初始化")
+		return
+	}
+	category, objectName := parseMinIOObjectKey(attachment.ObjectKey)
+	u, err := h.minioClient.PresignedGetURL(c.Request.Context(), category, objectName)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	c.Redirect(http.StatusFound, u)
+}
+
+// parseMinIOObjectKey 将 object_key（格式: "category/filename"）拆分为 category 和文件名。
+func parseMinIOObjectKey(objectKey string) (string, string) {
+	parts := strings.SplitN(objectKey, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "misc", objectKey
 }
 
 func (h *ProblemHandler) GetProblemBuildTaskGin(c *gin.Context) {
@@ -515,6 +593,9 @@ func (h *ProblemHandler) GetAdminProblemDetailGin(c *gin.Context) {
 		writeError(c, err, http.StatusNotFound)
 		return
 	}
+	if item.Attachment != nil {
+		item.Attachment.DownloadURL = fmt.Sprintf("/api/problems/%s/attachment", id)
+	}
 	c.JSON(http.StatusOK, item)
 }
 
@@ -556,6 +637,9 @@ func (h *ProblemHandler) GetProblemDetailGin(c *gin.Context) {
 	if err != nil {
 		writeError(c, err, http.StatusNotFound)
 		return
+	}
+	if item.Attachment != nil {
+		item.Attachment.DownloadURL = fmt.Sprintf("/api/problems/%s/attachment", id)
 	}
 	c.JSON(http.StatusOK, item)
 }

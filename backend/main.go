@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/ctf_exec/backend/internal/db"
 	"github.com/ctf_exec/backend/internal/handler"
 	"github.com/ctf_exec/backend/internal/middleware"
+	minio "github.com/ctf_exec/backend/internal/minio"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -106,10 +108,24 @@ func main() {
 	// 初始化团队服务
 	teamService := service.NewTeamService(teamRepo)
 
+	// 初始化 MinIO 客户端（若启用）
+	var minioClient *minio.Client
+	if cfg.MinIO.Enabled {
+		var initErr error
+		minioClient, initErr = minio.NewClient(cfg.MinIO)
+		if initErr != nil {
+			log.Fatalf("MinIO 客户端初始化失败: %v", initErr)
+		}
+		if initErr := minioClient.EnsureBuckets(context.Background()); initErr != nil {
+			log.Fatalf("MinIO 桶初始化失败: %v", initErr)
+		}
+		log.Println("✓ MinIO 连接成功，桶已就绪")
+	}
+
 	// 初始化处理器
 	authHandler := handler.NewAuthHandler(authService, userService, cfg.AuthCookie)
 	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client, sessionStore)
-	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo)
+	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo, minioClient, cfg)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
@@ -209,6 +225,7 @@ func main() {
 			problems.GET("/detail", probHandler.GetProblemDetailGin)
 			problems.GET(":id", probHandler.GetProblemDetailGin)
 
+			problems.GET(":id/attachment", probHandler.GetProblemAttachmentDownloadGin)
 			problems.GET(":id/hints", probHandler.ListProblemHintsGin)
 			problems.GET(":id/prerequisites", probHandler.ListProblemPrerequisitesGin)
 
