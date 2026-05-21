@@ -31,6 +31,7 @@ type Config struct {
 	Flag        FlagConfig
 	Ingress     IngressConfig
 	LoginGuard  LoginGuardConfig
+	Registry    RegistryConfig
 }
 
 // LoginGuardConfig 登录暴力破解防护配置：双维度（账户 + IP）失败计数 + 自动锁定。
@@ -180,6 +181,7 @@ type ContainerConfig struct {
 	DefaultContainerTTL     int
 	NamespacePrefix         string
 	KataRuntimeClass        string
+	InfraNodeName           string // INFRA_NODE_NAME, registry 固定节点
 }
 
 // MinIOConfig MinIO 对象存储配置。
@@ -191,6 +193,21 @@ type MinIOConfig struct {
 	UseSSL        bool
 	BucketPrefix  string
 	PresignExpiry int
+}
+
+// RegistryConfig 私有 Docker 镜像仓库配置。
+type RegistryConfig struct {
+	StorageSize string // REGISTRY_STORAGE_SIZE, PVC 大小
+	Host        string // 启动时自动填充: "127.0.0.1:<nodePort>"
+	Username    string // 启动时自动生成
+	Password    string // 启动时自动生成
+}
+
+// SetRegistryInfo 启动时注入 registry 运行时信息。
+func (c *Config) SetRegistryInfo(host, username, password string) {
+	c.Registry.Host = host
+	c.Registry.Username = username
+	c.Registry.Password = password
 }
 
 // FlagConfig 动态 flag 生成配置。
@@ -363,6 +380,13 @@ func LoadConfig() (*Config, error) {
 			return
 		}
 		cfg.LoginGuard = *loginGuardConfig
+
+			registryConfig, err := loadRegistryConfig()
+			if err != nil {
+				loadConfigErr = fmt.Errorf("加载仓库配置失败: %w", err)
+				return
+			}
+			cfg.Registry = *registryConfig
 
 		loadedConfig = cfg
 	})
@@ -629,6 +653,7 @@ func loadContainerConfig() (*ContainerConfig, error) {
 		DefaultContainerTTL:     getEnvInt("DEFAULT_CONTAINER_TTL", 3600),
 		NamespacePrefix:         getEnv("NAMESPACE_PREFIX", "ctf"),
 		KataRuntimeClass:        getEnv("KATA_RUNTIME_CLASS", "kata"),
+			InfraNodeName: getEnv("INFRA_NODE_NAME", ""),
 	}, nil
 }
 
@@ -641,6 +666,12 @@ func loadMinIOConfig() (*MinIOConfig, error) {
 		UseSSL:        getEnvBool("MINIO_USE_SSL", false),
 		BucketPrefix:  getEnv("MINIO_BUCKET_PREFIX", "ctf"),
 		PresignExpiry: getEnvInt("MINIO_PRESIGN_EXPIRY", 600),
+	}, nil
+}
+
+func loadRegistryConfig() (*RegistryConfig, error) {
+	return &RegistryConfig{
+		StorageSize: getEnv("REGISTRY_STORAGE_SIZE", "30Gi"),
 	}, nil
 }
 

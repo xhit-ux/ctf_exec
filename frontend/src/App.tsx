@@ -86,11 +86,9 @@ export default function App() {
             <Route
               path="problems"
               element={
-                <ProtectedRoute>
-                  <RequiresDesktop>
-                    <Problems />
-                  </RequiresDesktop>
-                </ProtectedRoute>
+                <RequiresDesktop>
+                  <Problems />
+                </RequiresDesktop>
               }
             />
             <Route path="problem" element={<LegacyProblemListRedirect />} />

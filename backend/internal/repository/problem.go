@@ -24,17 +24,20 @@ import (
 
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/config"
+	k8s "github.com/ctf_exec/backend/internal/k8s"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/google/uuid"
 )
 
 type ProblemRepository struct {
-	db *sql.DB
+	db  *sql.DB
+	k8s *k8s.Client
+	cfg *config.Config
 }
 
-func NewProblemRepository(db *sql.DB) *ProblemRepository {
-	return &ProblemRepository{db: db}
+func NewProblemRepository(db *sql.DB, k8sClient *k8s.Client, cfg *config.Config) *ProblemRepository {
+	return &ProblemRepository{db: db, k8s: k8sClient, cfg: cfg}
 }
 
 // CleanupStaleDraftProblems 清理长期未发布的草稿题目。
@@ -1363,7 +1366,7 @@ func (r *ProblemRepository) CreateImageBuildTask(problemID, filePath string, fil
 	if repoVal == "" {
 		repoVal = fmt.Sprintf("ctf-exec/%s", cleanProblemID)
 	}
-	repoVal = normalizeRegistryRepo(repoVal)
+	repoVal = r.normalizeRegistryRepo(repoVal)
 
 	_, err := r.db.Exec(`
 		INSERT INTO image_build_tasks (
@@ -1645,7 +1648,7 @@ func (r *ProblemRepository) StartChallengeInstance(problemID, userID string) (*m
 			return nil, fmt.Errorf("读取 Service NodePort 失败: %w", fetchErr)
 		}
 		nodePort = &value
-		nodeHost := resolveNodeHost()
+		nodeHost := r.resolveNodeHost()
 		accessURL = fmt.Sprintf("%s:%d", nodeHost, value)
 	}
 
@@ -1849,7 +1852,7 @@ func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, u
 	if imageRepo == "" {
 		imageRepo = fmt.Sprintf("ctf-exec/%s", strings.TrimSpace(task.ProblemID))
 	}
-	imageRepo = normalizeRegistryRepo(imageRepo)
+	imageRepo = r.normalizeRegistryRepo(imageRepo)
 	imageRef := fmt.Sprintf("%s:%s", imageRepo, imageTag)
 	uploadType = strings.TrimSpace(uploadType)
 	if uploadType == "" || strings.EqualFold(uploadType, "auto") {
@@ -1911,6 +1914,17 @@ func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, u
 			return
 		}
 		log.Printf("[build-pipeline] task=%s step=pushing cmd=docker push %s", taskID, imageRef)
+		host := r.cfg.Registry.Host
+		if r.cfg.Registry.Username != "" && r.cfg.Registry.Password != "" {
+			loginCmd := exec.Command("docker", "login", host,
+				"-u", r.cfg.Registry.Username, "--password-stdin")
+			loginCmd.Stdin = strings.NewReader(r.cfg.Registry.Password)
+			if loginOut, loginErr := loginCmd.CombinedOutput(); loginErr != nil {
+				log.Printf("[build-pipeline] task=%s step=login failed err=%v output=%s", taskID, loginErr, strings.TrimSpace(string(loginOut)))
+				_ = r.updateImageBuildTask(taskID, "failed", "logging_in", sanitizeCommandOutput(string(loginOut), loginErr), workerID, true)
+				return
+			}
+		}
 		if output, err := runCommand("docker", "push", imageRef); err != nil {
 			log.Printf("[build-pipeline] task=%s step=pushing failed err=%v output=%s", taskID, err, strings.TrimSpace(output))
 			_ = r.updateImageBuildTask(taskID, "failed", "pushing", sanitizeCommandOutput(output, err), workerID, true)
@@ -1964,6 +1978,17 @@ func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, u
 			return
 		}
 		log.Printf("[build-pipeline] task=%s step=pushing cmd=docker compose -f %s push", taskID, composeFile)
+		host := r.cfg.Registry.Host
+		if r.cfg.Registry.Username != "" && r.cfg.Registry.Password != "" {
+			loginCmd := exec.Command("docker", "login", host,
+				"-u", r.cfg.Registry.Username, "--password-stdin")
+			loginCmd.Stdin = strings.NewReader(r.cfg.Registry.Password)
+			if loginOut, loginErr := loginCmd.CombinedOutput(); loginErr != nil {
+				log.Printf("[build-pipeline] task=%s step=login failed err=%v output=%s", taskID, loginErr, strings.TrimSpace(string(loginOut)))
+				_ = r.updateImageBuildTask(taskID, "failed", "logging_in", sanitizeCommandOutput(string(loginOut), loginErr), workerID, true)
+				return
+			}
+		}
 		if output, err := runCommandWithEnv(composeDir, composeEnv, "docker", "compose", "-f", composeFile, "push"); err != nil {
 			log.Printf("[build-pipeline] task=%s step=pushing failed err=%v output=%s", taskID, err, strings.TrimSpace(output))
 			_ = r.updateImageBuildTask(taskID, "failed", "pushing", sanitizeCommandOutput(output, err), workerID, true)
@@ -1976,7 +2001,7 @@ func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, u
 			return
 		}
 		log.Printf("[build-pipeline] task=%s step=verifying_registry check=registry-http image=%s", taskID, imageRef)
-		if err := verifyImageInRegistry(imageRepo, imageTag); err != nil {
+		if err := r.verifyImageInRegistry(imageRepo, imageTag); err != nil {
 			log.Printf("[build-pipeline] task=%s step=verifying_registry failed err=%v", taskID, err)
 			_ = r.updateImageBuildTask(taskID, "failed", "verifying_registry", err.Error(), workerID, true)
 			return
@@ -1993,7 +2018,7 @@ func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, u
 		return
 	}
 	log.Printf("[build-pipeline] task=%s step=verifying_registry check=registry-http image=%s", taskID, imageRef)
-	if err := verifyImageInRegistry(imageRepo, imageTag); err != nil {
+	if err := r.verifyImageInRegistry(imageRepo, imageTag); err != nil {
 		log.Printf("[build-pipeline] task=%s step=verifying_registry failed err=%v", taskID, err)
 		_ = r.updateImageBuildTask(taskID, "failed", "verifying_registry", err.Error(), workerID, true)
 		return
@@ -2293,7 +2318,7 @@ func normalizeUploadType(raw string) string {
 	return "docker_save"
 }
 
-func normalizeRegistryRepo(repo string) string {
+func (r *ProblemRepository) normalizeRegistryRepo(repo string) string {
 	trimmedRepo := strings.Trim(strings.TrimSpace(repo), "/")
 	if trimmedRepo == "" {
 		return trimmedRepo
@@ -2301,7 +2326,7 @@ func normalizeRegistryRepo(repo string) string {
 	if hasExplicitRegistryHost(trimmedRepo) {
 		return trimmedRepo
 	}
-	host := strings.Trim(strings.TrimSpace(os.Getenv("REGISTRY_HOST")), "/")
+	host := strings.Trim(strings.TrimSpace(r.cfg.Registry.Host), "/")
 	if host == "" {
 		return trimmedRepo
 	}
@@ -2384,8 +2409,8 @@ func sanitizeCommandOutput(output string, execErr error) string {
 	return result
 }
 
-func verifyImageInRegistry(imageRepo, imageTag string) error {
-	host, repo, parseErr := parseRegistryHostAndRepo(imageRepo)
+func (r *ProblemRepository) verifyImageInRegistry(imageRepo, imageTag string) error {
+	host, repo, parseErr := r.parseRegistryHostAndRepo(imageRepo)
 	if parseErr != nil {
 		return parseErr
 	}
@@ -2395,6 +2420,7 @@ func verifyImageInRegistry(imageRepo, imageTag string) error {
 	}
 
 	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", strings.Trim(repo, "/"), tag)
+		hasAuth := r.cfg.Registry.Username != "" && r.cfg.Registry.Password != ""
 	urls := []string{
 		"http://" + strings.Trim(host, "/") + manifestPath,
 		"https://" + strings.Trim(host, "/") + manifestPath,
@@ -2409,6 +2435,9 @@ func verifyImageInRegistry(imageRepo, imageTag string) error {
 			continue
 		}
 		req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+			if hasAuth {
+				req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
+			}
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -2437,7 +2466,7 @@ func verifyImageInRegistry(imageRepo, imageTag string) error {
 	}
 }
 
-func parseRegistryHostAndRepo(imageRepo string) (string, string, error) {
+func (r *ProblemRepository) parseRegistryHostAndRepo(imageRepo string) (string, string, error) {
 	repo := strings.Trim(strings.TrimSpace(imageRepo), "/")
 	if repo == "" {
 		return "", "", fmt.Errorf("image_repo 为空")
@@ -2446,7 +2475,7 @@ func parseRegistryHostAndRepo(imageRepo string) (string, string, error) {
 	if len(parts) >= 2 && hasExplicitRegistryHost(repo) {
 		return parts[0], strings.Join(parts[1:], "/"), nil
 	}
-	host := strings.Trim(strings.TrimSpace(os.Getenv("REGISTRY_HOST")), "/")
+	host := strings.Trim(strings.TrimSpace(r.cfg.Registry.Host), "/")
 	if host == "" {
 		return "", "", fmt.Errorf("未配置 REGISTRY_HOST，无法校验仓库镜像")
 	}
@@ -2767,8 +2796,8 @@ spec:
 `, ingressName, namespace, ingressClassSection, tlsSection, hostBlock, serviceName)
 }
 
-func resolveNodeHost() string {
-	host := strings.TrimSpace(os.Getenv("K3S_NODE_HOST"))
+func (r *ProblemRepository) resolveNodeHost() string {
+	host := strings.TrimSpace(r.cfg.Container.InfraNodeName)
 	if host != "" {
 		return host
 	}

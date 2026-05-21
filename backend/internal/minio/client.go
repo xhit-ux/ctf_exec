@@ -80,6 +80,16 @@ func (c *Client) PresignedGetURL(ctx context.Context, category, objectName strin
 	return u.String(), nil
 }
 
+// GetObject 从 MinIO 读取附件对象，调用方负责 Close。
+func (c *Client) GetObject(ctx context.Context, category, objectName string) (*minio.Object, error) {
+	bucket := c.BucketName(category)
+	obj, err := c.client.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("读取附件 %s/%s 失败: %w", bucket, objectName, err)
+	}
+	return obj, nil
+}
+
 // Remove 删除指定 category bucket 中的附件。
 func (c *Client) Remove(ctx context.Context, category, objectName string) error {
 	bucket := c.BucketName(category)

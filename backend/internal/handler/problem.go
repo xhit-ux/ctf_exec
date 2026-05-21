@@ -401,7 +401,7 @@ func (h *ProblemHandler) SaveProblemAttachmentGin(c *gin.Context) {
 	})
 }
 
-// GetProblemAttachmentDownloadGin 附件下载端点，根据 bucket_name 走本地静态文件或 MinIO 预签名 URL。
+// GetProblemAttachmentDownloadGin 附件下载端点：后端流式转发，不暴露 MinIO 地址给客户端。
 func (h *ProblemHandler) GetProblemAttachmentDownloadGin(c *gin.Context) {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
@@ -419,8 +419,16 @@ func (h *ProblemHandler) GetProblemAttachmentDownloadGin(c *gin.Context) {
 		return
 	}
 
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, attachment.FileName))
+	c.Header("Content-Length", fmt.Sprintf("%d", attachment.FileSize))
+
 	if attachment.BucketName == "local" {
-		c.Redirect(http.StatusFound, "/static/"+attachment.ObjectKey)
+		fsPath := resolveAttachmentFSPath(h.cfg.Upload.StaticPath, attachment.ObjectKey)
+		if fsPath == "" {
+			writeInternal(c, "无法解析本地附件路径")
+			return
+		}
+		c.File(fsPath)
 		return
 	}
 
@@ -429,12 +437,28 @@ func (h *ProblemHandler) GetProblemAttachmentDownloadGin(c *gin.Context) {
 		return
 	}
 	category, objectName := parseMinIOObjectKey(attachment.ObjectKey)
-	u, err := h.minioClient.PresignedGetURL(c.Request.Context(), category, objectName)
+	obj, err := h.minioClient.GetObject(c.Request.Context(), category, objectName)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return
 	}
-	c.Redirect(http.StatusFound, u)
+	defer obj.Close()
+
+	info, statErr := obj.Stat()
+	if statErr == nil {
+		if info.ContentType != "" {
+			c.Header("Content-Type", info.ContentType)
+		}
+		if info.Size > 0 {
+			c.Header("Content-Length", fmt.Sprintf("%d", info.Size))
+		}
+	}
+	if c.GetHeader("Content-Type") == "" {
+		c.Header("Content-Type", "application/octet-stream")
+	}
+
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, obj)
 }
 
 // parseMinIOObjectKey 将 object_key（格式: "category/filename"）拆分为 category 和文件名。
