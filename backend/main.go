@@ -89,13 +89,13 @@ func main() {
 
 	// 仓库 & 服务层
 	userRepo := repository.NewUserRepository(sqlDB)
-	probRepo := repository.NewProblemRepository(sqlDB, k8sClient, cfg)
+	probRepo := repository.NewProblemRepository(sqlDB, k8sClient, cfg, redisClient)
 	subRepo := repository.NewSubmissionRepository(sqlDB)
 	teamRepo := repository.NewTeamRepository(sqlDB)
 	contestRepo := repository.NewContestRepository(sqlDB)
 	contestAdminRepo := repository.NewContestAdminRepository(sqlDB)
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
-	probRepo.StartDraftCleanupScheduler(24*time.Hour, 7*24*time.Hour)
+	probRepo.StartDraftCleanupScheduler(24*time.Hour, 7*24*time.Hour); probRepo.StartTTLCleanupScheduler(5 * time.Minute)
 	if err := service.EnsureDefaultRootUser(userRepo, cfg.Init.RootDefaultPassword); err != nil {
 		utils.LogFatal("初始化 root 用户失败: %v", err)
 	}
@@ -225,6 +225,7 @@ func main() {
 			problemAuth.GET(":id/instance", probHandler.GetProblemInstanceGin)
 			problemAuth.POST(":id/instance/start", probHandler.StartProblemInstanceGin)
 			problemAuth.DELETE(":id/instance", probHandler.DestroyProblemInstanceGin)
+			problemAuth.POST(":id/instance/extend", probHandler.ExtendProblemInstanceGin)
 			problemAuth.POST("/hints/:hintID/unlock", probHandler.UnlockHintGin)
 		}
 		contests := api.Group("/contests")

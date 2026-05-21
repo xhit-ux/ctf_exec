@@ -17,12 +17,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strconv"
+	_ "sort" // unused; in split files
+	_ "strconv" // unused; in split files
 	"strings"
 	"time"
 
 	"github.com/ctf_exec/backend/internal/apperr"
+	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
 	k8s "github.com/ctf_exec/backend/internal/k8s"
 	"github.com/ctf_exec/backend/internal/models"
@@ -31,13 +32,14 @@ import (
 )
 
 type ProblemRepository struct {
-	db  *sql.DB
-	k8s *k8s.Client
-	cfg *config.Config
+	db    *sql.DB
+	k8s   *k8s.Client
+	cfg   *config.Config
+	redis *cache.RedisClient
 }
 
-func NewProblemRepository(db *sql.DB, k8sClient *k8s.Client, cfg *config.Config) *ProblemRepository {
-	return &ProblemRepository{db: db, k8s: k8sClient, cfg: cfg}
+func NewProblemRepository(db *sql.DB, k8sClient *k8s.Client, cfg *config.Config, redisClient *cache.RedisClient) *ProblemRepository {
+	return &ProblemRepository{db: db, k8s: k8sClient, cfg: cfg, redis: redisClient}
 }
 
 // CleanupStaleDraftProblems 清理长期未发布的草稿题目。
@@ -329,12 +331,12 @@ func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, 
 
 	// 容器实例 + connection_info（仅容器题）。
 	if userID != "" && (p.Type == "container_web" || p.Type == "container_tcp") {
-		if inst, instErr := r.GetChallengeInstance(p.ID, userID); instErr == nil && inst != nil {
+		inst, instErr := r.GetChallengeInstance(p.ID, userID); if instErr == nil && inst == nil && p.DeployMode == "shared" { inst = r.sharedCacheGet(p.ID); instErr = nil }; if instErr == nil && inst != nil {
 			p.Instance = &models.InstanceView{
 				Status:    inst.Status,
 				AccessURL: inst.AccessURL,
 				StartedAt: inst.StartedAt,
-				ExpiresAt: inst.ExpiredAt,
+				ExpiresAt: inst.ExpiredAt, RemainingSeconds: calcRemaining(inst.ExpiredAt),
 			}
 			if container, _ := r.getProblemContainer(p.ID); container != nil {
 				p.Connection = models.BuildConnectionInfo(p.Type, inst, container)
@@ -953,6 +955,21 @@ func (r *ProblemRepository) ReplaceProblemAttachment(problemID, fileName, bucket
 	return item, nil
 }
 
+func calcRemaining(expiredAt *string) *int {
+	if expiredAt == nil {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02 15:04:05", *expiredAt)
+	if err != nil {
+		return nil
+	}
+	sec := int(time.Until(t).Seconds())
+	if sec <= 0 {
+		return nil
+	}
+	return &sec
+}
+
 func nullIfEmpty(v string) interface{} {
 	t := strings.TrimSpace(v)
 	if t == "" {
@@ -1452,379 +1469,13 @@ func (r *ProblemRepository) GetLatestImageBuildTask(problemID string) (*models.I
 	return task, nil
 }
 
-type problemContainerRuntimeSpec struct {
-	ProblemType     string
-	UseKata         bool
-	ImageName       string
-	ImageTag        string
-	ChallengePort   int
-	CPULimit        string
-	MemoryLimit     string
-	Env             json.RawMessage
-	TTLSeconds      int
-	IngressHostTpl  string
-	GlobalIngressTP string
-}
 
-func (r *ProblemRepository) GetChallengeInstance(problemID, userID string) (*models.ChallengeInstance, error) {
-	instance := &models.ChallengeInstance{}
-	var podName sql.NullString
-	var namespace sql.NullString
-	var accessURL sql.NullString
-	var nodePort sql.NullInt64
-	var startedAt sql.NullString
-	var expiredAt sql.NullString
-	var destroyedAt sql.NullString
 
-	err := r.db.QueryRow(`
-		SELECT id, user_id, problem_id, pod_name, namespace, access_url, node_port, status,
-		       IFNULL(DATE_FORMAT(started_at, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(DATE_FORMAT(expired_at, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(DATE_FORMAT(destroyed_at, '%Y-%m-%d %H:%i:%s'), '')
-		FROM challenge_instances
-		WHERE user_id = ? AND problem_id = ?
-		LIMIT 1
-	`, strings.TrimSpace(userID), strings.TrimSpace(problemID)).Scan(
-		&instance.ID,
-		&instance.UserID,
-		&instance.ProblemID,
-		&podName,
-		&namespace,
-		&accessURL,
-		&nodePort,
-		&instance.Status,
-		&startedAt,
-		&expiredAt,
-		&destroyedAt,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("查询实例状态失败: %w", err)
-	}
 
-	if podName.Valid {
-		v := strings.TrimSpace(podName.String)
-		if v != "" {
-			instance.PodName = &v
-		}
-	}
-	if namespace.Valid {
-		v := strings.TrimSpace(namespace.String)
-		if v != "" {
-			instance.Namespace = &v
-		}
-	}
-	if accessURL.Valid {
-		v := strings.TrimSpace(accessURL.String)
-		if v != "" {
-			instance.AccessURL = &v
-		}
-	}
-	if nodePort.Valid && nodePort.Int64 > 0 {
-		v := int(nodePort.Int64)
-		instance.NodePort = &v
-	}
-	if startedAt.Valid {
-		v := strings.TrimSpace(startedAt.String)
-		if v != "" {
-			instance.StartedAt = &v
-		}
-	}
-	if expiredAt.Valid {
-		v := strings.TrimSpace(expiredAt.String)
-		if v != "" {
-			instance.ExpiredAt = &v
-		}
-	}
-	if destroyedAt.Valid {
-		v := strings.TrimSpace(destroyedAt.String)
-		if v != "" {
-			instance.DestroyedAt = &v
-		}
-	}
 
-	return instance, nil
-}
 
-func (r *ProblemRepository) StartChallengeInstance(problemID, userID string) (*models.ChallengeInstance, error) {
-	cleanProblemID := strings.TrimSpace(problemID)
-	cleanUserID := strings.TrimSpace(userID)
-	if cleanProblemID == "" || cleanUserID == "" {
-		return nil, apperr.New(apperr.ErrBadRequest, "problem_id/user_id 不能为空")
-	}
 
-	spec, err := r.getProblemContainerRuntimeSpec(cleanProblemID)
-	if err != nil {
-		return nil, err
-	}
 
-	existing, err := r.GetChallengeInstance(cleanProblemID, cleanUserID)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		switch strings.ToLower(strings.TrimSpace(existing.Status)) {
-		case "running":
-			return existing, nil
-		case "pending":
-			return existing, nil
-		case "stopping":
-			return nil, apperr.New(apperr.ErrConflict, "实例正在销毁中，请稍后重试")
-		}
-	}
-
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		return nil, fmt.Errorf("加载配置失败: %w", cfgErr)
-	}
-
-	instanceID := uuid.New().String()
-	if existing != nil && strings.TrimSpace(existing.ID) != "" {
-		instanceID = strings.TrimSpace(existing.ID)
-	}
-	namespace := buildChallengeNamespace(cfg.Container.NamespacePrefix, cleanUserID)
-	podName := buildChallengePodName(cleanProblemID, cleanUserID)
-	serviceName := podName + "-svc"
-	ingressName := podName + "-ing"
-	host := renderIngressHost(spec.IngressHostTpl, cfg.Ingress.DomainTemplate, instanceID, cleanProblemID, cleanUserID, podName)
-
-	ttlSeconds := spec.TTLSeconds
-	if ttlSeconds <= 0 {
-		ttlSeconds = cfg.Container.DefaultContainerTTL
-	}
-	if ttlSeconds <= 0 {
-		ttlSeconds = 3600
-	}
-
-	if err := r.upsertChallengeInstancePending(instanceID, cleanUserID, cleanProblemID, podName, namespace, ttlSeconds); err != nil {
-		return nil, err
-	}
-
-	if err := ensureChallengeNamespace(cfg, namespace); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, fmt.Errorf("创建命名空间失败: %w", err)
-	}
-
-	podManifest, err := buildChallengePodManifest(namespace, podName, spec, cfg)
-	if err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, err
-	}
-	if _, err := applyManifest(cfg, podManifest); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, fmt.Errorf("创建 Pod 失败: %w", err)
-	}
-
-	svcManifest := buildChallengeServiceManifest(namespace, serviceName, podName, spec)
-	if _, err := applyManifest(cfg, svcManifest); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, fmt.Errorf("创建 Service 失败: %w", err)
-	}
-
-	accessURL := ""
-	var nodePort *int
-	if spec.ProblemType == "container_web" {
-		ingManifest := buildChallengeIngressManifest(namespace, ingressName, serviceName, host, cfg.Ingress.Class, cfg.Ingress.TLSEnabled, cfg.Ingress.TLSSecret)
-		if _, err := applyManifest(cfg, ingManifest); err != nil {
-			_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-			return nil, fmt.Errorf("创建 Ingress 失败: %w", err)
-		}
-
-		scheme := "http"
-		if cfg.Ingress.TLSEnabled {
-			scheme = "https"
-		}
-		if host != "" {
-			accessURL = fmt.Sprintf("%s://%s", scheme, host)
-		} else {
-			accessURL = fmt.Sprintf("http://%s.%s.svc.cluster.local", serviceName, namespace)
-		}
-	} else {
-		value, fetchErr := getServiceNodePort(cfg, namespace, serviceName)
-		if fetchErr != nil {
-			_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-			return nil, fmt.Errorf("读取 Service NodePort 失败: %w", fetchErr)
-		}
-		nodePort = &value
-		nodeHost := r.resolveNodeHost()
-		accessURL = fmt.Sprintf("%s:%d", nodeHost, value)
-	}
-
-	if err := r.markChallengeInstanceRunning(cleanUserID, cleanProblemID, accessURL, nodePort); err != nil {
-		return nil, err
-	}
-
-	return r.GetChallengeInstance(cleanProblemID, cleanUserID)
-}
-
-func (r *ProblemRepository) DestroyChallengeInstance(problemID, userID string) error {
-	cleanProblemID := strings.TrimSpace(problemID)
-	cleanUserID := strings.TrimSpace(userID)
-	if cleanProblemID == "" || cleanUserID == "" {
-		return apperr.New(apperr.ErrBadRequest, "problem_id/user_id 不能为空")
-	}
-
-	instance, err := r.GetChallengeInstance(cleanProblemID, cleanUserID)
-	if err != nil {
-		return err
-	}
-	if instance == nil {
-		return apperr.New(apperr.ErrNotFound, "实例不存在")
-	}
-	if strings.EqualFold(strings.TrimSpace(instance.Status), "destroyed") {
-		return nil
-	}
-
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		return fmt.Errorf("加载配置失败: %w", cfgErr)
-	}
-
-	namespace := buildChallengeNamespace(cfg.Container.NamespacePrefix, cleanUserID)
-	if instance.Namespace != nil && strings.TrimSpace(*instance.Namespace) != "" {
-		namespace = strings.TrimSpace(*instance.Namespace)
-	}
-	podName := buildChallengePodName(cleanProblemID, cleanUserID)
-	if instance.PodName != nil && strings.TrimSpace(*instance.PodName) != "" {
-		podName = strings.TrimSpace(*instance.PodName)
-	}
-	serviceName := podName + "-svc"
-	ingressName := podName + "-ing"
-
-	if _, err := r.db.Exec(`
-		UPDATE challenge_instances
-		SET status = 'stopping'
-		WHERE user_id = ? AND problem_id = ?
-	`, cleanUserID, cleanProblemID); err != nil {
-		return fmt.Errorf("更新实例状态失败: %w", err)
-	}
-
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "ingress", ingressName); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return fmt.Errorf("删除 Ingress 失败: %w", err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "service", serviceName); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return fmt.Errorf("删除 Service 失败: %w", err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "pod", podName); err != nil {
-		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return fmt.Errorf("删除 Pod 失败: %w", err)
-	}
-
-	_, err = r.db.Exec(`
-		UPDATE challenge_instances
-		SET status = 'destroyed', access_url = NULL, node_port = NULL,
-		    destroyed_at = NOW(), expired_at = NULL
-		WHERE user_id = ? AND problem_id = ?
-	`, cleanUserID, cleanProblemID)
-	if err != nil {
-		return fmt.Errorf("更新实例销毁状态失败: %w", err)
-	}
-
-	return nil
-}
-
-func (r *ProblemRepository) getProblemContainerRuntimeSpec(problemID string) (*problemContainerRuntimeSpec, error) {
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		return nil, fmt.Errorf("加载配置失败: %w", cfgErr)
-	}
-
-	spec := &problemContainerRuntimeSpec{GlobalIngressTP: strings.TrimSpace(cfg.Ingress.DomainTemplate)}
-	err := r.db.QueryRow(`
-		SELECT p.type, p.use_kata,
-		       IFNULL(pc.image_name, ''), IFNULL(pc.image_tag, ''), IFNULL(pc.challenge_port, 0),
-		       IFNULL(pc.cpu_limit, ''), IFNULL(pc.memory_limit, ''), pc.env,
-		       IFNULL(pc.ttl_seconds, 0), IFNULL(pc.ingress_host_tpl, '')
-		FROM problems p
-		LEFT JOIN problem_containers pc ON pc.problem_id = p.id
-		WHERE p.id = ? AND p.status = 'ready'
-	`, strings.TrimSpace(problemID)).Scan(
-		&spec.ProblemType,
-		&spec.UseKata,
-		&spec.ImageName,
-		&spec.ImageTag,
-		&spec.ChallengePort,
-		&spec.CPULimit,
-		&spec.MemoryLimit,
-		&spec.Env,
-		&spec.TTLSeconds,
-		&spec.IngressHostTpl,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, apperr.New(apperr.ErrNotFound, "题目不存在或未发布")
-		}
-		return nil, fmt.Errorf("读取题目容器配置失败: %w", err)
-	}
-
-	spec.ProblemType = strings.ToLower(strings.TrimSpace(spec.ProblemType))
-	if spec.ProblemType != "container_web" && spec.ProblemType != "container_tcp" {
-		return nil, apperr.New(apperr.ErrBadRequest, "该题目不是容器题")
-	}
-	if strings.TrimSpace(spec.ImageName) == "" || strings.TrimSpace(spec.ImageTag) == "" {
-		return nil, apperr.New(apperr.ErrBadRequest, "题目镜像配置不完整，请先完成发布构建")
-	}
-	if spec.ChallengePort <= 0 {
-		return nil, apperr.New(apperr.ErrBadRequest, "challenge_port 配置不合法")
-	}
-
-	return spec, nil
-}
-
-func (r *ProblemRepository) upsertChallengeInstancePending(instanceID, userID, problemID, podName, namespace string, ttlSeconds int) error {
-	_, err := r.db.Exec(`
-		INSERT INTO challenge_instances (
-			id, user_id, problem_id, pod_name, namespace,
-			status, started_at, expired_at, destroyed_at, access_url, node_port
-		) VALUES (?, ?, ?, ?, ?, 'pending', NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND), NULL, NULL, NULL)
-		ON DUPLICATE KEY UPDATE
-			id = VALUES(id),
-			pod_name = VALUES(pod_name),
-			namespace = VALUES(namespace),
-			status = 'pending',
-			started_at = NOW(),
-			expired_at = DATE_ADD(NOW(), INTERVAL ? SECOND),
-			destroyed_at = NULL,
-			access_url = NULL,
-			node_port = NULL
-	`, strings.TrimSpace(instanceID), strings.TrimSpace(userID), strings.TrimSpace(problemID), strings.TrimSpace(podName), strings.TrimSpace(namespace), ttlSeconds, ttlSeconds)
-	if err != nil {
-		return fmt.Errorf("写入实例状态失败: %w", err)
-	}
-	return nil
-}
-
-func (r *ProblemRepository) markChallengeInstanceFailed(userID, problemID string) error {
-	_, err := r.db.Exec(`
-		UPDATE challenge_instances
-		SET status = 'failed'
-		WHERE user_id = ? AND problem_id = ?
-	`, strings.TrimSpace(userID), strings.TrimSpace(problemID))
-	if err != nil {
-		return fmt.Errorf("更新实例失败状态失败: %w", err)
-	}
-	return nil
-}
-
-func (r *ProblemRepository) markChallengeInstanceRunning(userID, problemID, accessURL string, nodePort *int) error {
-	var nodePortValue any
-	if nodePort != nil && *nodePort > 0 {
-		nodePortValue = *nodePort
-	}
-	_, err := r.db.Exec(`
-		UPDATE challenge_instances
-		SET status = 'running', access_url = ?, node_port = ?
-		WHERE user_id = ? AND problem_id = ?
-	`, strings.TrimSpace(accessURL), nodePortValue, strings.TrimSpace(userID), strings.TrimSpace(problemID))
-	if err != nil {
-		return fmt.Errorf("更新实例运行状态失败: %w", err)
-	}
-	return nil
-}
 
 func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, uploadType string) {
 	if task == nil {
@@ -2353,7 +2004,7 @@ func findComposeFile(root string) (string, error) {
 	return "", fmt.Errorf("未找到 compose 文件")
 }
 
-func chooseHostPortInRange(minPort, maxPort int) (int, error) {
+func (r *ProblemRepository) chooseHostPortInRange(minPort, maxPort int) (int, error) {
 	if minPort <= 0 {
 		minPort = 20000
 	}
@@ -2378,11 +2029,11 @@ func chooseHostPortInRange(minPort, maxPort int) (int, error) {
 		pool = append(pool, p)
 	}
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	rnd.Shuffle(len(pool), func(i, j int) {
+	usedPorts := r.activeNodePorts(); rnd.Shuffle(len(pool), func(i, j int) {
 		pool[i], pool[j] = pool[j], pool[i]
 	})
 	for _, candidate := range pool {
-		if isPortFree(candidate) {
+		if !usedPorts[candidate] && isPortFree(candidate) {
 			return candidate, nil
 		}
 	}
@@ -2482,328 +2133,18 @@ func (r *ProblemRepository) parseRegistryHostAndRepo(imageRepo string) (string, 
 	return host, repo, nil
 }
 
-func kubectlArgs(cfg *config.Config, args ...string) []string {
-	result := make([]string, 0, len(args)+2)
-	if cfg != nil && strings.TrimSpace(cfg.Container.KubeconfigPath) != "" {
-		result = append(result, "--kubeconfig", strings.TrimSpace(cfg.Container.KubeconfigPath))
-	}
-	result = append(result, args...)
-	return result
-}
 
-func runKubectl(cfg *config.Config, args ...string) (string, error) {
-	return runCommand("kubectl", kubectlArgs(cfg, args...)...)
-}
 
-func ensureChallengeNamespace(cfg *config.Config, namespace string) error {
-	ns := strings.TrimSpace(namespace)
-	if ns == "" {
-		return fmt.Errorf("namespace 不能为空")
-	}
-	if _, err := runKubectl(cfg, "get", "namespace", ns); err == nil {
-		return nil
-	}
-	if output, err := runKubectl(cfg, "create", "namespace", ns); err != nil {
-		return fmt.Errorf("%s", sanitizeCommandOutput(output, err))
-	}
-	return nil
-}
 
-func applyManifest(cfg *config.Config, manifest string) (string, error) {
-	tmpFile, err := os.CreateTemp("", "ctf-k8s-*.yaml")
-	if err != nil {
-		return "", err
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
 
-	if _, err := tmpFile.WriteString(manifest); err != nil {
-		_ = tmpFile.Close()
-		return "", err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return "", err
-	}
 
-	return runKubectl(cfg, "apply", "-f", tmpPath)
-}
 
-func deleteResourceIgnoreNotFound(cfg *config.Config, namespace, kind, name string) error {
-	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(kind) == "" || strings.TrimSpace(name) == "" {
-		return nil
-	}
-	if output, err := runKubectl(cfg, "delete", kind, name, "-n", namespace, "--ignore-not-found=true"); err != nil {
-		return fmt.Errorf("%s", sanitizeCommandOutput(output, err))
-	}
-	return nil
-}
 
-func getServiceNodePort(cfg *config.Config, namespace, serviceName string) (int, error) {
-	output, err := runKubectl(cfg, "get", "service", serviceName, "-n", namespace, "-o", "jsonpath={.spec.ports[0].nodePort}")
-	if err != nil {
-		return 0, fmt.Errorf("%s", sanitizeCommandOutput(output, err))
-	}
-	port, parseErr := strconv.Atoi(strings.TrimSpace(output))
-	if parseErr != nil || port <= 0 {
-		return 0, fmt.Errorf("无效的 nodePort: %s", strings.TrimSpace(output))
-	}
-	return port, nil
-}
 
-func renderIngressHost(problemTpl, defaultTpl, instanceID, problemID, userID, podName string) string {
-	tpl := strings.TrimSpace(problemTpl)
-	if tpl == "" {
-		tpl = strings.TrimSpace(defaultTpl)
-	}
-	if tpl == "" {
-		return ""
-	}
-	replacer := strings.NewReplacer(
-		"{id}", shortToken(instanceID),
-		"{instance_id}", shortToken(instanceID),
-		"{problem_id}", shortToken(problemID),
-		"{user_id}", shortToken(userID),
-		"{pod_name}", sanitizeK8sName(podName, 63),
-	)
-	return strings.TrimSpace(replacer.Replace(tpl))
-}
 
-func buildChallengeNamespace(prefix, userID string) string {
-	cleanPrefix := sanitizeK8sName(prefix, 30)
-	if cleanPrefix == "" {
-		cleanPrefix = "ctf"
-	}
-	name := cleanPrefix + "-" + shortToken(userID)
-	return sanitizeK8sName(name, 63)
-}
 
-func buildChallengePodName(problemID, userID string) string {
-	name := fmt.Sprintf("chal-%s-%s", shortToken(problemID), shortToken(userID))
-	return sanitizeK8sName(name, 63)
-}
 
-func shortToken(input string) string {
-	clean := strings.ToLower(strings.TrimSpace(input))
-	clean = strings.ReplaceAll(clean, "-", "")
-	b := strings.Builder{}
-	for _, ch := range clean {
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
-			b.WriteRune(ch)
-		}
-	}
-	out := b.String()
-	if out == "" {
-		return "x0000000"
-	}
-	if len(out) > 8 {
-		return out[:8]
-	}
-	for len(out) < 8 {
-		out += "0"
-	}
-	return out
-}
 
-func sanitizeK8sName(input string, maxLen int) string {
-	v := strings.ToLower(strings.TrimSpace(input))
-	b := strings.Builder{}
-	lastDash := false
-	for _, ch := range v {
-		if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') {
-			b.WriteRune(ch)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteRune('-')
-			lastDash = true
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		out = "challenge"
-	}
-	if maxLen > 0 && len(out) > maxLen {
-		out = strings.Trim(out[:maxLen], "-")
-		if out == "" {
-			out = "challenge"
-		}
-	}
-	return out
-}
 
-func parseContainerEnv(raw json.RawMessage) [][2]string {
-	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
-		return nil
-	}
 
-	keyValues := make([][2]string, 0)
-	obj := map[string]any{}
-	if err := json.Unmarshal(raw, &obj); err == nil {
-		keys := make([]string, 0, len(obj))
-		for k := range obj {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			key := strings.TrimSpace(k)
-			if key == "" {
-				continue
-			}
-			keyValues = append(keyValues, [2]string{key, fmt.Sprintf("%v", obj[k])})
-		}
-		return keyValues
-	}
 
-	arr := make([]map[string]any, 0)
-	if err := json.Unmarshal(raw, &arr); err == nil {
-		for _, item := range arr {
-			name := strings.TrimSpace(fmt.Sprintf("%v", item["name"]))
-			if name == "" {
-				continue
-			}
-			value := ""
-			if v, ok := item["value"]; ok {
-				value = fmt.Sprintf("%v", v)
-			}
-			keyValues = append(keyValues, [2]string{name, value})
-		}
-	}
-
-	return keyValues
-}
-
-func buildChallengePodManifest(namespace, podName string, spec *problemContainerRuntimeSpec, cfg *config.Config) (string, error) {
-	if spec == nil {
-		return "", fmt.Errorf("容器配置为空")
-	}
-	imageRef := strings.TrimSpace(spec.ImageName) + ":" + strings.TrimSpace(spec.ImageTag)
-
-	envItems := parseContainerEnv(spec.Env)
-	envSection := ""
-	if len(envItems) > 0 {
-		b := strings.Builder{}
-		b.WriteString("        env:\n")
-		for _, pair := range envItems {
-			b.WriteString(fmt.Sprintf("          - name: %s\n", pair[0]))
-			b.WriteString(fmt.Sprintf("            value: %q\n", pair[1]))
-		}
-		envSection = b.String()
-	}
-
-	resourceSection := ""
-	if strings.TrimSpace(spec.CPULimit) != "" || strings.TrimSpace(spec.MemoryLimit) != "" {
-		b := strings.Builder{}
-		b.WriteString("        resources:\n")
-		b.WriteString("          limits:\n")
-		if strings.TrimSpace(spec.CPULimit) != "" {
-			b.WriteString(fmt.Sprintf("            cpu: %q\n", strings.TrimSpace(spec.CPULimit)))
-		}
-		if strings.TrimSpace(spec.MemoryLimit) != "" {
-			b.WriteString(fmt.Sprintf("            memory: %q\n", strings.TrimSpace(spec.MemoryLimit)))
-		}
-		resourceSection = b.String()
-	}
-
-	runtimeClassSection := ""
-	if spec.UseKata && cfg != nil && strings.TrimSpace(cfg.Container.KataRuntimeClass) != "" {
-		runtimeClassSection = fmt.Sprintf("  runtimeClassName: %s\n", strings.TrimSpace(cfg.Container.KataRuntimeClass))
-	}
-
-	manifest := fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-  labels:
-    app: %s
-spec:
-%s  restartPolicy: Never
-  containers:
-    - name: challenge
-      image: %s
-      imagePullPolicy: Always
-      ports:
-        - containerPort: %d
-%s%s`, podName, namespace, podName, runtimeClassSection, imageRef, spec.ChallengePort, envSection, resourceSection)
-
-	return manifest, nil
-}
-
-func buildChallengeServiceManifest(namespace, serviceName, podName string, spec *problemContainerRuntimeSpec) string {
-	serviceType := "ClusterIP"
-	servicePort := spec.ChallengePort
-	if spec != nil && spec.ProblemType == "container_tcp" {
-		serviceType = "NodePort"
-	} else {
-		servicePort = 80
-	}
-
-	return fmt.Sprintf(`apiVersion: v1
-kind: Service
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  type: %s
-  selector:
-    app: %s
-  ports:
-    - protocol: TCP
-      port: %d
-      targetPort: %d
-`, serviceName, namespace, serviceType, podName, servicePort, spec.ChallengePort)
-}
-
-func buildChallengeIngressManifest(namespace, ingressName, serviceName, host, ingressClass string, tlsEnabled bool, tlsSecret string) string {
-	hostBlock := ""
-	if strings.TrimSpace(host) != "" {
-		hostBlock = fmt.Sprintf("    - host: %s\n", strings.TrimSpace(host))
-	} else {
-		hostBlock = "    -\n"
-	}
-
-	ingressClassSection := ""
-	if strings.TrimSpace(ingressClass) != "" {
-		ingressClassSection = fmt.Sprintf("  ingressClassName: %s\n", strings.TrimSpace(ingressClass))
-	}
-
-	tlsSection := ""
-	if tlsEnabled && strings.TrimSpace(host) != "" {
-		tlsSection = "  tls:\n"
-		tlsSection += fmt.Sprintf("    - hosts:\n        - %s\n", strings.TrimSpace(host))
-		if strings.TrimSpace(tlsSecret) != "" {
-			tlsSection += fmt.Sprintf("      secretName: %s\n", strings.TrimSpace(tlsSecret))
-		}
-	}
-
-	return fmt.Sprintf(`apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: %s
-  namespace: %s
-spec:
-%s%s  rules:
-%s      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: %s
-                port:
-                  number: 80
-`, ingressName, namespace, ingressClassSection, tlsSection, hostBlock, serviceName)
-}
-
-func (r *ProblemRepository) resolveNodeHost() string {
-	host := strings.TrimSpace(r.cfg.Container.InfraNodeName)
-	if host != "" {
-		return host
-	}
-	name, err := os.Hostname()
-	if err == nil && strings.TrimSpace(name) != "" {
-		return strings.TrimSpace(name)
-	}
-	return "127.0.0.1"
-}

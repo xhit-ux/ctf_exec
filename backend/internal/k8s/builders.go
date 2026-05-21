@@ -19,43 +19,98 @@ type ChallengePodSpec struct {
 	Namespace        string
 	ImageRef         string
 	ContainerPort    int32
+	ChallengeType    string // "container_web" or "container_tcp"
 	CPULimit         string
 	MemoryLimit      string
 	EnvVars          []corev1.EnvVar
 	KataRuntimeClass string
 }
 
+const sidecarPort = int32(8080)
+
+func nginxSidecarScript(challengePort int32, challengeType string) string {
+	if challengeType == "container_tcp" {
+		return fmt.Sprintf(`cat > /etc/nginx/nginx.conf << 'NGINX_EOF'
+events {}
+stream {
+    server {
+        listen %d;
+        proxy_pass 127.0.0.1:%d;
+    }
+}
+NGINX_EOF
+nginx -g "daemon off;"`, sidecarPort, challengePort)
+	}
+	return fmt.Sprintf(`cat > /etc/nginx/nginx.conf << 'NGINX_EOF'
+events {}
+http {
+    access_log /dev/stdout;
+    server {
+        listen %d;
+        location / {
+            proxy_pass http://127.0.0.1:%d;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+    }
+}
+NGINX_EOF
+nginx -g "daemon off;"`, sidecarPort, challengePort)
+}
+
 func BuildChallengePod(spec ChallengePodSpec) *corev1.Pod {
 	labels := map[string]string{"app": spec.Name}
-	container := corev1.Container{
+
+	challengeContainer := corev1.Container{
 		Name:            "challenge",
 		Image:           spec.ImageRef,
 		ImagePullPolicy: corev1.PullAlways,
-		Ports: []corev1.ContainerPort{
-			{ContainerPort: spec.ContainerPort, Protocol: corev1.ProtocolTCP},
-		},
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: ptr.To(false),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
 			ReadOnlyRootFilesystem:   ptr.To(true),
 		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "tmp", MountPath: "/tmp"},
+		},
+	}
+	challengeContainer.Ports = []corev1.ContainerPort{
+		{ContainerPort: spec.ContainerPort, Protocol: corev1.ProtocolTCP},
 	}
 	if len(spec.EnvVars) > 0 {
-		container.Env = spec.EnvVars
+		challengeContainer.Env = spec.EnvVars
 	}
 	if spec.CPULimit != "" || spec.MemoryLimit != "" {
-		container.Resources = corev1.ResourceRequirements{
+		challengeContainer.Resources = corev1.ResourceRequirements{
 			Limits: corev1.ResourceList{},
 		}
 		if spec.CPULimit != "" {
-			container.Resources.Limits[corev1.ResourceCPU] = resource.MustParse(spec.CPULimit)
+			challengeContainer.Resources.Limits[corev1.ResourceCPU] = resource.MustParse(spec.CPULimit)
 		}
 		if spec.MemoryLimit != "" {
-			container.Resources.Limits[corev1.ResourceMemory] = resource.MustParse(spec.MemoryLimit)
+			challengeContainer.Resources.Limits[corev1.ResourceMemory] = resource.MustParse(spec.MemoryLimit)
 		}
 	}
 
-	return &corev1.Pod{
+	sidecarContainer := corev1.Container{
+		Name:            "sidecar",
+		Image:           "nginx:alpine",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-c"},
+		Args:            []string{nginxSidecarScript(spec.ContainerPort, spec.ChallengeType)},
+		Ports: []corev1.ContainerPort{
+			{ContainerPort: sidecarPort, Protocol: corev1.ProtocolTCP},
+		},
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "tmp", MountPath: "/tmp"},
+		},
+	}
+
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      spec.Name,
 			Namespace: spec.Namespace,
@@ -63,15 +118,25 @@ func BuildChallengePod(spec ChallengePodSpec) *corev1.Pod {
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy: corev1.RestartPolicyNever,
-			Containers:    []corev1.Container{container},
+			Containers: []corev1.Container{
+				challengeContainer,
+				sidecarContainer,
+			},
 			SecurityContext: &corev1.PodSecurityContext{
 				RunAsNonRoot: ptr.To(true),
 				SeccompProfile: &corev1.SeccompProfile{
 					Type: corev1.SeccompProfileTypeRuntimeDefault,
 				},
 			},
+			Volumes: []corev1.Volume{
+				{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
 		},
 	}
+	if spec.KataRuntimeClass != "" {
+		pod.Spec.RuntimeClassName = ptr.To(spec.KataRuntimeClass)
+	}
+	return pod
 }
 
 // --- Challenge Service ---
@@ -96,7 +161,7 @@ func BuildChallengeService(spec ChallengeServiceSpec) *corev1.Service {
 			Ports: []corev1.ServicePort{
 				{
 					Port:       spec.Port,
-					TargetPort: intstr.FromInt(int(spec.Port)),
+					TargetPort: intstr.FromInt(int(sidecarPort)),
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},

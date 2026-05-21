@@ -182,7 +182,7 @@ func (h *ProblemHandler) SaveProblemContainerGin(c *gin.Context) {
 	hasSidecarImage := req.SidecarImage != nil && strings.TrimSpace(*req.SidecarImage) != ""
 	hasSidecarPort := req.SidecarPort != nil && *req.SidecarPort > 0
 	if hasSidecarImage != hasSidecarPort {
-		writeBadRequest(c, "sidecar_image/sidecar_port 必须同时提供或同时省略")
+		writeBadRequest(c, "sidecar 已默认注入 nginx:alpine，不再接受自定义配置")
 		return
 	}
 	if err := h.repo.UpsertProblemContainer(id, &req); err != nil {
@@ -532,7 +532,7 @@ func (h *ProblemHandler) StartProblemInstanceGin(c *gin.Context) {
 		return
 	}
 
-	instance, err := h.repo.StartChallengeInstance(problemID, claims.UserID)
+	instance, err := h.repo.StartChallengeInstance(c.Request.Context(), problemID, claims.UserID)
 	if err != nil {
 		writeError(c, err, http.StatusBadRequest)
 		return
@@ -562,6 +562,24 @@ func (h *ProblemHandler) DestroyProblemInstanceGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "实例销毁成功", "status": "destroyed"})
+}
+
+func (h *ProblemHandler) ExtendProblemInstanceGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	problemID := strings.TrimSpace(c.Param("id"))
+	if problemID == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	instance, err := h.repo.ExtendChallengeInstance(c.Request.Context(), problemID, claims.UserID)
+	if err != nil {
+		writeError(c, err, http.StatusBadRequest)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "实例已延期", "instance": instance})
 }
 
 func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {

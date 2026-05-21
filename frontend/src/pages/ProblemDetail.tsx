@@ -155,6 +155,9 @@ export default function ProblemDetail() {
     note: '',
   })
   const canEditProblem = user?.role === 'root' || user?.role === 'site_admin'
+	const [countdown, setCountdown] = useState<number | null>(null)
+	useEffect(() => { if (countdown !== null && countdown > 0) { const t = setInterval(() => setCountdown(p => (p && p > 0 ? p - 1 : 0)), 1000); return () => clearInterval(t) } }, [countdown !== null])
+	useEffect(() => { const s = problem?.instance?.remaining_seconds; if (s && s > 0) setCountdown(s) }, [problem?.instance?.remaining_seconds])
 
   useEffect(() => {
     if (!problemID) {
@@ -582,10 +585,9 @@ export default function ProblemDetail() {
                       {instanceState.endpoint}
                     </div>
                   )}
-                  {problem.instance?.remaining_seconds !== undefined &&
-                    problem.instance?.remaining_seconds !== null && (
+                  {                    (countdown !== null && countdown > 0) && (
                       <div className="text-xs text-gray-500">
-                        剩余时间：{formatRemaining(problem.instance.remaining_seconds)}
+                        剩余时间：{formatRemaining(countdown)}
                       </div>
                     )}
                   <div className="text-xs text-gray-500">{instanceState.note}</div>
