@@ -4,6 +4,7 @@ export type ProblemCategory = 'web' | 'pwn' | 'crypto' | 'reverse' | 'misc'
 export type ProblemDifficulty = '简单' | '中等' | '困难' | '专家'
 export type ProblemType = 'static' | 'container_web' | 'container_tcp'
 export type ProblemStatus = 'draft' | 'ready' | 'hidden'
+export type ProblemDeployMode = 'shared' | 'per_user'
 
 // 单附件（v2.1：一题一包）。
 export type ProblemAttachment = {
@@ -51,6 +52,7 @@ export type ProblemView = {
   title: string
   category: ProblemCategory
   type: ProblemType
+  deploy_mode: ProblemDeployMode
   difficulty: ProblemDifficulty
   // platform_score 是平台 scope 的固定分值；contest_score（可选）来自 contest scope。
   platform_score: number
@@ -123,6 +125,11 @@ export function normalizeProblemType(value: unknown): ProblemType {
   if (raw === 'container_web') return 'container_web'
   if (raw === 'container_tcp') return 'container_tcp'
   return 'static'
+}
+
+export function normalizeDeployMode(value: unknown): ProblemDeployMode {
+  const raw = String(value ?? '').trim().toLowerCase()
+  return raw === 'shared' ? 'shared' : 'per_user'
 }
 
 function normalizeTags(value: unknown): string[] {
@@ -244,6 +251,7 @@ export function normalizeProblem(payload: unknown): ProblemView {
     title: String(item.title ?? '未命名题目'),
     category: normalizeCategory(item.category),
     type: normalizeProblemType(item.type),
+    deploy_mode: normalizeDeployMode(item.deploy_mode),
     difficulty: normalizeDifficulty(item.difficulty),
     platform_score: platformScore,
     points: platformScore,

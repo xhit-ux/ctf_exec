@@ -21,6 +21,7 @@ const FLAG_RULE_OPTIONS: { id: FlagRule; label: string; desc: string }[] = [
 export default function Step3FlagConfig() {
   const { state, updateState, nextStep, prevStep, setSubmitting } = useProblemPublish();
   const [hashPreview, setHashPreview] = useState('');
+  const dynamicBlockedByShared = state.deployMode === 'shared';
 
   useEffect(() => {
     if (
@@ -52,6 +53,10 @@ export default function Step3FlagConfig() {
     state.flagType === 'static' && (state.flagRule === 'exact' || state.flagRule === 'case_insensitive');
 
   const handleNext = async () => {
+    if (state.flagType === 'dynamic' && state.deployMode === 'shared') {
+      window.alert('shared 部署模式不支持 dynamic flag，请先在容器步骤切换为 per_user');
+      return;
+    }
     if (!state.problemId) {
       window.alert('请先完成基础信息并创建草稿');
       return;
@@ -111,12 +116,23 @@ export default function Step3FlagConfig() {
           </button>
           <button
             type="button"
-            onClick={() => updateState({ flagType: 'dynamic' })}
-            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${state.flagType === 'dynamic' ? 'bg-amber-100 text-amber-800' : 'text-gray-600 hover:bg-gray-50'}`}
+            onClick={() => {
+              if (dynamicBlockedByShared) {
+                window.alert('当前部署模式为 shared，不支持 dynamic flag');
+                return;
+              }
+              updateState({ flagType: 'dynamic' });
+            }}
+            className={`px-3 py-1.5 text-sm rounded-md transition-colors ${state.flagType === 'dynamic' ? 'bg-amber-100 text-amber-800' : 'text-gray-600 hover:bg-gray-50'} ${dynamicBlockedByShared ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             动态 Flag
           </button>
         </div>
+        {dynamicBlockedByShared && (
+          <p className="text-xs text-amber-700 mt-2">
+            当前 deploy_mode=shared，dynamic flag 已禁用。请在「容器环境」步骤切换为 per_user。
+          </p>
+        )}
       </div>
 
       <div className="p-3.5 border border-gray-200 rounded-lg bg-gray-50">

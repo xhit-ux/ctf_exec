@@ -13,8 +13,8 @@ import (
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
-	corev1 "k8s.io/api/core/v1"
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type problemContainerRuntimeSpec struct {
@@ -27,9 +27,56 @@ type problemContainerRuntimeSpec struct {
 	CPULimit        string
 	MemoryLimit     string
 	Env             json.RawMessage
-	TTLSeconds      int
 	IngressHostTpl  string
 	GlobalIngressTP string
+}
+
+func resolveGlobalContainerTTL(ttl int) int {
+	if ttl > 0 {
+		return ttl
+	}
+	return 3600
+}
+
+func enrichChallengeInstance(instance *models.ChallengeInstance) {
+	if instance == nil {
+		return
+	}
+	instance.RemainingSeconds = calcRemaining(instance.ExpiredAt)
+}
+
+func (r *ProblemRepository) normalizeInstanceTTL(instance *models.ChallengeInstance) {
+	if instance == nil {
+		return
+	}
+	status := strings.ToLower(strings.TrimSpace(instance.Status))
+	if status != "running" && status != "pending" {
+		return
+	}
+	globalTTL := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
+	if instance.StartedAt == nil || instance.ExpiredAt == nil {
+		return
+	}
+	started, err1 := parseMySQLDateTime(*instance.StartedAt)
+	expired, err2 := parseMySQLDateTime(*instance.ExpiredAt)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	maxExpired := started.Add(time.Duration(globalTTL) * time.Second)
+	if !expired.After(maxExpired) {
+		return
+	}
+	newExpiredStr := maxExpired.Format("2006-01-02 15:04:05")
+	_, err := r.db.Exec(`
+		UPDATE challenge_instances
+		SET expired_at = ?
+		WHERE user_id = ? AND problem_id = ? AND status IN ('running', 'pending')
+	`, newExpiredStr, strings.TrimSpace(instance.UserID), strings.TrimSpace(instance.ProblemID))
+	if err != nil {
+		log.Printf("[ttl-normalize] 修正实例过期时间失败: %s/%s err=%v", instance.UserID, instance.ProblemID, err)
+		return
+	}
+	instance.ExpiredAt = &newExpiredStr
 }
 
 func (r *ProblemRepository) GetChallengeInstance(problemID, userID string) (*models.ChallengeInstance, error) {
@@ -153,6 +200,187 @@ func (r *ProblemRepository) sharedCacheDel(problemID string) {
 	r.redis.Del(context.Background(), r.sharedCacheKey(problemID))
 }
 
+func (r *ProblemRepository) getProblemDeployMode(problemID string) (string, error) {
+	var deployMode string
+	err := r.db.QueryRow(`SELECT deploy_mode FROM problems WHERE id = ?`, strings.TrimSpace(problemID)).Scan(&deployMode)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", apperr.New(apperr.ErrNotFound, "题目不存在")
+		}
+		return "", fmt.Errorf("查询 deploy_mode 失败: %w", err)
+	}
+	return strings.ToLower(strings.TrimSpace(deployMode)), nil
+}
+
+func (r *ProblemRepository) getSharedRunningInstance(problemID string) (*models.ChallengeInstance, error) {
+	sharedPodName := fmt.Sprintf("chal-%s", shortToken(problemID))
+	instance := &models.ChallengeInstance{}
+	var podName sql.NullString
+	var namespace sql.NullString
+	var accessURL sql.NullString
+	var nodePort sql.NullInt64
+	var startedAt sql.NullString
+	var expiredAt sql.NullString
+	var destroyedAt sql.NullString
+
+	err := r.db.QueryRow(`
+		SELECT id, user_id, problem_id, pod_name, namespace, access_url, node_port, status,
+		       IFNULL(DATE_FORMAT(started_at, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(expired_at, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(DATE_FORMAT(destroyed_at, '%Y-%m-%d %H:%i:%s'), '')
+		FROM challenge_instances
+		WHERE problem_id = ? AND status IN ('running', 'pending')
+		  AND (namespace = 'ctf-shared' OR pod_name = ?)
+		ORDER BY started_at DESC
+		LIMIT 1
+	`, strings.TrimSpace(problemID), sharedPodName).Scan(
+		&instance.ID,
+		&instance.UserID,
+		&instance.ProblemID,
+		&podName,
+		&namespace,
+		&accessURL,
+		&nodePort,
+		&instance.Status,
+		&startedAt,
+		&expiredAt,
+		&destroyedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("查询共享实例失败: %w", err)
+	}
+	if podName.Valid {
+		v := strings.TrimSpace(podName.String)
+		if v != "" {
+			instance.PodName = &v
+		}
+	}
+	if namespace.Valid {
+		v := strings.TrimSpace(namespace.String)
+		if v != "" {
+			instance.Namespace = &v
+		}
+	}
+	if accessURL.Valid {
+		v := strings.TrimSpace(accessURL.String)
+		if v != "" {
+			instance.AccessURL = &v
+		}
+	}
+	if nodePort.Valid && nodePort.Int64 > 0 {
+		v := int(nodePort.Int64)
+		instance.NodePort = &v
+	}
+	if startedAt.Valid {
+		v := strings.TrimSpace(startedAt.String)
+		if v != "" {
+			instance.StartedAt = &v
+		}
+	}
+	if expiredAt.Valid {
+		v := strings.TrimSpace(expiredAt.String)
+		if v != "" {
+			instance.ExpiredAt = &v
+		}
+	}
+	if destroyedAt.Valid {
+		v := strings.TrimSpace(destroyedAt.String)
+		if v != "" {
+			instance.DestroyedAt = &v
+		}
+	}
+	r.normalizeInstanceTTL(instance)
+	return instance, nil
+}
+
+func (r *ProblemRepository) finalizeChallengeInstance(instance *models.ChallengeInstance) *models.ChallengeInstance {
+	if instance == nil {
+		return nil
+	}
+	r.normalizeInstanceTTL(instance)
+	enrichChallengeInstance(instance)
+	return instance
+}
+
+func (r *ProblemRepository) GetChallengeInstanceForUser(problemID, userID string) (*models.ChallengeInstance, error) {
+	instance, err := r.GetChallengeInstance(problemID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if instance != nil {
+		return r.finalizeChallengeInstance(instance), nil
+	}
+	deployMode, modeErr := r.getProblemDeployMode(problemID)
+	if modeErr != nil || deployMode != "shared" {
+		return nil, modeErr
+	}
+	globalTTL := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
+	if cached := r.sharedCacheGet(problemID); cached != nil {
+		cached.UserID = strings.TrimSpace(userID)
+		_ = r.touchSharedLease(strings.TrimSpace(userID), strings.TrimSpace(problemID), cached)
+		if lease, leaseErr := r.GetChallengeInstance(problemID, userID); leaseErr == nil && lease != nil {
+			r.sharedCacheSet(lease, globalTTL)
+			return r.finalizeChallengeInstance(lease), nil
+		}
+		return r.finalizeChallengeInstance(cached), nil
+	}
+	instance, err = r.getSharedRunningInstance(problemID)
+	if err != nil || instance == nil {
+		return instance, err
+	}
+	instance.UserID = strings.TrimSpace(userID)
+	_ = r.touchSharedLease(strings.TrimSpace(userID), strings.TrimSpace(problemID), instance)
+	if lease, leaseErr := r.GetChallengeInstance(problemID, userID); leaseErr == nil && lease != nil {
+		r.sharedCacheSet(lease, globalTTL)
+		return r.finalizeChallengeInstance(lease), nil
+	}
+	return r.finalizeChallengeInstance(instance), nil
+}
+
+func (r *ProblemRepository) touchSharedLease(userID, problemID string, instance *models.ChallengeInstance) error {
+	if strings.TrimSpace(userID) == "" || strings.TrimSpace(problemID) == "" || instance == nil {
+		return nil
+	}
+	ttl := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
+	namespace := ""
+	podName := ""
+	accessURL := ""
+	var nodePort any
+	if instance.Namespace != nil {
+		namespace = strings.TrimSpace(*instance.Namespace)
+	}
+	if instance.PodName != nil {
+		podName = strings.TrimSpace(*instance.PodName)
+	}
+	if instance.AccessURL != nil {
+		accessURL = strings.TrimSpace(*instance.AccessURL)
+	}
+	if instance.NodePort != nil && *instance.NodePort > 0 {
+		nodePort = *instance.NodePort
+	}
+	_, err := r.db.Exec(`
+		INSERT INTO challenge_instances (
+			id, user_id, problem_id, pod_name, namespace, flag_value,
+			status, started_at, expired_at, destroyed_at, access_url, node_port
+		) VALUES (?, ?, ?, ?, ?, NULL, 'running', NOW(), DATE_ADD(NOW(), INTERVAL ? SECOND), NULL, NULLIF(?, ''), ?)
+		ON DUPLICATE KEY UPDATE
+			pod_name = VALUES(pod_name),
+			namespace = VALUES(namespace),
+			status = 'running',
+			expired_at = DATE_ADD(NOW(), INTERVAL ? SECOND),
+			destroyed_at = NULL,
+			access_url = VALUES(access_url),
+			node_port = VALUES(node_port)
+	`, uuid.New().String(), strings.TrimSpace(userID), strings.TrimSpace(problemID), nullIfEmpty(podName), nullIfEmpty(namespace), ttl, accessURL, nodePort, ttl)
+	if err != nil {
+		return fmt.Errorf("更新共享实例租约失败: %w", err)
+	}
+	return nil
+}
+
 func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemID, userID string) (*models.ChallengeInstance, error) {
 	cleanProblemID := strings.TrimSpace(problemID)
 	cleanUserID := strings.TrimSpace(userID)
@@ -165,12 +393,32 @@ func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemI
 		return nil, err
 	}
 
-isShared := spec.DeployMode == "shared"
-	flagValue, _, _ := r.resolveAndInjectFlag(cleanProblemID, cleanUserID)
+	isShared := spec.DeployMode == "shared"
+	flagValue, flagEnvVars, _ := r.resolveAndInjectFlag(cleanProblemID, cleanUserID)
+	globalTTL := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 
 	if isShared {
 		if cached := r.sharedCacheGet(cleanProblemID); cached != nil {
-			return cached, nil
+			cached.UserID = cleanUserID
+			_ = r.touchSharedLease(cleanUserID, cleanProblemID, cached)
+			if lease, leaseErr := r.GetChallengeInstance(cleanProblemID, cleanUserID); leaseErr == nil && lease != nil {
+				r.sharedCacheSet(lease, globalTTL)
+				return r.finalizeChallengeInstance(lease), nil
+			}
+			return r.finalizeChallengeInstance(cached), nil
+		}
+		existingShared, sharedErr := r.getSharedRunningInstance(cleanProblemID)
+		if sharedErr != nil {
+			return nil, sharedErr
+		}
+		if existingShared != nil {
+			existingShared.UserID = cleanUserID
+			_ = r.touchSharedLease(cleanUserID, cleanProblemID, existingShared)
+			if lease, leaseErr := r.GetChallengeInstance(cleanProblemID, cleanUserID); leaseErr == nil && lease != nil {
+				r.sharedCacheSet(lease, globalTTL)
+				return r.finalizeChallengeInstance(lease), nil
+			}
+			return r.finalizeChallengeInstance(existingShared), nil
 		}
 	} else {
 		existing, err := r.GetChallengeInstance(cleanProblemID, cleanUserID)
@@ -180,9 +428,9 @@ isShared := spec.DeployMode == "shared"
 		if existing != nil {
 			switch strings.ToLower(strings.TrimSpace(existing.Status)) {
 			case "running":
-				return existing, nil
+				return r.finalizeChallengeInstance(existing), nil
 			case "pending":
-				return existing, nil
+				return r.finalizeChallengeInstance(existing), nil
 			case "stopping":
 				return nil, apperr.New(apperr.ErrConflict, "实例正在销毁中，请稍后重试")
 			}
@@ -212,15 +460,13 @@ isShared := spec.DeployMode == "shared"
 	}
 	serviceName := podName + "-svc"
 	ingressName := podName + "-ing"
-	hostUserID := cleanUserID; if isShared { hostUserID = "" }; host := renderIngressHost(spec.IngressHostTpl, cfg.Ingress.DomainTemplate, instanceID, cleanProblemID, hostUserID, podName)
+	hostUserID := cleanUserID
+	if isShared {
+		hostUserID = ""
+	}
+	host := renderIngressHost(spec.IngressHostTpl, cfg.Ingress.DomainTemplate, instanceID, cleanProblemID, hostUserID, podName)
 
-	ttlSeconds := spec.TTLSeconds
-	if ttlSeconds <= 0 {
-		ttlSeconds = cfg.Container.DefaultContainerTTL
-	}
-	if ttlSeconds <= 0 {
-		ttlSeconds = 3600
-	}
+	ttlSeconds := resolveGlobalContainerTTL(cfg.Container.DefaultContainerTTL)
 
 	if err := r.upsertChallengeInstancePending(instanceID, cleanUserID, cleanProblemID, podName, namespace, flagValue, ttlSeconds); err != nil {
 		return nil, err
@@ -231,7 +477,8 @@ isShared := spec.DeployMode == "shared"
 		return nil, fmt.Errorf("创建命名空间失败: %w", err)
 	}
 
-	podManifest, _ := buildChallengePodManifest(namespace, podName, spec, cfg); if podOut, err := applyManifest(cfg, podManifest); err != nil {
+	podManifest, _ := buildChallengePodManifest(namespace, podName, spec, cfg, flagEnvVars)
+	if podOut, err := applyManifest(cfg, podManifest); err != nil {
 		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
 		return nil, fmt.Errorf("创建 Pod 失败: %s — %w", strings.TrimSpace(podOut), err)
 	}
@@ -272,7 +519,11 @@ isShared := spec.DeployMode == "shared"
 		return nil, err
 	}
 
-	inst, _ := r.GetChallengeInstance(cleanProblemID, cleanUserID); if isShared && inst != nil { r.cacheSharedInstanceOnCreate(cleanProblemID, cleanUserID, ttlSeconds) }; return inst, nil
+	inst, _ := r.GetChallengeInstanceForUser(cleanProblemID, cleanUserID)
+	if isShared && inst != nil {
+		r.cacheSharedInstanceOnCreate(cleanProblemID, cleanUserID, ttlSeconds)
+	}
+	return inst, nil
 }
 
 func (r *ProblemRepository) cacheSharedInstanceOnCreate(problemID, userID string, ttlSeconds int) {
@@ -288,15 +539,39 @@ func (r *ProblemRepository) DestroyChallengeInstance(problemID, userID string) e
 	if cleanProblemID == "" || cleanUserID == "" {
 		return apperr.New(apperr.ErrBadRequest, "problem_id/user_id 不能为空")
 	}
+	deployMode, modeErr := r.getProblemDeployMode(cleanProblemID)
+	if modeErr != nil {
+		return modeErr
+	}
 
 	instance, err := r.GetChallengeInstance(cleanProblemID, cleanUserID)
 	if err != nil {
 		return err
 	}
 	if instance == nil {
+		if deployMode == "shared" {
+			return nil
+		}
 		return apperr.New(apperr.ErrNotFound, "实例不存在")
 	}
 	if strings.EqualFold(strings.TrimSpace(instance.Status), "destroyed") {
+		return nil
+	}
+	if deployMode == "shared" {
+		// shared 模式仅释放当前用户占用映射，不销毁共享底层资源。
+		if err := r.markChallengeInstanceDestroyed(cleanUserID, cleanProblemID); err != nil {
+			return err
+		}
+		activeCount, countErr := r.countActiveSharedLeases(cleanProblemID)
+		if countErr != nil {
+			return countErr
+		}
+		if activeCount == 0 {
+			ns, pod := r.resolveInstanceNames(instance, cleanProblemID, cleanUserID)
+			if err := r.destroySharedK8sResources(ns, pod, cleanProblemID); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 
@@ -308,7 +583,8 @@ func (r *ProblemRepository) DestroyChallengeInstance(problemID, userID string) e
 		return fmt.Errorf("更新实例状态失败: %w", err)
 	}
 
-	r.sharedCacheDel(cleanProblemID); return r.destroyK8sResources(ns, pod, svcName, ingName, cleanUserID, cleanProblemID)
+	r.sharedCacheDel(cleanProblemID)
+	return r.destroyK8sResources(ns, pod, svcName, ingName, cleanUserID, cleanProblemID)
 }
 
 func (r *ProblemRepository) resolveInstanceNames(instance *models.ChallengeInstance, problemID, userID string) (namespace, podName string) {
@@ -356,6 +632,33 @@ func (r *ProblemRepository) destroyK8sResources(namespace, podName, serviceName,
 	return nil
 }
 
+func (r *ProblemRepository) destroySharedK8sResources(namespace, podName, problemID string) error {
+	cfg, cfgErr := config.LoadConfig()
+	if cfgErr != nil {
+		return fmt.Errorf("加载配置失败: %w", cfgErr)
+	}
+	serviceName := podName + "-svc"
+	ingressName := podName + "-ing"
+	if err := deleteResourceIgnoreNotFound(cfg, namespace, "ingress", ingressName); err != nil {
+		return fmt.Errorf("删除共享 Ingress (%s/%s) 失败: %w", namespace, ingressName, err)
+	}
+	if err := deleteResourceIgnoreNotFound(cfg, namespace, "service", serviceName); err != nil {
+		return fmt.Errorf("删除共享 Service (%s/%s) 失败: %w", namespace, serviceName, err)
+	}
+	if err := deleteResourceIgnoreNotFound(cfg, namespace, "pod", podName); err != nil {
+		return fmt.Errorf("删除共享 Pod (%s/%s) 失败: %w", namespace, podName, err)
+	}
+	if _, err := r.db.Exec(`
+		UPDATE challenge_instances
+		SET status = 'destroyed', access_url = NULL, node_port = NULL, destroyed_at = NOW(), expired_at = NULL
+		WHERE problem_id = ? AND status IN ('running', 'pending', 'stopping')
+	`, strings.TrimSpace(problemID)); err != nil {
+		return fmt.Errorf("更新共享实例销毁状态失败: %w", err)
+	}
+	r.sharedCacheDel(problemID)
+	return nil
+}
+
 func (r *ProblemRepository) getProblemContainerRuntimeSpec(problemID string) (*problemContainerRuntimeSpec, error) {
 	cfg, cfgErr := config.LoadConfig()
 	if cfgErr != nil {
@@ -367,7 +670,7 @@ func (r *ProblemRepository) getProblemContainerRuntimeSpec(problemID string) (*p
 		SELECT p.type, p.deploy_mode, p.use_kata,
 		       IFNULL(pc.image_name, ''), IFNULL(pc.image_tag, ''), IFNULL(pc.challenge_port, 0),
 		       IFNULL(pc.cpu_limit, ''), IFNULL(pc.memory_limit, ''), pc.env,
-		       IFNULL(pc.ttl_seconds, 0), IFNULL(pc.ingress_host_tpl, '')
+		       IFNULL(pc.ingress_host_tpl, '')
 		FROM problems p
 		LEFT JOIN problem_containers pc ON pc.problem_id = p.id
 		WHERE p.id = ? AND p.status = 'ready'
@@ -381,7 +684,6 @@ func (r *ProblemRepository) getProblemContainerRuntimeSpec(problemID string) (*p
 		&spec.CPULimit,
 		&spec.MemoryLimit,
 		&spec.Env,
-		&spec.TTLSeconds,
 		&spec.IngressHostTpl,
 	)
 	if err != nil {
@@ -416,7 +718,7 @@ func (r *ProblemRepository) ExtendChallengeInstance(ctx context.Context, problem
 	if instance.ExpiredAt == nil {
 		return nil, apperr.New(apperr.ErrBadRequest, "实例无过期时间")
 	}
-	expiredAt, parseErr := time.Parse("2006-01-02 15:04:05", *instance.ExpiredAt)
+	expiredAt, parseErr := parseMySQLDateTime(*instance.ExpiredAt)
 	if parseErr != nil {
 		return nil, fmt.Errorf("解析过期时间失败: %w", parseErr)
 	}
@@ -425,17 +727,7 @@ func (r *ProblemRepository) ExtendChallengeInstance(ctx context.Context, problem
 		return nil, apperr.New(apperr.ErrBadRequest,
 			fmt.Sprintf("仅剩 10m0s 可延期，当前剩余 %s", remaining.Round(time.Second)))
 	}
-	spec, specErr := r.getProblemContainerRuntimeSpec(problemID)
-	if specErr != nil {
-		return nil, specErr
-	}
-	ttl := spec.TTLSeconds
-	if ttl <= 0 {
-		ttl = r.cfg.Container.DefaultContainerTTL
-	}
-	if ttl <= 0 {
-		ttl = 3600
-	}
+	ttl := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 	newExpiredAt := expiredAt.Add(time.Duration(ttl/2) * time.Second)
 	_, dbErr := r.db.Exec(`
 		UPDATE challenge_instances SET expired_at = ?
@@ -444,7 +736,11 @@ func (r *ProblemRepository) ExtendChallengeInstance(ctx context.Context, problem
 	if dbErr != nil {
 		return nil, fmt.Errorf("延期失败: %w", dbErr)
 	}
-	return r.GetChallengeInstance(problemID, userID)
+	inst, err := r.GetChallengeInstance(problemID, userID)
+	if err != nil {
+		return nil, err
+	}
+	return r.finalizeChallengeInstance(inst), nil
 }
 
 func (r *ProblemRepository) resolveAndInjectFlag(problemID, userID string) (string, []corev1.EnvVar, error) {
@@ -537,15 +833,17 @@ func (r *ProblemRepository) StartTTLCleanupScheduler(interval time.Duration) {
 }
 
 type expiredInstance struct {
-	UserID, ProblemID       string
-	Namespace, PodName      sql.NullString
+	UserID, ProblemID  string
+	DeployMode         string
+	Namespace, PodName sql.NullString
 }
 
 func (r *ProblemRepository) cleanupExpiredInstances() {
 	rows, err := r.db.Query(`
-		SELECT user_id, problem_id, namespace, pod_name
-		FROM challenge_instances
-		WHERE status IN ('running', 'pending') AND expired_at IS NOT NULL AND expired_at < NOW()
+		SELECT ci.user_id, ci.problem_id, p.deploy_mode, ci.namespace, ci.pod_name
+		FROM challenge_instances ci
+		JOIN problems p ON p.id = ci.problem_id
+		WHERE ci.status IN ('running', 'pending') AND ci.expired_at IS NOT NULL AND ci.expired_at < NOW()
 	`)
 	if err != nil {
 		log.Printf("[ttl-cleanup] 查询过期实例失败: %v", err)
@@ -556,7 +854,35 @@ func (r *ProblemRepository) cleanupExpiredInstances() {
 	var cleaned int
 	for rows.Next() {
 		var inst expiredInstance
-		if err := rows.Scan(&inst.UserID, &inst.ProblemID, &inst.Namespace, &inst.PodName); err != nil {
+		if err := rows.Scan(&inst.UserID, &inst.ProblemID, &inst.DeployMode, &inst.Namespace, &inst.PodName); err != nil {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(inst.DeployMode), "shared") {
+			if err := r.markChallengeInstanceDestroyed(inst.UserID, inst.ProblemID); err != nil {
+				log.Printf("[ttl-cleanup] 标记共享实例过期失败: %s/%s err=%v", inst.UserID, inst.ProblemID, err)
+				continue
+			}
+			activeCount := 0
+			if countErr := r.db.QueryRow(`
+				SELECT COUNT(*)
+				FROM challenge_instances
+				WHERE problem_id = ?
+				  AND status IN ('running', 'pending')
+				  AND (expired_at IS NULL OR expired_at >= NOW())
+			`, strings.TrimSpace(inst.ProblemID)).Scan(&activeCount); countErr != nil {
+				log.Printf("[ttl-cleanup] 查询共享实例活跃数失败: %s err=%v", inst.ProblemID, countErr)
+				continue
+			}
+			if activeCount > 0 {
+				cleaned++
+				continue
+			}
+			ns, pod := r.resolveExpiredNames(&inst)
+			if err := r.destroySharedK8sResources(ns, pod, inst.ProblemID); err != nil {
+				log.Printf("[ttl-cleanup] 销毁共享实例资源失败: %s err=%v", inst.ProblemID, err)
+				continue
+			}
+			cleaned++
 			continue
 		}
 		ns, pod := r.resolveExpiredNames(&inst)
@@ -571,6 +897,18 @@ func (r *ProblemRepository) cleanupExpiredInstances() {
 	if cleaned > 0 {
 		log.Printf("[ttl-cleanup] 清理了 %d 个过期实例 (含 K8s 资源)", cleaned)
 	}
+}
+
+func (r *ProblemRepository) markChallengeInstanceDestroyed(userID, problemID string) error {
+	_, err := r.db.Exec(`
+		UPDATE challenge_instances
+		SET status = 'destroyed', access_url = NULL, node_port = NULL, destroyed_at = NOW(), expired_at = NULL
+		WHERE user_id = ? AND problem_id = ?
+	`, strings.TrimSpace(userID), strings.TrimSpace(problemID))
+	if err != nil {
+		return fmt.Errorf("更新实例销毁状态失败: %w", err)
+	}
+	return nil
 }
 
 func (r *ProblemRepository) resolveExpiredNames(inst *expiredInstance) (namespace, podName string) {
@@ -593,6 +931,21 @@ func (r *ProblemRepository) countRunningInstances(userID string) (int, error) {
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM challenge_instances WHERE user_id = ? AND status IN ('running', 'pending')`, strings.TrimSpace(userID)).Scan(&count)
 	if err != nil {
 		return 0, err
+	}
+	return count, nil
+}
+
+func (r *ProblemRepository) countActiveSharedLeases(problemID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM challenge_instances
+		WHERE problem_id = ?
+		  AND status IN ('running', 'pending')
+		  AND (expired_at IS NULL OR expired_at >= NOW())
+	`, strings.TrimSpace(problemID)).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("查询共享实例活跃租约失败: %w", err)
 	}
 	return count, nil
 }

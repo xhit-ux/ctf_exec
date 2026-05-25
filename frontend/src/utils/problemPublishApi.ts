@@ -152,7 +152,7 @@ export async function saveProblemContainer(problemID: string, payload: {
   cpu_limit: string
   memory_limit: string
   env?: unknown
-  ttl_seconds: number
+  ttl_seconds?: number
   ingress_host_tpl?: string | null
 }): Promise<void> {
   const response = await apiFetch(apiUrl(`/api/admin/problems/${problemID}/container`), {

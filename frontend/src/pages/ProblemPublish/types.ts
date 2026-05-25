@@ -41,6 +41,7 @@ export interface ProblemPublishState {
   description: string;
   tags: string[];
   status: 'draft' | 'ready' | 'hidden';
+  useKata: boolean;
 
   // Step 2 Flag 配置
   flagType: FlagType;
@@ -71,7 +72,6 @@ export interface ProblemPublishState {
 
   cpuLimit?: number; // millicores
   memoryLimit?: number; // MiB
-  ttlSeconds?: number;
 
   deployMode?: DeployMode;
   /** sidecar 可选：未启用时 sidecar_image / sidecar_port 一并置空。 */
@@ -92,6 +92,7 @@ export const initialProblemState: ProblemPublishState = {
   description: '',
   tags: [],
   status: 'draft',
+  useKata: true,
 
   flagType: 'static',
   flagRule: 'exact',
@@ -102,7 +103,6 @@ export const initialProblemState: ProblemPublishState = {
 
   cpuLimit: 500,
   memoryLimit: 512,
-  ttlSeconds: 3600,
   deployMode: 'per_user',
   accessType: 'ingress',
   uploadType: 'docker_save',

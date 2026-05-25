@@ -41,6 +41,37 @@ function formatRemaining(seconds?: number | null): string {
   return `${m}m ${s.toString().padStart(2, '0')}s`
 }
 
+const REMAINING_SECONDS_DRIFT_TOLERANCE = 120
+
+function remainingSecondsFromExpiredAt(expiredAt: string): number | null {
+  const expires = new Date(expiredAt.replace(' ', 'T'))
+  if (Number.isNaN(expires.getTime())) return null
+  const sec = Math.floor((expires.getTime() - Date.now()) / 1000)
+  return sec > 0 ? sec : null
+}
+
+function remainingSecondsFromInstance(
+  instance?: { remaining_seconds?: number | null; expired_at?: string | null } | null,
+): number | null {
+  if (!instance) return null
+
+  const fromExpired = instance.expired_at ? remainingSecondsFromExpiredAt(instance.expired_at) : null
+  const fromRemaining =
+    typeof instance.remaining_seconds === 'number' && instance.remaining_seconds > 0
+      ? instance.remaining_seconds
+      : null
+
+  if (fromExpired !== null && fromRemaining !== null) {
+    if (Math.abs(fromExpired - fromRemaining) > REMAINING_SECONDS_DRIFT_TOLERANCE) {
+      return fromExpired
+    }
+    return fromRemaining
+  }
+  if (fromExpired !== null) return fromExpired
+  if (fromRemaining !== null) return fromRemaining
+  return null
+}
+
 function PrerequisitesSection({ items }: { items: ProblemPrerequisiteRef[] }) {
   if (!items || items.length === 0) return null
   const allSolved = items.every((it) => it.is_solved)
@@ -154,10 +185,14 @@ export default function ProblemDetail() {
     endpoint: '',
     note: '',
   })
+  const [sharedDismissed, setSharedDismissed] = useState(false)
   const canEditProblem = user?.role === 'root' || user?.role === 'site_admin'
 	const [countdown, setCountdown] = useState<number | null>(null)
 	useEffect(() => { if (countdown !== null && countdown > 0) { const t = setInterval(() => setCountdown(p => (p && p > 0 ? p - 1 : 0)), 1000); return () => clearInterval(t) } }, [countdown !== null])
-	useEffect(() => { const s = problem?.instance?.remaining_seconds; if (s && s > 0) setCountdown(s) }, [problem?.instance?.remaining_seconds])
+	useEffect(() => {
+		const s = remainingSecondsFromInstance(problem?.instance ?? null)
+		if (s && s > 0) setCountdown(s)
+	}, [problem?.instance?.remaining_seconds, problem?.instance?.expires_at])
 
   useEffect(() => {
     if (!problemID) {
@@ -184,11 +219,16 @@ export default function ProblemDetail() {
 
   useEffect(() => {
     setInstanceState({ status: 'idle', endpoint: '', note: '' })
+    setSharedDismissed(false)
   }, [problemID])
 
   useEffect(() => {
     if (!problemID || !problem || problem.type === 'static') {
       setInstanceState({ status: 'idle', endpoint: '', note: '' })
+      return
+    }
+    if (problem.deploy_mode === 'shared' && sharedDismissed) {
+      setInstanceState({ status: 'idle', endpoint: '', note: '已退出共享实例视图，不会影响其他用户。' })
       return
     }
 
@@ -213,6 +253,8 @@ export default function ProblemDetail() {
         if (cancelled) return
         const serverStatus = String(resp.status || '').toLowerCase()
         const endpoint = resp.instance?.access_url || ''
+        const remaining = remainingSecondsFromInstance(resp.instance)
+        if (remaining && remaining > 0) setCountdown(remaining)
         if (serverStatus === 'running') {
           setInstanceState({
             status: 'running',
@@ -235,7 +277,7 @@ export default function ProblemDetail() {
     return () => {
       cancelled = true
     }
-  }, [problemID, problem])
+  }, [problemID, problem, sharedDismissed])
 
   useEffect(() => {
     if (!problemID) return
@@ -285,6 +327,7 @@ export default function ProblemDetail() {
   if (!problem) return <div className="p-10 text-center">题目加载中或未找到...</div>
 
   const isContainerProblem = problem.type !== 'static'
+  const isSharedDeployment = isContainerProblem && problem.deploy_mode === 'shared'
   const isLocked = Boolean(problem.is_locked)
 
   const submit = async () => {
@@ -332,12 +375,15 @@ export default function ProblemDetail() {
   const startRealInstance = async () => {
     if (!isContainerProblem || instanceState.status === 'starting' || instanceState.status === 'stopping')
       return
+    setSharedDismissed(false)
     setInstanceState({ status: 'starting', endpoint: '', note: '' })
 
     try {
       const resp = await startProblemInstance(problem.id)
       const endpoint = resp.instance?.access_url || ''
       const status = String(resp.status || '').toLowerCase()
+      const remaining = remainingSecondsFromInstance(resp.instance)
+      if (remaining && remaining > 0) setCountdown(remaining)
 
       if (status === 'running') {
         setInstanceState({
@@ -361,6 +407,17 @@ export default function ProblemDetail() {
   const destroyRealInstance = async () => {
     if (!isContainerProblem || instanceState.status === 'stopping' || instanceState.status === 'starting')
       return
+    if (isSharedDeployment) {
+      setInstanceState((prev) => ({ ...prev, status: 'stopping', note: '正在退出共享实例视图...' }))
+      try {
+        await destroyProblemInstance(problem.id)
+      } catch {
+        // 共享模式下无租约时后端可能返回 404，这里按本地退出处理。
+      }
+      setSharedDismissed(true)
+      setInstanceState({ status: 'idle', endpoint: '', note: '已退出共享实例视图，不会影响共享容器。' })
+      return
+    }
     setInstanceState((prev) => ({ ...prev, status: 'stopping', note: '正在销毁实例...' }))
     try {
       await destroyProblemInstance(problem.id)
@@ -622,7 +679,7 @@ export default function ProblemDetail() {
                   }
                   className="w-full bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-800 disabled:opacity-60"
                 >
-                  {instanceState.status === 'stopping' ? '销毁中...' : '销毁实例'}
+                  {instanceState.status === 'stopping' ? '销毁中...' : isSharedDeployment ? '退出共享视图' : '销毁实例'}
                 </button>
               </div>
             </div>

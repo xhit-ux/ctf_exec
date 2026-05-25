@@ -14,6 +14,7 @@ export type ChallengeInstance = {
   started_at?: string
   expired_at?: string
   destroyed_at?: string
+  remaining_seconds?: number | null
 }
 
 type InstanceResponse = {

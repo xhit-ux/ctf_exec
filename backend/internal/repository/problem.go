@@ -17,7 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	_ "sort" // unused; in split files
+	_ "sort"    // unused; in split files
 	_ "strconv" // unused; in split files
 	"strings"
 	"time"
@@ -331,7 +331,8 @@ func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, 
 
 	// 容器实例 + connection_info（仅容器题）。
 	if userID != "" && (p.Type == "container_web" || p.Type == "container_tcp") {
-		inst, instErr := r.GetChallengeInstance(p.ID, userID); if instErr == nil && inst == nil && p.DeployMode == "shared" { inst = r.sharedCacheGet(p.ID); instErr = nil }; if instErr == nil && inst != nil {
+		inst, instErr := r.GetChallengeInstanceForUser(p.ID, userID)
+		if instErr == nil && inst != nil {
 			p.Instance = &models.InstanceView{
 				Status:    inst.Status,
 				AccessURL: inst.AccessURL,
@@ -663,10 +664,7 @@ func (r *ProblemRepository) upsertContainerTx(tx *sql.Tx, problemID string, req 
 	if memory == "" {
 		memory = "512Mi"
 	}
-	ttl := req.TTLSeconds
-	if ttl <= 0 {
-		ttl = 3600
-	}
+	ttl := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 	var sidecarImage interface{}
 	if req.SidecarImage != nil {
 		v := strings.TrimSpace(*req.SidecarImage)
@@ -838,6 +836,7 @@ func (r *ProblemRepository) getProblemContainer(problemID string) (*models.Probl
 	if env.Valid {
 		container.Env = json.RawMessage(env.String)
 	}
+	container.TTLSeconds = resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 	if ingress.Valid {
 		v := ingress.String
 		container.IngressHostTpl = &v
@@ -955,11 +954,18 @@ func (r *ProblemRepository) ReplaceProblemAttachment(problemID, fileName, bucket
 	return item, nil
 }
 
+const mysqlDateTimeLayout = "2006-01-02 15:04:05"
+
+// parseMySQLDateTime 解析 MySQL DATE_FORMAT 输出的本地时间字符串。
+func parseMySQLDateTime(value string) (time.Time, error) {
+	return time.ParseInLocation(mysqlDateTimeLayout, strings.TrimSpace(value), time.Local)
+}
+
 func calcRemaining(expiredAt *string) *int {
 	if expiredAt == nil {
 		return nil
 	}
-	t, err := time.Parse("2006-01-02 15:04:05", *expiredAt)
+	t, err := parseMySQLDateTime(*expiredAt)
 	if err != nil {
 		return nil
 	}
@@ -1002,7 +1008,7 @@ func (r *ProblemRepository) CreateProblemDraft(req *models.CreateProblemDraftReq
 		// 草稿默认 platform_score=1（满足 chk_platform_score >= 1），等待 Step1 覆盖。
 		_, err := r.db.Exec(`
 			INSERT INTO problems (id, title, category, type, description, platform_score, difficulty, deploy_mode, use_kata, status, created_by, source_problem_id)
-			VALUES (?, '', ?, ?, NULL, 1, 'easy', 'shared', 0, 'draft', ?, NULL)
+			VALUES (?, '', ?, ?, NULL, 1, 'easy', 'shared', 1, 'draft', ?, NULL)
 		`, id, cleanCategory, cleanType, nullIfEmpty(createdBy))
 		if err != nil {
 			return "", fmt.Errorf("创建草稿失败: %w", err)
@@ -1155,6 +1161,15 @@ func (r *ProblemRepository) UpdateProblemBasic(problemID string, req *models.Upd
 }
 
 func (r *ProblemRepository) UpsertProblemFlag(problemID string, req *models.SaveProblemFlagRequest) error {
+	if req != nil && strings.EqualFold(strings.TrimSpace(req.FlagType), "dynamic") {
+		deployMode, modeErr := r.getProblemDeployMode(problemID)
+		if modeErr != nil {
+			return modeErr
+		}
+		if deployMode == "shared" {
+			return apperr.New(apperr.ErrBadRequest, "shared 部署模式不支持 dynamic flag，请改为 per_user")
+		}
+	}
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("开启事务失败: %w", err)
@@ -1237,6 +1252,9 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 	if detail.Flag.FlagType == "dynamic" &&
 		(detail.Flag.FlagRule == utils.FlagRuleRegex || detail.Flag.FlagRule == utils.FlagRuleContains) {
 		return apperr.New(apperr.ErrBadRequest, "dynamic flag 不支持 regex/contains 规则")
+	}
+	if detail.Flag.FlagType == "dynamic" && strings.EqualFold(strings.TrimSpace(detail.DeployMode), "shared") {
+		return apperr.New(apperr.ErrBadRequest, "shared 部署模式不支持 dynamic flag，请改为 per_user")
 	}
 	if detail.Type == "container_web" || detail.Type == "container_tcp" {
 		if detail.Container == nil {
@@ -1468,14 +1486,6 @@ func (r *ProblemRepository) GetLatestImageBuildTask(problemID string) (*models.I
 
 	return task, nil
 }
-
-
-
-
-
-
-
-
 
 func (r *ProblemRepository) RunImageBuildPipeline(task *models.ImageBuildTask, uploadType string) {
 	if task == nil {
@@ -2029,7 +2039,8 @@ func (r *ProblemRepository) chooseHostPortInRange(minPort, maxPort int) (int, er
 		pool = append(pool, p)
 	}
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	usedPorts := r.activeNodePorts(); rnd.Shuffle(len(pool), func(i, j int) {
+	usedPorts := r.activeNodePorts()
+	rnd.Shuffle(len(pool), func(i, j int) {
 		pool[i], pool[j] = pool[j], pool[i]
 	})
 	for _, candidate := range pool {
@@ -2071,7 +2082,7 @@ func (r *ProblemRepository) verifyImageInRegistry(imageRepo, imageTag string) er
 	}
 
 	manifestPath := fmt.Sprintf("/v2/%s/manifests/%s", strings.Trim(repo, "/"), tag)
-		hasAuth := r.cfg.Registry.Username != "" && r.cfg.Registry.Password != ""
+	hasAuth := r.cfg.Registry.Username != "" && r.cfg.Registry.Password != ""
 	urls := []string{
 		"http://" + strings.Trim(host, "/") + manifestPath,
 		"https://" + strings.Trim(host, "/") + manifestPath,
@@ -2086,9 +2097,9 @@ func (r *ProblemRepository) verifyImageInRegistry(imageRepo, imageTag string) er
 			continue
 		}
 		req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
-			if hasAuth {
-				req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
-			}
+		if hasAuth {
+			req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -2132,19 +2143,3 @@ func (r *ProblemRepository) parseRegistryHostAndRepo(imageRepo string) (string, 
 	}
 	return host, repo, nil
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

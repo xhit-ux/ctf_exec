@@ -215,13 +215,45 @@ func convertEnv(raw json.RawMessage) []corev1.EnvVar {
 	return envVars
 }
 
-func buildChallengePodManifest(namespace, podName string, spec *problemContainerRuntimeSpec, cfg *config.Config) (string, error) {
+func mergeEnvPairs(base [][2]string, appended []corev1.EnvVar) [][2]string {
+	if len(base) == 0 && len(appended) == 0 {
+		return nil
+	}
+	merged := make([][2]string, 0, len(base)+len(appended))
+	index := make(map[string]int, len(base)+len(appended))
+	for _, pair := range base {
+		key := strings.TrimSpace(pair[0])
+		if key == "" {
+			continue
+		}
+		index[key] = len(merged)
+		merged = append(merged, [2]string{key, pair[1]})
+	}
+	for _, env := range appended {
+		key := strings.TrimSpace(env.Name)
+		if key == "" {
+			continue
+		}
+		if i, ok := index[key]; ok {
+			merged[i][1] = env.Value
+			continue
+		}
+		index[key] = len(merged)
+		merged = append(merged, [2]string{key, env.Value})
+	}
+	sort.SliceStable(merged, func(i, j int) bool {
+		return merged[i][0] < merged[j][0]
+	})
+	return merged
+}
+
+func buildChallengePodManifest(namespace, podName string, spec *problemContainerRuntimeSpec, cfg *config.Config, extraEnv []corev1.EnvVar) (string, error) {
 	if spec == nil {
 		return "", fmt.Errorf("容器配置为空")
 	}
 	imageRef := strings.TrimSpace(spec.ImageName) + ":" + strings.TrimSpace(spec.ImageTag)
 
-	envItems := parseContainerEnv(spec.Env)
+	envItems := mergeEnvPairs(parseContainerEnv(spec.Env), extraEnv)
 	envSection := ""
 	if len(envItems) > 0 {
 		b := strings.Builder{}

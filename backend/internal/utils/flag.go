@@ -2,14 +2,14 @@ package utils
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -123,25 +123,27 @@ func PrepareStaticFlagHash(rule, plain string) (string, error) {
 }
 
 func GenerateDynamicFlag(template string) string {
-	if template == "" {
-		template = "flag{%s}"
-	}
-	randomPart := generateFlagRandom(16)
-	return fmt.Sprintf(template, randomPart)
+	tmpl := normalizeDynamicFlagTemplate(template)
+	return fmt.Sprintf(tmpl, generateUUID32())
 }
 
-func generateFlagRandom(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			b[i] = charset[i%len(charset)]
-			continue
-		}
-		b[i] = charset[n.Int64()]
+func generateUUID32() string {
+	// 标准 UUID 去掉连字符后是 32 位十六进制字符串。
+	return strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+func normalizeDynamicFlagTemplate(template string) string {
+	tmpl := strings.TrimSpace(template)
+	if tmpl == "" {
+		return "flag{%s}"
 	}
-	return string(b)
+	if strings.Contains(tmpl, "%s") {
+		return tmpl
+	}
+	if strings.HasSuffix(tmpl, "}") && strings.Contains(tmpl, "{") {
+		return strings.TrimSuffix(tmpl, "}") + "%s}"
+	}
+	return tmpl + "%s"
 }
 
 func compileFlagRegex(pattern string) (*regexp.Regexp, error) {

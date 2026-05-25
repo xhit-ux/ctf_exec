@@ -90,7 +90,7 @@ export default function Step1BasicInfo() {
         platform_score: score,
         difficulty: toDifficulty(state.difficulty),
         deploy_mode: state.deployMode || 'per_user',
-        use_kata: false,
+        use_kata: state.useKata,
         tags: state.tags,
       });
 

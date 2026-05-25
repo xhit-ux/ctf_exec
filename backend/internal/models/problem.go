@@ -124,18 +124,19 @@ type SubmissionsSummary struct {
 
 // ChallengeInstance 实例 DB 行（challenge_instances 表）。
 type ChallengeInstance struct {
-	ID          string  `json:"id"`
-	UserID      string  `json:"user_id"`
-	ProblemID   string  `json:"problem_id"`
-	PodName     *string `json:"pod_name,omitempty"`
-	Namespace   *string `json:"namespace,omitempty"`
-	AccessURL   *string `json:"access_url,omitempty"`
-	NodePort    *int    `json:"node_port,omitempty"`
-	Status      string  `json:"status"`
-	FlagValue   *string `json:"-"`
-	StartedAt   *string `json:"started_at,omitempty"`
-	ExpiredAt   *string `json:"expired_at,omitempty"`
-	DestroyedAt *string `json:"destroyed_at,omitempty"`
+	ID               string  `json:"id"`
+	UserID           string  `json:"user_id"`
+	ProblemID        string  `json:"problem_id"`
+	PodName          *string `json:"pod_name,omitempty"`
+	Namespace        *string `json:"namespace,omitempty"`
+	AccessURL        *string `json:"access_url,omitempty"`
+	NodePort         *int    `json:"node_port,omitempty"`
+	Status           string  `json:"status"`
+	FlagValue        *string `json:"-"`
+	StartedAt        *string `json:"started_at,omitempty"`
+	ExpiredAt        *string `json:"expired_at,omitempty"`
+	DestroyedAt      *string `json:"destroyed_at,omitempty"`
+	RemainingSeconds *int    `json:"remaining_seconds,omitempty"`
 }
 
 // ImageBuildTask 镜像构建任务 DB 行。

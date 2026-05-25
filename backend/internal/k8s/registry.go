@@ -20,7 +20,7 @@ const (
 	registryStorageClass = "local-path"
 	registryImage        = "registry:2"
 	registryPort         = 5000
-	registryReadyTimeout = 60 * time.Second
+	registryReadyTimeout = 120 * time.Second
 )
 
 // RegistryInfo holds runtime configuration of the deployed registry.

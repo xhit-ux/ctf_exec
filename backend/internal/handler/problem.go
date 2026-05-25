@@ -508,7 +508,7 @@ func (h *ProblemHandler) GetProblemInstanceGin(c *gin.Context) {
 		return
 	}
 
-	instance, err := h.repo.GetChallengeInstance(problemID, claims.UserID)
+	instance, err := h.repo.GetChallengeInstanceForUser(problemID, claims.UserID)
 	if err != nil {
 		writeError(c, err, http.StatusInternalServerError)
 		return

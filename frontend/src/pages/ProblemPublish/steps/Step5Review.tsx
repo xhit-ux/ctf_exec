@@ -92,9 +92,22 @@ export default function Step6Review() {
   // Guard Checks
   const isBasicInfoValid = !!state.title && !!state.description && !!state.category;
   const isFlagValid = state.flagType === 'dynamic' || !!state.flagValue;
-  const isImageValid = !state.useContainer || state.imageTaskStatus === 'uploaded' || state.imageTaskStatus === 'success';
+  const hasSucceededOrUploadedTask = state.imageTaskStatus === 'uploaded' || state.imageTaskStatus === 'success';
+  const hasFailedTask = state.imageTaskStatus === 'failed';
+  const hasKnownTask = Boolean(state.imageTaskId || state.imageTaskStatus);
+  const hasContainerImage = state.imageLocked
+    ? true
+    : hasFailedTask
+      ? false
+      : hasSucceededOrUploadedTask
+        ? true
+        : hasKnownTask
+          ? false
+          : !!(state.registryImage && state.registryImage.trim());
+  const isImageValid = !state.useContainer || hasContainerImage;
+  const isFlagDeployComboValid = !(state.flagType === 'dynamic' && state.deployMode === 'shared');
 
-  const canPublish = isBasicInfoValid && isFlagValid && isImageValid;
+  const canPublish = isBasicInfoValid && isFlagValid && isImageValid && isFlagDeployComboValid;
 
   useEffect(() => {
     return () => {
@@ -243,6 +256,10 @@ export default function Step6Review() {
             <span className={isFlagValid ? 'text-gray-700' : 'text-red-600 font-bold'}>Flag 配置有效</span>
           </li>
           <li className="flex items-center text-sm">
+            {isFlagDeployComboValid ? <IconCheck className="w-4 h-4 text-green-600 mr-3" /> : <IconClose className="w-4 h-4 text-red-600 mr-3" />}
+            <span className={isFlagDeployComboValid ? 'text-gray-700' : 'text-red-600 font-bold'}>dynamic flag 与 deploy_mode 组合合法</span>
+          </li>
+          <li className="flex items-center text-sm">
             <IconCheck className="w-4 h-4 text-green-600 mr-3" />
             <span className="text-gray-700">附件：{state.attachment ? state.attachment.filename : '未上传（可选）'}</span>
           </li>
@@ -273,6 +290,7 @@ export default function Step6Review() {
           {state.useContainer && (
             <>
               <div className="col-span-2"><span className="text-gray-500 mr-2">镜像：</span> <span className="font-mono text-xs bg-white p-1 rounded border border-amber-100">{state.registryImage || '未就绪'}</span></div>
+              <div><span className="text-gray-500 mr-2">部署模式：</span> <span className="text-gray-800">{state.deployMode || 'per_user'}</span></div>
               <div><span className="text-gray-500 mr-2">网络：</span> <span className="text-gray-800">{state.accessType}（内部端口 {state.internalPort}，外部范围 {state.hostPortMin}-{state.hostPortMax}）</span></div>
             </>
           )}

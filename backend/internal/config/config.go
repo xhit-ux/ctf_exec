@@ -381,12 +381,12 @@ func LoadConfig() (*Config, error) {
 		}
 		cfg.LoginGuard = *loginGuardConfig
 
-			registryConfig, err := loadRegistryConfig()
-			if err != nil {
-				loadConfigErr = fmt.Errorf("加载仓库配置失败: %w", err)
-				return
-			}
-			cfg.Registry = *registryConfig
+		registryConfig, err := loadRegistryConfig()
+		if err != nil {
+			loadConfigErr = fmt.Errorf("加载仓库配置失败: %w", err)
+			return
+		}
+		cfg.Registry = *registryConfig
 
 		loadedConfig = cfg
 	})
@@ -653,7 +653,7 @@ func loadContainerConfig() (*ContainerConfig, error) {
 		DefaultContainerTTL:     getEnvInt("DEFAULT_CONTAINER_TTL", 3600),
 		NamespacePrefix:         getEnv("NAMESPACE_PREFIX", "ctf"),
 		KataRuntimeClass:        getEnv("KATA_RUNTIME_CLASS", "kata"),
-			InfraNodeName: getEnv("INFRA_NODE_NAME", ""),
+		InfraNodeName:           getEnv("INFRA_NODE_NAME", ""),
 	}, nil
 }
 
@@ -676,8 +676,18 @@ func loadRegistryConfig() (*RegistryConfig, error) {
 }
 
 func loadFlagConfig() (*FlagConfig, error) {
+	template := strings.TrimSpace(getEnv("FLAG_TEMPLATE", "flag{%s}"))
+	if template == "" {
+		template = "flag{%s}"
+	} else if !strings.Contains(template, "%s") {
+		if strings.HasSuffix(template, "}") && strings.Contains(template, "{") {
+			template = strings.TrimSuffix(template, "}") + "%s}"
+		} else {
+			template = template + "%s"
+		}
+	}
 	return &FlagConfig{
-		Template: getEnv("FLAG_TEMPLATE", "flag{%s}"),
+		Template: template,
 	}, nil
 }
 

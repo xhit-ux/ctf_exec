@@ -23,6 +23,21 @@ function parseDifficulty(value?: string): 'Easy' | 'Medium' | 'Hard' | 'Expert' 
   }
 }
 
+function parseCategory(value?: string): 'Web' | 'Pwn' | 'Crypto' | 'Reverse' | 'Misc' {
+  switch ((value || '').toLowerCase()) {
+    case 'web':
+      return 'Web'
+    case 'pwn':
+      return 'Pwn'
+    case 'crypto':
+      return 'Crypto'
+    case 'reverse':
+      return 'Reverse'
+    default:
+      return 'Misc'
+  }
+}
+
 function parseNumber(value?: string | number | null): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value
@@ -165,9 +180,10 @@ function ProblemPublishBootstrap() {
           imageLocked: Boolean(detail.container?.image_name || detail.container?.image_tag || detail.build_task),
           title: detail.title ?? '',
           author: detail.author ?? '',
-          category: detail.category as any,
+          category: parseCategory(detail.category),
           difficulty: parseDifficulty(detail.difficulty),
           platformScore: detail.platform_score ?? 0,
+          useKata: detail.use_kata ?? true,
           description: detail.description ?? '',
           tags: detail.tags ?? [],
           status: detail.status === 'hidden' ? 'hidden' : 'ready',
@@ -201,7 +217,6 @@ function ProblemPublishBootstrap() {
           sidecarPort: detail.container?.sidecar_port ?? 0,
           cpuLimit: parseNumber(detail.container?.cpu_limit) ?? 500,
           memoryLimit: parseNumber(detail.container?.memory_limit) ?? 512,
-          ttlSeconds: detail.container?.ttl_seconds ?? 0,
           ingressHostTpl: detail.container?.ingress_host_tpl ?? '',
           useContainer: detail.type !== 'static',
           enableSidecar: Boolean(detail.container?.sidecar_image || detail.container?.sidecar_port),

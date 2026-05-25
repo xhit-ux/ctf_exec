@@ -1,11 +1,181 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useProblemPublish } from '../ProblemPublishContext';
 import { IconUpload } from '../icons';
-import { saveProblemContainer, uploadProblemImage } from '../../../utils/problemPublishApi';
+import { saveProblemBasic, saveProblemContainer, uploadProblemImage } from '../../../utils/problemPublishApi';
 
-export default function Step5ContainerEnv() {
+type ConfigPanel = 'image' | 'network' | 'resources' | 'deploy' | 'sidecar';
+
+const CONFIG_PANELS: Array<{ id: ConfigPanel; label: string }> = [
+  { id: 'image', label: '镜像构建' },
+  { id: 'network', label: '网络入口' },
+  { id: 'resources', label: '资源配额' },
+  { id: 'deploy', label: '部署策略' },
+  { id: 'sidecar', label: 'Sidecar' },
+];
+
+export default function Step4ContainerEnv() {
   const { state, updateState, nextStep, prevStep, setSubmitting } = useProblemPublish();
   const [uploading, setUploading] = useState(false);
+  const [savingDeployMode, setSavingDeployMode] = useState(false);
+  const [activePanel, setActivePanel] = useState<ConfigPanel>('image');
+
+  const toProblemType = (): 'static' | 'container_web' | 'container_tcp' => {
+    if (!state.useContainer) return 'static';
+    if (state.category === 'Web') return 'container_web';
+    return 'container_tcp';
+  };
+
+  const toDifficulty = (): 'easy' | 'medium' | 'hard' | 'expert' => {
+    const raw = String(state.difficulty || '').toLowerCase();
+    if (raw === 'easy' || raw === 'medium' || raw === 'hard') {
+      return raw;
+    }
+    return 'expert';
+  };
+
+  const persistDeployMode = async (deployMode: 'shared' | 'per_user'): Promise<boolean> => {
+    if (!state.problemId || !state.category || !state.title.trim()) {
+      return true;
+    }
+    setSavingDeployMode(true);
+    try {
+      await saveProblemBasic(state.problemId, {
+        title: state.title.trim(),
+        author: state.author?.trim() || undefined,
+        category: state.category,
+        type: toProblemType(),
+        description: state.description,
+        platform_score: Number(state.platformScore) || 0,
+        difficulty: toDifficulty(),
+        deploy_mode: deployMode,
+        use_kata: state.useKata,
+        tags: state.tags,
+      });
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '保存部署模式失败';
+      window.alert(msg);
+      return false;
+    } finally {
+      setSavingDeployMode(false);
+    }
+  };
+
+  const parseImageRef = (value: string): { repo: string; tag: string } => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return { repo: '', tag: '' };
+    }
+    const lastColon = trimmed.lastIndexOf(':');
+    const lastSlash = trimmed.lastIndexOf('/');
+    const hasExplicitTag = lastColon > lastSlash;
+    if (hasExplicitTag && lastColon > 0 && lastColon < trimmed.length - 1) {
+      return {
+        repo: trimmed.slice(0, lastColon),
+        tag: trimmed.slice(lastColon + 1),
+      };
+    }
+    return { repo: trimmed, tag: dateTag() };
+  };
+
+  const persistContainerConfig = async (options?: { fallbackRepo?: string }): Promise<boolean> => {
+    if (!state.problemId || !state.useContainer) {
+      return true;
+    }
+    const imageRef = String(state.registryImage || '').trim();
+    const parsed = parseImageRef(imageRef);
+    const repoToUse = parsed.repo || String(options?.fallbackRepo || '').trim();
+    if (!repoToUse) {
+      window.alert('请先填写镜像仓库地址（可在上传后自动回填）');
+      setActivePanel('image');
+      return false;
+    }
+    if (!state.internalPort || state.internalPort <= 0) {
+      window.alert('请填写合法的内部端口');
+      setActivePanel('network');
+      return false;
+    }
+    const sidecarImage = String(state.sidecarImage || '').trim();
+    const sidecarPort = Number(state.sidecarPort || 0);
+    if (state.enableSidecar && (!sidecarImage || sidecarPort <= 0)) {
+      window.alert('启用 sidecar 后，必须同时填写 sidecar 镜像和端口');
+      setActivePanel('sidecar');
+      return false;
+    }
+
+    setSubmitting(true);
+    try {
+      await saveProblemContainer(state.problemId, {
+        image_name: repoToUse,
+        image_tag: parsed.tag || dateTag(),
+        challenge_port: state.internalPort,
+        sidecar_image: state.enableSidecar ? sidecarImage || null : null,
+        sidecar_port: state.enableSidecar ? (sidecarPort > 0 ? sidecarPort : null) : null,
+        cpu_limit: `${state.cpuLimit || 500}m`,
+        memory_limit: `${state.memoryLimit || 512}Mi`,
+        env: {},
+        ttl_seconds: 0,
+        ingress_host_tpl:
+          (state.accessType || 'ingress') === 'ingress'
+            ? (state.ingressHostTpl || '{id}.chal.local')
+            : null,
+      });
+      return true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '保存容器配置失败';
+      window.alert(msg);
+      return false;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const isDynamicFlag = state.flagType === 'dynamic';
+
+  useEffect(() => {
+    if (isDynamicFlag && state.deployMode === 'shared') {
+      updateState({ deployMode: 'per_user' });
+    }
+  }, [isDynamicFlag, state.deployMode, updateState]);
+
+  const handleDeployModeSelect = (deployMode: 'shared' | 'per_user') => {
+    const previousMode = state.deployMode || 'per_user';
+    if (isDynamicFlag && deployMode === 'shared') {
+      window.alert('dynamic flag 仅支持 per_user 部署模式');
+      return;
+    }
+    if (previousMode === deployMode || savingDeployMode) {
+      return;
+    }
+    updateState({ deployMode });
+    void persistDeployMode(deployMode).then((ok) => {
+      if (!ok) {
+        updateState({ deployMode: previousMode });
+      }
+    });
+  };
+
+  const handleNext = async () => {
+    if (savingDeployMode || uploading) {
+      return;
+    }
+    const deployMode = state.deployMode || 'per_user';
+    if (isDynamicFlag && deployMode === 'shared') {
+      window.alert('dynamic flag 不支持 shared 部署，请切换为 per_user');
+      return;
+    }
+    const ok = await persistDeployMode(deployMode);
+    if (!ok) {
+      return;
+    }
+    if (state.useContainer) {
+      const saved = await persistContainerConfig();
+      if (!saved) {
+        return;
+      }
+    }
+    nextStep();
+  };
 
   const dateTag = (): string => {
     return new Date().toISOString().slice(0, 10);
@@ -14,6 +184,10 @@ export default function Step5ContainerEnv() {
   const handleUploadFile = async (file: File) => {
     if (!state.problemId) {
       window.alert('请先完成基础信息并保存草稿');
+      return;
+    }
+    if (!state.useContainer) {
+      window.alert('当前已关闭容器模式，请先启用容器后再上传镜像');
       return;
     }
     if (state.imageLocked) {
@@ -29,24 +203,16 @@ export default function Step5ContainerEnv() {
       return;
     }
 
-    const repo = state.registryImage?.split(':')[0] || `ctf-exec/${state.problemId}`;
+    const parsedImageRef = parseImageRef(String(state.registryImage || ''));
+    const repo = parsedImageRef.repo || `ctf-exec/${state.problemId}`;
 
     setSubmitting(true);
     setUploading(true);
     try {
-      await saveProblemContainer(state.problemId, {
-        image_name: repo,
-        image_tag: dateTag(),
-        challenge_port: state.internalPort,
-        sidecar_image: state.enableSidecar ? (state.sidecarImage || null) : null,
-        sidecar_port: state.enableSidecar ? (state.sidecarPort || null) : null,
-        cpu_limit: `${state.cpuLimit || 500}m`,
-        memory_limit: `${state.memoryLimit || 512}Mi`,
-        env: {},
-        ttl_seconds: state.ttlSeconds || 3600,
-        ingress_host_tpl: (state.accessType || 'ingress') === 'ingress' ? (state.ingressHostTpl || '{id}.chal.local') : undefined,
-      });
-
+      const beforeUploadSaved = await persistContainerConfig({ fallbackRepo: repo });
+      if (!beforeUploadSaved) {
+        return;
+      }
       const task = await uploadProblemImage(state.problemId, {
         file,
         imageRepo: repo,
@@ -56,7 +222,12 @@ export default function Step5ContainerEnv() {
         hostPortMax: state.hostPortMax,
       });
 
-      const imageRef = task.image_repo && task.image_tag ? `${task.image_repo}:${task.image_tag}` : state.registryImage;
+      const imageRef =
+        task.image_repo && task.image_tag
+          ? `${task.image_repo}:${task.image_tag}`
+          : (state.registryImage && state.registryImage.trim())
+            ? state.registryImage
+            : `${repo}:${dateTag()}`;
       updateState({
         imageTaskId: task.id,
         imageTaskStatus: 'uploaded',
@@ -73,6 +244,27 @@ export default function Step5ContainerEnv() {
       setSubmitting(false);
     }
   };
+
+  const hasReadyImage = useMemo(() => {
+    if (!state.useContainer) {
+      return true;
+    }
+    if (state.imageLocked) {
+      return true;
+    }
+    const hasFailedTask = state.imageTaskStatus === 'failed';
+    if (hasFailedTask) {
+      return false;
+    }
+    if (state.imageTaskStatus === 'uploaded' || state.imageTaskStatus === 'success') {
+      return true;
+    }
+    const hasKnownTask = Boolean(state.imageTaskId || state.imageTaskStatus);
+    if (hasKnownTask) {
+      return false;
+    }
+    return Boolean(String(state.registryImage || '').trim());
+  }, [state.imageLocked, state.imageTaskId, state.imageTaskStatus, state.registryImage, state.useContainer]);
 
   return (
     <div className="glass-card p-4 md:p-5 space-y-4 animate-fade-in">
@@ -117,6 +309,27 @@ export default function Step5ContainerEnv() {
 
       {state.useContainer && (
       <>
+      <div className="rounded-lg border border-gray-200 bg-white p-3">
+        <p className="text-xs text-gray-500 mb-2">配置导航（点击切换模块）</p>
+        <div className="flex flex-wrap gap-2">
+          {CONFIG_PANELS.map((panel) => (
+            <button
+              key={panel.id}
+              type="button"
+              onClick={() => setActivePanel(panel.id)}
+              className={`px-3 py-1.5 text-xs rounded-md border transition ${
+                activePanel === panel.id
+                  ? 'bg-amber-50 text-amber-800 border-amber-300'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {panel.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activePanel === 'image' && (
       <div className="p-3.5 border border-gray-200 rounded-lg hover:border-amber-300 transition bg-gray-50">
         <h3 className="font-bold text-gray-900 mb-2">1. 镜像上传</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
@@ -210,7 +423,9 @@ export default function Step5ContainerEnv() {
           </div>
         )}
       </div>
+      )}
 
+      {activePanel === 'network' && (
       <div className="p-4 border border-gray-200 rounded-lg">
          <h3 className="font-bold text-gray-900 mb-3">2. 网络配置</h3>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -226,8 +441,23 @@ export default function Step5ContainerEnv() {
               </select>
             </div>
          </div>
+         {(state.accessType || 'ingress') === 'ingress' && (
+           <div className="mt-4">
+             <label className="block text-sm font-medium text-gray-700">Ingress Host 模板</label>
+             <input
+               type="text"
+               value={state.ingressHostTpl || ''}
+               onChange={(e) => updateState({ ingressHostTpl: e.target.value })}
+               className="field-input mt-1"
+               placeholder="{id}.chal.local"
+             />
+             <p className="text-xs text-gray-500 mt-1">可用占位符由后端模板渲染逻辑决定，留空时使用默认模板。</p>
+           </div>
+         )}
       </div>
+      )}
 
+      {activePanel === 'resources' && (
       <div className="p-4 border border-gray-200 rounded-lg">
          <h3 className="font-bold text-gray-900 mb-3">3. 资源配额</h3>
          <div className="space-y-4">
@@ -245,23 +475,35 @@ export default function Step5ContainerEnv() {
              </label>
              <input type="range" min="128" max="2048" step="128" value={state.memoryLimit || 512} onChange={e => updateState({memoryLimit: Number(e.target.value)})} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2" />
            </div>
+           <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+             <p className="text-xs text-amber-800">
+               实例 TTL 统一由服务端环境变量 <span className="font-mono">DEFAULT_CONTAINER_TTL</span> 控制（留空默认 3600 秒），题目级不再可配置。
+             </p>
+           </div>
          </div>
       </div>
+      )}
 
+      {activePanel === 'deploy' && (
       <div className="p-4 border border-gray-200 rounded-lg">
          <h3 className="font-bold text-gray-900 mb-3">4. 部署与安全</h3>
+         {isDynamicFlag && (
+           <p className="mb-3 text-xs text-amber-700">当前 Flag 类型为 dynamic，部署模式已强制为 per_user。</p>
+         )}
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-           <label className={`cursor-pointer flex flex-col p-4 rounded-lg border-2 ${state.deployMode === 'shared' ? 'border-amber-500 bg-amber-50' : 'border-gray-200'}`} onClick={() => updateState({ deployMode: 'shared' })}>
+          <label className={`cursor-pointer flex flex-col p-4 rounded-lg border-2 ${state.deployMode === 'shared' ? 'border-amber-500 bg-amber-50' : 'border-gray-200'} ${savingDeployMode || isDynamicFlag ? 'opacity-60' : ''}`} onClick={() => handleDeployModeSelect('shared')}>
              <span className="font-bold text-gray-900">shared（共享容器）</span>
              <span className="text-sm text-gray-500 mt-1">适合无状态 Web 场景，成本更低。</span>
            </label>
-           <label className={`cursor-pointer flex flex-col p-4 rounded-lg border-2 ${state.deployMode === 'per_user' ? 'border-amber-500 bg-amber-50' : 'border-gray-200'}`} onClick={() => updateState({ deployMode: 'per_user' })}>
+          <label className={`cursor-pointer flex flex-col p-4 rounded-lg border-2 ${state.deployMode === 'per_user' ? 'border-amber-500 bg-amber-50' : 'border-gray-200'} ${savingDeployMode ? 'opacity-60' : ''}`} onClick={() => handleDeployModeSelect('per_user')}>
              <span className="font-bold text-gray-900">per_user（独立容器）</span>
              <span className="text-sm text-gray-500 mt-1">每位选手独立实例，推荐 Pwn 与动态 Flag。</span>
            </label>
          </div>
       </div>
+      )}
 
+      {activePanel === 'sidecar' && (
       <div className="p-4 border border-gray-200 rounded-lg">
          <div className="flex items-center justify-between mb-3">
            <div>
@@ -303,6 +545,7 @@ export default function Step5ContainerEnv() {
            </div>
          )}
       </div>
+      )}
       </>
       )}
 
@@ -314,8 +557,8 @@ export default function Step5ContainerEnv() {
           上一步
         </button>
         <button
-          onClick={nextStep}
-          disabled={state.useContainer && !state.imageTaskId}
+          onClick={() => { void handleNext(); }}
+          disabled={!hasReadyImage || savingDeployMode || uploading}
           className="btn-primary !py-2 !px-4 text-sm disabled:opacity-50"
         >
           {uploading ? '处理中...' : '下一步：发布检查'}

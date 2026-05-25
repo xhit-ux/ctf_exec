@@ -64,7 +64,10 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 CREATE TABLE users (
     id                    CHAR(36)      NOT NULL,
-    username              VARCHAR(32)   NOT NULL,
+    username VARCHAR(32)
+      CHARACTER SET utf8mb4
+      COLLATE utf8mb4_bin -- 强区分大小写，兼容 MySQL / MariaDB
+      NOT NULL,
     email                 VARCHAR(254)  NULL,
     password_hash         VARCHAR(255)  NOT NULL,
 
@@ -254,7 +257,7 @@ CREATE TABLE problems (
 
     difficulty         VARCHAR(16)   NOT NULL,
     deploy_mode        VARCHAR(16)   NOT NULL DEFAULT 'shared',
-    use_kata           TINYINT(1)    NOT NULL DEFAULT 0,
+    use_kata           TINYINT(1)    NOT NULL DEFAULT 1,
 
     status             VARCHAR(16)   NOT NULL DEFAULT 'draft',
     created_by         CHAR(36)      NULL,
