@@ -74,6 +74,28 @@ func (c *Client) EnsureNamespace(ctx context.Context, name string) error {
 	return nil
 }
 
+func (c *Client) DeleteNamespaceIfEmpty(ctx context.Context, name string) error {
+	pods, err := c.clientset.CoreV1().Pods(name).List(ctx, metav1.ListOptions{Limit: 1})
+	if err != nil {
+		return err
+	}
+	if len(pods.Items) > 0 {
+		return nil
+	}
+	svcs, err := c.clientset.CoreV1().Services(name).List(ctx, metav1.ListOptions{Limit: 1})
+	if err != nil {
+		return err
+	}
+	if len(svcs.Items) > 0 {
+		return nil
+	}
+	err = c.clientset.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
 // --- Node ---
 
 func (c *Client) ListNodeNames(ctx context.Context) ([]string, error) {

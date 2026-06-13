@@ -317,6 +317,12 @@ func (r *ProblemRepository) GetChallengeInstanceForUser(problemID, userID string
 	if modeErr != nil || deployMode != "shared" {
 		return nil, modeErr
 	}
+	unlock, locked := r.lockSharedInstance(problemID)
+	if !locked {
+		return nil, apperr.New(apperr.ErrConflict, "共享实例操作进行中，请稍后重试")
+	}
+	defer unlock()
+
 	globalTTL := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 	if cached := r.sharedCacheGet(problemID); cached != nil {
 		cached.UserID = strings.TrimSpace(userID)
@@ -381,6 +387,26 @@ func (r *ProblemRepository) touchSharedLease(userID, problemID string, instance 
 	return nil
 }
 
+const (
+	maxRetries       = 3
+	backoffBase      = 500 * time.Millisecond
+	sharedLockTTL    = 30 * time.Second
+	sharedLockKeyFmt = "ctf:lock:shared:instance:%s"
+)
+
+func (r *ProblemRepository) lockSharedInstance(problemID string) (func(), bool) {
+	if r.redis == nil {
+		return func() {}, true
+	}
+	key := fmt.Sprintf(sharedLockKeyFmt, strings.TrimSpace(problemID))
+	ok, err := r.redis.SetNX(context.Background(), key, "1", sharedLockTTL).Result()
+	if err != nil || !ok {
+		return func() {}, false
+	}
+	unlock := func() { r.redis.Del(context.Background(), key) }
+	return unlock, true
+}
+
 func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemID, userID string) (*models.ChallengeInstance, error) {
 	cleanProblemID := strings.TrimSpace(problemID)
 	cleanUserID := strings.TrimSpace(userID)
@@ -398,6 +424,12 @@ func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemI
 	globalTTL := resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
 
 	if isShared {
+		unlock, locked := r.lockSharedInstance(cleanProblemID)
+		if !locked {
+			return nil, apperr.New(apperr.ErrConflict, "共享实例操作进行中，请稍后重试")
+		}
+		defer unlock()
+
 		if cached := r.sharedCacheGet(cleanProblemID); cached != nil {
 			cached.UserID = cleanUserID
 			_ = r.touchSharedLease(cleanUserID, cleanProblemID, cached)
@@ -472,28 +504,42 @@ func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemI
 		return nil, err
 	}
 
-	if err := ensureChallengeNamespace(cfg, namespace); err != nil {
+	if r.k8s == nil {
+		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
+		return nil, fmt.Errorf("K8s client 未初始化")
+	}
+
+	if err := r.k8s.EnsureNamespace(ctx, namespace); err != nil {
 		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
 		return nil, fmt.Errorf("创建命名空间失败: %w", err)
 	}
 
-	podManifest, _ := buildChallengePodManifest(namespace, podName, spec, cfg, flagEnvVars)
-	if podOut, err := applyManifest(cfg, podManifest); err != nil {
+	pod, podErr := buildChallengePod(namespace, podName, spec, cfg, flagEnvVars)
+	if podErr != nil {
 		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, fmt.Errorf("创建 Pod 失败: %s — %w", strings.TrimSpace(podOut), err)
+		return nil, fmt.Errorf("构建 Pod 定义失败: %w", podErr)
+	}
+	if _, err := r.k8s.CreatePod(ctx, namespace, pod); err != nil {
+		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
+		return nil, fmt.Errorf("创建 Pod 失败: %w", err)
 	}
 
-	if svcOut, err := applyManifest(cfg, buildChallengeServiceManifest(namespace, serviceName, podName, spec)); err != nil {
+	svc := buildChallengeService(namespace, serviceName, podName, spec)
+	if _, err := r.k8s.CreateService(ctx, namespace, svc); err != nil {
+		_ = r.k8s.DeletePod(ctx, namespace, podName)
 		_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-		return nil, fmt.Errorf("创建 Service 失败: %s — %w", strings.TrimSpace(svcOut), err)
+		return nil, fmt.Errorf("创建 Service 失败: %w", err)
 	}
 
 	accessURL := ""
 	var nodePort *int
 	if spec.ProblemType == "container_web" {
-		if ingOut, err := applyManifest(cfg, buildChallengeIngressManifest(namespace, ingressName, serviceName, host, cfg.Ingress.Class, cfg.Ingress.TLSEnabled, cfg.Ingress.TLSSecret)); err != nil {
+		ing := buildChallengeIngress(namespace, ingressName, serviceName, host, cfg.Ingress.Class, cfg.Ingress.TLSEnabled, cfg.Ingress.TLSSecret)
+		if _, err := r.k8s.CreateIngress(ctx, namespace, ing); err != nil {
+			_ = r.k8s.DeleteService(ctx, namespace, serviceName)
+			_ = r.k8s.DeletePod(ctx, namespace, podName)
 			_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-			return nil, fmt.Errorf("创建 Ingress 失败: %s — %w", strings.TrimSpace(ingOut), err)
+			return nil, fmt.Errorf("创建 Ingress 失败: %w", err)
 		}
 		scheme := "http"
 		if cfg.Ingress.TLSEnabled {
@@ -505,14 +551,16 @@ func (r *ProblemRepository) StartChallengeInstance(ctx context.Context, problemI
 			accessURL = fmt.Sprintf("http://%s.%s.svc.cluster.local", serviceName, namespace)
 		}
 	} else {
-		value, fetchErr := getServiceNodePort(cfg, namespace, serviceName)
-		if fetchErr != nil {
+		np, npErr := r.k8s.GetServiceNodePort(ctx, namespace, serviceName)
+		if npErr != nil {
+			_ = r.k8s.DeleteService(ctx, namespace, serviceName)
+			_ = r.k8s.DeletePod(ctx, namespace, podName)
 			_ = r.markChallengeInstanceFailed(cleanUserID, cleanProblemID)
-			return nil, fmt.Errorf("读取 Service NodePort 失败: %w", fetchErr)
+			return nil, fmt.Errorf("读取 Service NodePort 失败: %w", npErr)
 		}
-		nodePort = &value
+		nodePort = &np
 		nodeHost := r.resolveNodeHost()
-		accessURL = fmt.Sprintf("%s:%d", nodeHost, value)
+		accessURL = fmt.Sprintf("%s:%d", nodeHost, np)
 	}
 
 	if err := r.markChallengeInstanceRunning(cleanUserID, cleanProblemID, accessURL, nodePort); err != nil {
@@ -603,23 +651,11 @@ func (r *ProblemRepository) resolveInstanceNames(instance *models.ChallengeInsta
 }
 
 func (r *ProblemRepository) destroyK8sResources(namespace, podName, serviceName, ingressName, userID, problemID string) error {
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		return fmt.Errorf("加载配置失败: %w", cfgErr)
-	}
-
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "ingress", ingressName); err != nil {
-		_ = r.markChallengeInstanceFailed(userID, problemID)
-		return fmt.Errorf("删除 Ingress (%s/%s) 失败: %w", namespace, ingressName, err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "service", serviceName); err != nil {
-		_ = r.markChallengeInstanceFailed(userID, problemID)
-		return fmt.Errorf("删除 Service (%s/%s) 失败: %w", namespace, serviceName, err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "pod", podName); err != nil {
-		_ = r.markChallengeInstanceFailed(userID, problemID)
-		return fmt.Errorf("删除 Pod (%s/%s) 失败: %w", namespace, podName, err)
-	}
+	ctx := context.Background()
+	_ = retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) })
+	_ = retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) })
+	_ = retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) })
+	_ = r.cleanupNamespaceIfEmpty(ctx, namespace)
 
 	_, err := r.db.Exec(`
 		UPDATE challenge_instances
@@ -633,21 +669,17 @@ func (r *ProblemRepository) destroyK8sResources(namespace, podName, serviceName,
 }
 
 func (r *ProblemRepository) destroySharedK8sResources(namespace, podName, problemID string) error {
-	cfg, cfgErr := config.LoadConfig()
-	if cfgErr != nil {
-		return fmt.Errorf("加载配置失败: %w", cfgErr)
-	}
+	r.sharedCacheDel(problemID)
+
+	ctx := context.Background()
 	serviceName := podName + "-svc"
 	ingressName := podName + "-ing"
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "ingress", ingressName); err != nil {
-		return fmt.Errorf("删除共享 Ingress (%s/%s) 失败: %w", namespace, ingressName, err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "service", serviceName); err != nil {
-		return fmt.Errorf("删除共享 Service (%s/%s) 失败: %w", namespace, serviceName, err)
-	}
-	if err := deleteResourceIgnoreNotFound(cfg, namespace, "pod", podName); err != nil {
-		return fmt.Errorf("删除共享 Pod (%s/%s) 失败: %w", namespace, podName, err)
-	}
+
+	_ = retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) })
+	_ = retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) })
+	_ = retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) })
+	_ = r.cleanupNamespaceIfEmpty(ctx, namespace)
+
 	if _, err := r.db.Exec(`
 		UPDATE challenge_instances
 		SET status = 'destroyed', access_url = NULL, node_port = NULL, destroyed_at = NOW(), expired_at = NULL
@@ -655,7 +687,6 @@ func (r *ProblemRepository) destroySharedK8sResources(namespace, podName, proble
 	`, strings.TrimSpace(problemID)); err != nil {
 		return fmt.Errorf("更新共享实例销毁状态失败: %w", err)
 	}
-	r.sharedCacheDel(problemID)
 	return nil
 }
 
@@ -858,7 +889,12 @@ func (r *ProblemRepository) cleanupExpiredInstances() {
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(inst.DeployMode), "shared") {
+			unlock, locked := r.lockSharedInstance(inst.ProblemID)
+			if !locked {
+				continue
+			}
 			if err := r.markChallengeInstanceDestroyed(inst.UserID, inst.ProblemID); err != nil {
+				unlock()
 				log.Printf("[ttl-cleanup] 标记共享实例过期失败: %s/%s err=%v", inst.UserID, inst.ProblemID, err)
 				continue
 			}
@@ -870,18 +906,22 @@ func (r *ProblemRepository) cleanupExpiredInstances() {
 				  AND status IN ('running', 'pending')
 				  AND (expired_at IS NULL OR expired_at >= NOW())
 			`, strings.TrimSpace(inst.ProblemID)).Scan(&activeCount); countErr != nil {
+				unlock()
 				log.Printf("[ttl-cleanup] 查询共享实例活跃数失败: %s err=%v", inst.ProblemID, countErr)
 				continue
 			}
 			if activeCount > 0 {
+				unlock()
 				cleaned++
 				continue
 			}
 			ns, pod := r.resolveExpiredNames(&inst)
 			if err := r.destroySharedK8sResources(ns, pod, inst.ProblemID); err != nil {
+				unlock()
 				log.Printf("[ttl-cleanup] 销毁共享实例资源失败: %s err=%v", inst.ProblemID, err)
 				continue
 			}
+			unlock()
 			cleaned++
 			continue
 		}
@@ -948,4 +988,41 @@ func (r *ProblemRepository) countActiveSharedLeases(problemID string) (int, erro
 		return 0, fmt.Errorf("查询共享实例活跃租约失败: %w", err)
 	}
 	return count, nil
+}
+
+func retryBackoff(attempt int) time.Duration {
+	d := backoffBase
+	for i := 1; i < attempt; i++ {
+		d *= 2
+	}
+	if d > 10*time.Second {
+		d = 10 * time.Second
+	}
+	return d
+}
+
+func retryDelete(op func() error) error {
+	var lastErr error
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			time.Sleep(retryBackoff(i))
+		}
+		lastErr = op()
+		if lastErr == nil {
+			return nil
+		}
+	}
+	return lastErr
+}
+
+func (r *ProblemRepository) cleanupNamespaceIfEmpty(ctx context.Context, namespace string) error {
+	if r.k8s == nil {
+		return nil
+	}
+	// 跳过 shared 命名空间和系统命名空间
+	if namespace == "ctf-shared" {
+		return nil
+	}
+	_ = r.k8s.DeleteNamespaceIfEmpty(ctx, namespace)
+	return nil
 }

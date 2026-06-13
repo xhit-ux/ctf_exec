@@ -368,6 +368,9 @@ func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, 
 
 func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	cleanID := strings.TrimSpace(problemID)
+
+	r.cleanupProblemK8sResources(cleanID)
+
 	result, err := r.db.Exec(`DELETE FROM problems WHERE id = ?`, cleanID)
 	if err != nil {
 		return fmt.Errorf("删除题目失败: %w", err)
@@ -380,12 +383,48 @@ func (r *ProblemRepository) DeleteProblem(problemID string) error {
 		return apperr.New(apperr.ErrNotFound, "题目不存在")
 	}
 
-	// best-effort 清理题目镜像上传暂存目录（发布失败回滚场景）
 	uploadDir := filepath.Join("..", "static", "images", "problems", cleanID)
 	if rmErr := os.RemoveAll(uploadDir); rmErr != nil {
 		return fmt.Errorf("删除题目成功但清理镜像暂存失败: %w", rmErr)
 	}
 	return nil
+}
+
+func (r *ProblemRepository) cleanupProblemK8sResources(problemID string) {
+	rows, err := r.db.Query(`
+		SELECT user_id, problem_id, namespace, pod_name
+		FROM challenge_instances
+		WHERE problem_id = ? AND status IN ('running', 'pending')
+	`, strings.TrimSpace(problemID))
+	if err != nil {
+		log.Printf("[delete-problem] 查询运行实例失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	type cleanupTarget struct {
+		userID, problemID string
+		namespace, pod    sql.NullString
+	}
+	for rows.Next() {
+		var t cleanupTarget
+		if scanErr := rows.Scan(&t.userID, &t.problemID, &t.namespace, &t.pod); scanErr != nil {
+			continue
+		}
+		ns := buildChallengeNamespace(r.cfg.Container.NamespacePrefix, t.userID)
+		podName := buildChallengePodName(t.problemID, t.userID)
+		if t.namespace.Valid && strings.TrimSpace(t.namespace.String) != "" {
+			ns = strings.TrimSpace(t.namespace.String)
+		}
+		if t.pod.Valid && strings.TrimSpace(t.pod.String) != "" {
+			podName = strings.TrimSpace(t.pod.String)
+		}
+		svcName := podName + "-svc"
+		ingName := podName + "-ing"
+		if err := r.destroyK8sResources(ns, podName, svcName, ingName, t.userID, t.problemID); err != nil {
+			log.Printf("[delete-problem] 清理 K8s 资源失败: problem=%s user=%s err=%v", t.problemID, t.userID, err)
+		}
+	}
 }
 
 func (r *ProblemRepository) GetProblemAccessMeta(problemID string) (scope string, contestID, createdBy string, err error) {
@@ -836,7 +875,9 @@ func (r *ProblemRepository) getProblemContainer(problemID string) (*models.Probl
 	if env.Valid {
 		container.Env = json.RawMessage(env.String)
 	}
-	container.TTLSeconds = resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
+	if container.TTLSeconds <= 0 {
+		container.TTLSeconds = resolveGlobalContainerTTL(r.cfg.Container.DefaultContainerTTL)
+	}
 	if ingress.Valid {
 		v := ingress.String
 		container.IngressHostTpl = &v

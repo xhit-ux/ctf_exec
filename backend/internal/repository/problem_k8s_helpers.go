@@ -5,79 +5,167 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/ctf_exec/backend/internal/config"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
-func kubectlArgs(cfg *config.Config, args ...string) []string {
-	result := make([]string, 0, len(args)+2)
-	if cfg != nil && strings.TrimSpace(cfg.Container.KubeconfigPath) != "" {
-		result = append(result, "--kubeconfig", strings.TrimSpace(cfg.Container.KubeconfigPath))
+func buildChallengePod(namespace, podName string, spec *problemContainerRuntimeSpec, cfg *config.Config, extraEnv []corev1.EnvVar) (*corev1.Pod, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("容器配置为空")
 	}
-	result = append(result, args...)
-	return result
+	imageRef := strings.TrimSpace(spec.ImageName) + ":" + strings.TrimSpace(spec.ImageTag)
+
+	envVars := convertEnv(spec.Env)
+	envVars = mergeEnvVars(envVars, extraEnv)
+
+	container := corev1.Container{
+		Name:            "challenge",
+		Image:           imageRef,
+		ImagePullPolicy: corev1.PullAlways,
+		Ports: []corev1.ContainerPort{
+			{ContainerPort: int32(spec.ChallengePort), Protocol: corev1.ProtocolTCP},
+		},
+		SecurityContext: &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+			ReadOnlyRootFilesystem:   ptr.To(true),
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: "tmp", MountPath: "/tmp"},
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(spec.ChallengePort)},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+			FailureThreshold:    3,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromInt(spec.ChallengePort)},
+			},
+			InitialDelaySeconds: 30,
+			PeriodSeconds:       20,
+			FailureThreshold:    3,
+		},
+	}
+	if len(envVars) > 0 {
+		container.Env = envVars
+	}
+	if strings.TrimSpace(spec.CPULimit) != "" || strings.TrimSpace(spec.MemoryLimit) != "" {
+		container.Resources = corev1.ResourceRequirements{Limits: corev1.ResourceList{}}
+		if strings.TrimSpace(spec.CPULimit) != "" {
+			container.Resources.Limits[corev1.ResourceCPU] = resource.MustParse(spec.CPULimit)
+		}
+		if strings.TrimSpace(spec.MemoryLimit) != "" {
+			container.Resources.Limits[corev1.ResourceMemory] = resource.MustParse(spec.MemoryLimit)
+		}
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespace,
+			Labels:    map[string]string{"app": podName},
+		},
+		Spec: corev1.PodSpec{
+			RestartPolicy: corev1.RestartPolicyNever,
+			Containers:    []corev1.Container{container},
+			SecurityContext: &corev1.PodSecurityContext{
+				RunAsNonRoot: ptr.To(true),
+				SeccompProfile: &corev1.SeccompProfile{
+					Type: corev1.SeccompProfileTypeRuntimeDefault,
+				},
+			},
+			Volumes: []corev1.Volume{
+				{Name: "tmp", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+			},
+		},
+	}
+	if spec.UseKata && cfg != nil && strings.TrimSpace(cfg.Container.KataRuntimeClass) != "" {
+		pod.Spec.RuntimeClassName = ptr.To(strings.TrimSpace(cfg.Container.KataRuntimeClass))
+	}
+	return pod, nil
 }
 
-func runKubectl(cfg *config.Config, args ...string) (string, error) {
-	return runCommand("kubectl", kubectlArgs(cfg, args...)...)
+func buildChallengeService(namespace, serviceName, podName string, spec *problemContainerRuntimeSpec) *corev1.Service {
+	svcType := corev1.ServiceTypeClusterIP
+	svcPort := int32(80)
+	targetPort := intstr.FromInt(spec.ChallengePort)
+	if spec != nil && spec.ProblemType == "container_tcp" {
+		svcType = corev1.ServiceTypeNodePort
+		svcPort = int32(spec.ChallengePort)
+	}
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName,
+			Namespace: namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Type:     svcType,
+			Selector: map[string]string{"app": podName},
+			Ports: []corev1.ServicePort{
+				{
+					Port:       svcPort,
+					TargetPort: targetPort,
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+		},
+	}
 }
 
-func ensureChallengeNamespace(cfg *config.Config, namespace string) error {
-	ns := strings.TrimSpace(namespace)
-	if ns == "" {
-		return fmt.Errorf("namespace 不能为空")
+func buildChallengeIngress(namespace, ingressName, serviceName, host, ingressClass string, tlsEnabled bool, tlsSecret string) *networkingv1.Ingress {
+	pathType := networkingv1.PathTypePrefix
+	ing := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ingressName,
+			Namespace: namespace,
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: host,
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: &pathType,
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: serviceName,
+											Port: networkingv1.ServiceBackendPort{Number: 80},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
-	if _, err := runKubectl(cfg, "get", "namespace", ns); err == nil {
-		return nil
+	if ingressClass != "" {
+		ing.Spec.IngressClassName = ptr.To(ingressClass)
 	}
-	if output, err := runKubectl(cfg, "create", "namespace", ns); err != nil {
-		return fmt.Errorf("%s", sanitizeCommandOutput(output, err))
+	if tlsEnabled && host != "" {
+		ing.Spec.TLS = []networkingv1.IngressTLS{
+			{
+				Hosts:      []string{host},
+				SecretName: tlsSecret,
+			},
+		}
 	}
-	return nil
-}
-
-func applyManifest(cfg *config.Config, manifest string) (string, error) {
-	tmpFile, err := os.CreateTemp("", "ctf-k8s-*.yaml")
-	if err != nil {
-		return "", err
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath)
-
-	if _, err := tmpFile.WriteString(manifest); err != nil {
-		_ = tmpFile.Close()
-		return "", err
-	}
-	if err := tmpFile.Close(); err != nil {
-		return "", err
-	}
-
-	return runKubectl(cfg, "apply", "-f", tmpPath)
-}
-
-func deleteResourceIgnoreNotFound(cfg *config.Config, namespace, kind, name string) error {
-	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(kind) == "" || strings.TrimSpace(name) == "" {
-		return nil
-	}
-	if output, err := runKubectl(cfg, "delete", kind, name, "-n", namespace, "--ignore-not-found=true"); err != nil {
-		return fmt.Errorf("%s", sanitizeCommandOutput(output, err))
-	}
-	return nil
-}
-
-func getServiceNodePort(cfg *config.Config, namespace, serviceName string) (int, error) {
-	output, err := runKubectl(cfg, "get", "service", serviceName, "-n", namespace, "-o", "jsonpath={.spec.ports[0].nodePort}")
-	if err != nil {
-		return 0, fmt.Errorf("%s", sanitizeCommandOutput(output, err))
-	}
-	port, parseErr := strconv.Atoi(strings.TrimSpace(output))
-	if parseErr != nil || port <= 0 {
-		return 0, fmt.Errorf("无效的 nodePort: %s", strings.TrimSpace(output))
-	}
-	return port, nil
+	return ing
 }
 
 func renderIngressHost(problemTpl, defaultTpl, instanceID, problemID, userID, podName string) string {
@@ -215,6 +303,47 @@ func convertEnv(raw json.RawMessage) []corev1.EnvVar {
 	return envVars
 }
 
+func mergeEnvVars(base []corev1.EnvVar, appended []corev1.EnvVar) []corev1.EnvVar {
+	if len(base) == 0 && len(appended) == 0 {
+		return nil
+	}
+	index := make(map[string]int, len(base)+len(appended))
+	merged := make([]corev1.EnvVar, 0, len(base)+len(appended))
+	for _, env := range base {
+		key := strings.TrimSpace(env.Name)
+		if key == "" {
+			continue
+		}
+		index[key] = len(merged)
+		merged = append(merged, env)
+	}
+	for _, env := range appended {
+		key := strings.TrimSpace(env.Name)
+		if key == "" {
+			continue
+		}
+		if i, ok := index[key]; ok {
+			merged[i] = env
+			continue
+		}
+		index[key] = len(merged)
+		merged = append(merged, env)
+	}
+	return merged
+}
+
+func (r *ProblemRepository) resolveNodeHost() string {
+	host := strings.TrimSpace(r.cfg.Container.InfraNodeName)
+	if host != "" {
+		return host
+	}
+	name, err := os.Hostname()
+	if err == nil && strings.TrimSpace(name) != "" {
+		return strings.TrimSpace(name)
+	}
+	return "127.0.0.1"
+}
+
 func mergeEnvPairs(base [][2]string, appended []corev1.EnvVar) [][2]string {
 	if len(base) == 0 && len(appended) == 0 {
 		return nil
@@ -245,139 +374,4 @@ func mergeEnvPairs(base [][2]string, appended []corev1.EnvVar) [][2]string {
 		return merged[i][0] < merged[j][0]
 	})
 	return merged
-}
-
-func buildChallengePodManifest(namespace, podName string, spec *problemContainerRuntimeSpec, cfg *config.Config, extraEnv []corev1.EnvVar) (string, error) {
-	if spec == nil {
-		return "", fmt.Errorf("容器配置为空")
-	}
-	imageRef := strings.TrimSpace(spec.ImageName) + ":" + strings.TrimSpace(spec.ImageTag)
-
-	envItems := mergeEnvPairs(parseContainerEnv(spec.Env), extraEnv)
-	envSection := ""
-	if len(envItems) > 0 {
-		b := strings.Builder{}
-		b.WriteString("      env:\n")
-		for _, pair := range envItems {
-			b.WriteString(fmt.Sprintf("        - name: %s\n", pair[0]))
-			b.WriteString(fmt.Sprintf("          value: %q\n", pair[1]))
-		}
-		envSection = b.String()
-	}
-
-	resourceSection := ""
-	if strings.TrimSpace(spec.CPULimit) != "" || strings.TrimSpace(spec.MemoryLimit) != "" {
-		b := strings.Builder{}
-		b.WriteString("      resources:\n")
-		b.WriteString("        limits:\n")
-		if strings.TrimSpace(spec.CPULimit) != "" {
-			b.WriteString(fmt.Sprintf("          cpu: %q\n", strings.TrimSpace(spec.CPULimit)))
-		}
-		if strings.TrimSpace(spec.MemoryLimit) != "" {
-			b.WriteString(fmt.Sprintf("          memory: %q\n", strings.TrimSpace(spec.MemoryLimit)))
-		}
-		resourceSection = b.String()
-	}
-
-	runtimeClassSection := ""
-	if spec.UseKata && cfg != nil && strings.TrimSpace(cfg.Container.KataRuntimeClass) != "" {
-		runtimeClassSection = fmt.Sprintf("  runtimeClassName: %s\n", strings.TrimSpace(cfg.Container.KataRuntimeClass))
-	}
-
-	manifest := fmt.Sprintf(`apiVersion: v1
-kind: Pod
-metadata:
-  name: %s
-  namespace: %s
-  labels:
-    app: %s
-spec:
-%s  restartPolicy: Never
-  containers:
-    - name: challenge
-      image: %s
-      imagePullPolicy: Always
-      ports:
-        - containerPort: %d
-%s%s`, podName, namespace, podName, runtimeClassSection, imageRef, spec.ChallengePort, envSection, resourceSection)
-
-	return manifest, nil
-}
-
-func buildChallengeServiceManifest(namespace, serviceName, podName string, spec *problemContainerRuntimeSpec) string {
-	serviceType := "ClusterIP"
-	servicePort := spec.ChallengePort
-	if spec != nil && spec.ProblemType == "container_tcp" {
-		serviceType = "NodePort"
-	} else {
-		servicePort = 80
-	}
-
-	return fmt.Sprintf(`apiVersion: v1
-kind: Service
-metadata:
-  name: %s
-  namespace: %s
-spec:
-  type: %s
-  selector:
-    app: %s
-  ports:
-    - protocol: TCP
-      port: %d
-      targetPort: %d
-`, serviceName, namespace, serviceType, podName, servicePort, spec.ChallengePort)
-}
-
-func buildChallengeIngressManifest(namespace, ingressName, serviceName, host, ingressClass string, tlsEnabled bool, tlsSecret string) string {
-	hostBlock := ""
-	if strings.TrimSpace(host) != "" {
-		hostBlock = fmt.Sprintf("    - host: %s\n", strings.TrimSpace(host))
-	} else {
-		hostBlock = "    -\n"
-	}
-
-	ingressClassSection := ""
-	if strings.TrimSpace(ingressClass) != "" {
-		ingressClassSection = fmt.Sprintf("  ingressClassName: %s\n", strings.TrimSpace(ingressClass))
-	}
-
-	tlsSection := ""
-	if tlsEnabled && strings.TrimSpace(host) != "" {
-		tlsSection = "  tls:\n"
-		tlsSection += fmt.Sprintf("    - hosts:\n        - %s\n", strings.TrimSpace(host))
-		if strings.TrimSpace(tlsSecret) != "" {
-			tlsSection += fmt.Sprintf("      secretName: %s\n", strings.TrimSpace(tlsSecret))
-		}
-	}
-
-	return fmt.Sprintf(`apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: %s
-  namespace: %s
-spec:
-%s%s  rules:
-%s      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: %s
-                port:
-                  number: 80
-`, ingressName, namespace, ingressClassSection, tlsSection, hostBlock, serviceName)
-}
-
-func (r *ProblemRepository) resolveNodeHost() string {
-	host := strings.TrimSpace(r.cfg.Container.InfraNodeName)
-	if host != "" {
-		return host
-	}
-	name, err := os.Hostname()
-	if err == nil && strings.TrimSpace(name) != "" {
-		return strings.TrimSpace(name)
-	}
-	return "127.0.0.1"
 }
