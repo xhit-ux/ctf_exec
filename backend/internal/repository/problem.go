@@ -25,6 +25,7 @@ import (
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
+	"github.com/ctf_exec/backend/internal/logger"
 	k8s "github.com/ctf_exec/backend/internal/k8s"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -374,6 +375,7 @@ func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, 
 
 func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	cleanID := strings.TrimSpace(problemID)
+	logger.Info("开始删除题目", "problem_id", cleanID)
 
 	r.cleanupProblemK8sResources(cleanID)
 	r.cleanupRegistryImages(cleanID)
@@ -383,6 +385,7 @@ func (r *ProblemRepository) DeleteProblem(problemID string) error {
 
 	result, err := r.db.Exec(`DELETE FROM problems WHERE id = ?`, cleanID)
 	if err != nil {
+		logger.Error("删除题目失败", "problem_id", cleanID, "err", err)
 		return fmt.Errorf("删除题目失败: %w", err)
 	}
 	rows, err := result.RowsAffected()
@@ -392,6 +395,7 @@ func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	if rows == 0 {
 		return apperr.New(apperr.ErrNotFound, "题目不存在")
 	}
+	logger.Info("题目已删除", "problem_id", cleanID)
 	return nil
 }
 
@@ -401,7 +405,7 @@ func (r *ProblemRepository) cleanupRegistryImages(problemID string) {
 		WHERE problem_id = ? AND status = 'success' AND image_repo IS NOT NULL
 	`, strings.TrimSpace(problemID))
 	if err != nil {
-		log.Printf("[delete-problem] 查询镜像构建记录失败: %v", err)
+		logger.Warn("查询镜像构建记录失败", "problem_id", problemID, "err", err)
 		return
 	}
 	defer rows.Close()
@@ -434,7 +438,7 @@ func (r *ProblemRepository) cleanupRegistryImages(problemID string) {
 
 		imageRef := fmt.Sprintf("%s/%s:%s", strings.Trim(r.cfg.Registry.Host, "/"), imageRepo, imageTag)
 		if output, err := runCommand("docker", "rmi", imageRef); err != nil {
-			log.Printf("[delete-problem] 本地镜像清理失败(非致命): %s — %s", imageRef, strings.TrimSpace(sanitizeCommandOutput(output, err)))
+			logger.Warn("本地镜像清理失败(非致命)", "image", imageRef, "err", strings.TrimSpace(sanitizeCommandOutput(output, err)))
 		}
 	}
 }
@@ -453,7 +457,7 @@ func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo
 
 	req, err := http.NewRequest("HEAD", url, nil)
 	if err != nil {
-		log.Printf("[delete-problem] 创建 registry 请求失败: repo=%s tag=%s err=%v", repo, tag, err)
+		logger.Warn("创建 registry 请求失败", "repo", repo, "tag", tag, "err", err)
 		return
 	}
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
@@ -463,14 +467,14 @@ func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		log.Printf("[delete-problem] 获取镜像 digest 失败: repo=%s tag=%s err=%v", repo, tag, err)
+		logger.Warn("获取镜像 digest 失败", "repo", repo, "tag", tag, "err", err)
 		return
 	}
 	resp.Body.Close()
 
 	digest := resp.Header.Get("Docker-Content-Digest")
 	if digest == "" {
-		log.Printf("[delete-problem] 未找到镜像 digest: repo=%s tag=%s status=%d", repo, tag, resp.StatusCode)
+		logger.Warn("未找到镜像 digest", "repo", repo, "tag", tag, "http_status", resp.StatusCode)
 		return
 	}
 
@@ -482,15 +486,15 @@ func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo
 
 	delResp, delErr := httpClient.Do(delReq)
 	if delErr != nil {
-		log.Printf("[delete-problem] 删除镜像失败: repo=%s tag=%s digest=%s err=%v", repo, tag, digest, delErr)
+		logger.Warn("删除 registry 镜像失败", "repo", repo, "tag", tag, "digest", digest, "err", delErr)
 		return
 	}
 	delResp.Body.Close()
 
 	if delResp.StatusCode == http.StatusAccepted || delResp.StatusCode == http.StatusOK {
-		log.Printf("[delete-problem] 已删除 registry 镜像: %s:%s digest=%s", repo, tag, digest)
+		logger.Info("已删除 registry 镜像", "repo", repo, "tag", tag, "digest", digest)
 	} else {
-		log.Printf("[delete-problem] 删除镜像返回异常: repo=%s tag=%s digest=%s status=%d", repo, tag, digest, delResp.StatusCode)
+		logger.Warn("删除镜像返回异常状态", "repo", repo, "tag", tag, "digest", digest, "http_status", delResp.StatusCode)
 	}
 }
 
@@ -499,7 +503,7 @@ func (r *ProblemRepository) cleanupAttachments(problemID string) {
 		SELECT bucket_name, object_key FROM attachments WHERE problem_id = ?
 	`, strings.TrimSpace(problemID))
 	if err != nil {
-		log.Printf("[delete-problem] 查询附件失败: %v", err)
+		logger.Warn("查询附件失败", "problem_id", problemID, "err", err)
 		return
 	}
 	defer rows.Close()
@@ -524,11 +528,11 @@ func (r *ProblemRepository) cleanupAttachments(problemID string) {
 		if cleanBucket != "" && cleanBucket != "static" && r.minioClient != nil {
 			category, objName := splitMinioObjectKey(cleanKey)
 			if rmErr := r.minioClient.Remove(context.Background(), category, objName); rmErr != nil {
-				log.Printf("[delete-problem] MinIO 附件删除失败: key=%s err=%v", cleanKey, rmErr)
+				logger.Warn("MinIO 附件删除失败", "key", cleanKey, "err", rmErr)
 			}
 		} else {
 			if rmErr := os.Remove(cleanKey); rmErr != nil && !os.IsNotExist(rmErr) {
-				log.Printf("[delete-problem] 静态附件删除失败: %s err=%v", cleanKey, rmErr)
+				logger.Warn("静态附件删除失败", "path", cleanKey, "err", rmErr)
 			}
 		}
 	}
@@ -545,7 +549,7 @@ func splitMinioObjectKey(key string) (string, string) {
 func (r *ProblemRepository) cleanupUploadedFiles(problemID string) {
 	uploadDir := filepath.Join("..", "static", "images", "problems", strings.TrimSpace(problemID))
 	if rmErr := os.RemoveAll(uploadDir); rmErr != nil {
-		log.Printf("[delete-problem] 清理上传目录失败: %s err=%v", uploadDir, rmErr)
+		logger.Warn("清理上传目录失败", "path", uploadDir, "err", rmErr)
 	}
 }
 
@@ -573,7 +577,7 @@ func (r *ProblemRepository) cleanupProblemK8sResources(problemID string) {
 		WHERE problem_id = ? AND status IN ('running', 'pending')
 	`, strings.TrimSpace(problemID))
 	if err != nil {
-		log.Printf("[delete-problem] 查询运行实例失败: %v", err)
+		logger.Warn("查询运行实例失败", "problem_id", problemID, "err", err)
 		return
 	}
 	defer rows.Close()
@@ -598,7 +602,7 @@ func (r *ProblemRepository) cleanupProblemK8sResources(problemID string) {
 		svcName := podName + "-svc"
 		ingName := podName + "-ing"
 		if err := r.destroyK8sResources(ns, podName, svcName, ingName, t.userID, t.problemID); err != nil {
-			log.Printf("[delete-problem] 清理 K8s 资源失败: problem=%s user=%s err=%v", t.problemID, t.userID, err)
+			logger.Warn("清理 K8s 资源失败", "problem_id", t.problemID, "user_id", t.userID, "err", err)
 		}
 	}
 }
@@ -1527,6 +1531,25 @@ func (r *ProblemRepository) PublishProblem(problemID string) error {
 	if err != nil {
 		return fmt.Errorf("发布题目失败: %w", err)
 	}
+	return nil
+}
+
+func (r *ProblemRepository) SetProblemStatus(problemID, status string) error {
+	cleanID := strings.TrimSpace(problemID)
+	cleanStatus := strings.TrimSpace(status)
+	if cleanStatus != "ready" && cleanStatus != "hidden" {
+		return apperr.New(apperr.ErrBadRequest, "status 只能为 ready 或 hidden")
+	}
+	res, err := r.db.Exec(`UPDATE problems SET status = ?, updated_at = NOW() WHERE id = ?`, cleanStatus, cleanID)
+	if err != nil {
+		logger.Error("更新题目状态失败", "problem_id", cleanID, "status", cleanStatus, "err", err)
+		return fmt.Errorf("更新题目状态失败: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return apperr.New(apperr.ErrNotFound, "题目不存在")
+	}
+	logger.Info("题目状态已更新", "problem_id", cleanID, "status", cleanStatus)
 	return nil
 }
 

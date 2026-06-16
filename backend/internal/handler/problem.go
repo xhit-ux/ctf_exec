@@ -605,6 +605,39 @@ func (h *ProblemHandler) DeleteProblemGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "题目删除成功"})
 }
 
+func (h *ProblemHandler) ToggleProblemVisibilityGin(c *gin.Context) {
+	claims, ok := middleware.MustGetClaims(c)
+	if !ok {
+		return
+	}
+	role := models.NormalizeRole(claims.Role)
+	if role != models.RoleRoot && role != models.RoleSiteAdmin {
+		writeForbidden(c, "仅 site_admin/root 可隐藏/显示题目")
+		return
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		writeBadRequest(c, "无效的题目ID")
+		return
+	}
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeBadRequest(c, "缺少 status 字段")
+		return
+	}
+	if err := h.repo.SetProblemStatus(id, req.Status); err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+	verb := "隐藏"
+	if req.Status == "ready" {
+		verb = "发布"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("题目已%s", verb)})
+}
+
 func (h *ProblemHandler) ListAdminProblemsGin(c *gin.Context) {
 	claims, _ := middleware.GetClaims(c)
 	createdBy := ""

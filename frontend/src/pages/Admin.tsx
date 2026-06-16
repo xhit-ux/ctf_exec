@@ -145,6 +145,7 @@ export default function Admin() {
   const [adminProblemStatus, setAdminProblemStatus] = useState('')
   const [adminProblemsLoading, setAdminProblemsLoading] = useState(false)
   const [deletingProblemID, setDeletingProblemID] = useState('')
+  const [togglingProblemID, setTogglingProblemID] = useState('')
 
   const [contestForm, setContestForm] = useState({
     title: '',
@@ -491,6 +492,35 @@ export default function Admin() {
     }
   }
 
+  const toggleProblemVisibility = async (problemID: string, currentStatus: string, title: string) => {
+    const isHidden = currentStatus === 'hidden'
+    const newStatus = isHidden ? 'ready' : 'hidden'
+    const action = isHidden ? '显示' : '隐藏'
+
+    setTogglingProblemID(problemID)
+    setError('')
+    setSuccessHint('')
+    try {
+      const res = await apiFetch(apiUrl(`/api/admin/problems/${encodeURIComponent(problemID)}/visibility`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (!res.ok) {
+        setError(await readSafeErrorMessage(res, `${action}题目失败`))
+        return
+      }
+      setAdminProblems((prev) =>
+        prev.map((p) => (p.id === problemID ? { ...p, status: newStatus } : p))
+      )
+      setSuccessHint(`题目「${title}」已${action}`)
+    } catch (err) {
+      setError(fromUnknownError(err, `网络异常，${action}题目失败`))
+    } finally {
+      setTogglingProblemID('')
+    }
+  }
+
   const submitProblem = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -825,8 +855,11 @@ export default function Admin() {
                             <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
                               item.status === 'ready' ? 'bg-emerald-100 text-emerald-700' :
                               item.status === 'draft' ? 'bg-amber-100 text-amber-700' :
+                              item.status === 'hidden' ? 'bg-red-100 text-red-700' :
                               'bg-gray-100 text-gray-700'
-                            }`}>{item.status}</span>
+                            }`}>{
+                              item.status === 'hidden' ? 'hidden' : item.status
+                            }</span>
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex flex-wrap gap-1">
@@ -841,6 +874,19 @@ export default function Admin() {
                               <Link to={`/problems/${item.id}/edit`} className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
                                 编辑
                               </Link>
+                              {item.status !== 'draft' && (
+                                <button
+                                  onClick={() => toggleProblemVisibility(item.id, item.status, item.title)}
+                                  disabled={togglingProblemID === item.id}
+                                  className={`px-3 py-1.5 rounded-md text-white text-xs font-semibold disabled:opacity-60 ${
+                                    item.status === 'hidden'
+                                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                                      : 'bg-amber-600 hover:bg-amber-700'
+                                  }`}
+                                >
+                                  {togglingProblemID === item.id ? '处理中...' : item.status === 'hidden' ? '显示' : '隐藏'}
+                                </button>
+                              )}
                               <button
                                 onClick={() => deleteProblem(item.id, item.title)}
                                 disabled={deletingProblemID === item.id}

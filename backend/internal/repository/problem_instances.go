@@ -11,6 +11,7 @@ import (
 
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/config"
+	"github.com/ctf_exec/backend/internal/logger"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/google/uuid"
@@ -652,9 +653,19 @@ func (r *ProblemRepository) resolveInstanceNames(instance *models.ChallengeInsta
 
 func (r *ProblemRepository) destroyK8sResources(namespace, podName, serviceName, ingressName, userID, problemID string) error {
 	ctx := context.Background()
-	_ = retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) })
-	_ = retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) })
-	_ = retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) })
+	var failed []string
+	if err := retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) }); err != nil {
+		failed = append(failed, "ingress:"+ingressName)
+	}
+	if err := retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) }); err != nil {
+		failed = append(failed, "service:"+serviceName)
+	}
+	if err := retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) }); err != nil {
+		failed = append(failed, "pod:"+podName)
+	}
+	if len(failed) > 0 {
+		logger.Warn("K8s 资源删除失败(已重试3次)", "ns", namespace, "failed", strings.Join(failed, ","))
+	}
 	_ = r.cleanupNamespaceIfEmpty(ctx, namespace)
 
 	_, err := r.db.Exec(`
@@ -675,9 +686,19 @@ func (r *ProblemRepository) destroySharedK8sResources(namespace, podName, proble
 	serviceName := podName + "-svc"
 	ingressName := podName + "-ing"
 
-	_ = retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) })
-	_ = retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) })
-	_ = retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) })
+	var failed []string
+	if err := retryDelete(func() error { return r.k8s.DeleteIngress(ctx, namespace, ingressName) }); err != nil {
+		failed = append(failed, "ingress:"+ingressName)
+	}
+	if err := retryDelete(func() error { return r.k8s.DeleteService(ctx, namespace, serviceName) }); err != nil {
+		failed = append(failed, "service:"+serviceName)
+	}
+	if err := retryDelete(func() error { return r.k8s.DeletePod(ctx, namespace, podName) }); err != nil {
+		failed = append(failed, "pod:"+podName)
+	}
+	if len(failed) > 0 {
+		logger.Warn("共享 K8s 资源删除失败(已重试3次)", "ns", namespace, "failed", strings.Join(failed, ","))
+	}
 	_ = r.cleanupNamespaceIfEmpty(ctx, namespace)
 
 	if _, err := r.db.Exec(`

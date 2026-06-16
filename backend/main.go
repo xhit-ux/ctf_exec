@@ -16,6 +16,7 @@ import (
 	"github.com/ctf_exec/backend/internal/db"
 	"github.com/ctf_exec/backend/internal/handler"
 	k8s "github.com/ctf_exec/backend/internal/k8s"
+	"github.com/ctf_exec/backend/internal/logger"
 	"github.com/ctf_exec/backend/internal/middleware"
 	minio "github.com/ctf_exec/backend/internal/minio"
 	"github.com/ctf_exec/backend/internal/repository"
@@ -40,6 +41,18 @@ func main() {
 	if config.IsWeakJWTSecret(cfg.JWT.Secret) {
 		log.Fatal(utils.Security.Sprintf("SECURITY: JWT_SECRET 为空或仍为默认值，服务拒绝启动"))
 	}
+
+	logger.Init(cfg.Log.Enabled, cfg.Log.Level, cfg.Log.Format, cfg.Log.FilePath,
+		cfg.Log.MaxSize, cfg.Log.MaxBackups, cfg.Log.MaxAge, cfg.Log.Compress)
+	defer logger.Close()
+	logger.Info("日志系统已初始化",
+		"enabled", cfg.Log.Enabled,
+		"level", cfg.Log.Level,
+		"file", cfg.Log.FilePath,
+		"max_size_mb", cfg.Log.MaxSize,
+		"max_backups", cfg.Log.MaxBackups,
+		"max_age_days", cfg.Log.MaxAge,
+	)
 
 	// -- Infrastructure Bootstrap --
 	ctx := context.Background()
@@ -142,7 +155,7 @@ func main() {
 	utils.LogInfo("── Gin HTTP 框架初始化 ──")
 
 	r := gin.New()
-	r.Use(gin.Logger())
+	r.Use(logger.GinMiddleware())
 	r.Use(gin.CustomRecovery(func(c *gin.Context, recovered any) {
 		log.Println(utils.Error.Sprintf("[panic-recovered] method=%s path=%s ip=%s panic=%v",
 			c.Request.Method, c.Request.URL.Path, c.ClientIP(), recovered))
@@ -282,6 +295,7 @@ func main() {
 				adminProblems.POST(":id/attachment", middleware.RequireSiteAdminOrRoot(), probHandler.SaveProblemAttachmentGin)
 				adminProblems.GET(":id/build-task", middleware.RequireSiteAdminOrRoot(), probHandler.GetProblemBuildTaskGin)
 				adminProblems.POST(":id/publish", middleware.RequireSiteAdminOrRoot(), probHandler.PublishProblemGin)
+				adminProblems.PATCH(":id/visibility", middleware.RequireSiteAdminOrRoot(), probHandler.ToggleProblemVisibilityGin)
 				adminProblems.DELETE(":id", middleware.RequireSiteAdminOrRoot(), probHandler.DeleteProblemGin)
 				adminProblems.POST(":id/hints", middleware.RequireSiteAdminOrRoot(), probHandler.CreateProblemHintGin)
 				adminProblems.PUT(":id/hints/:hintID", middleware.RequireSiteAdminOrRoot(), probHandler.UpdateProblemHintGin)

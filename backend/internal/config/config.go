@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,19 @@ type Config struct {
 	Ingress     IngressConfig
 	LoginGuard  LoginGuardConfig
 	Registry    RegistryConfig
+	Log         LogConfig
+}
+
+// LogConfig 日志配置。
+type LogConfig struct {
+	Enabled    bool   // LOG_ENABLED: 是否启用日志文件体系
+	Level      string // LOG_LEVEL: debug | info | warn | error
+	Format     string // LOG_FORMAT: json | text（仅文件；console 固定 text）
+	FilePath   string // LOG_FILE: 日志文件路径，为空则不写文件
+	MaxSize    int    // LOG_MAX_SIZE: 单文件最大 MB，默认 100
+	MaxBackups int    // LOG_MAX_BACKUPS: 保留旧文件数，默认 7
+	MaxAge     int    // LOG_MAX_AGE: 保留天数，默认 30
+	Compress   bool   // LOG_COMPRESS: 旧文件是否 gzip，默认 true
 }
 
 // LoginGuardConfig 登录暴力破解防护配置：双维度（账户 + IP）失败计数 + 自动锁定。
@@ -388,7 +402,14 @@ func LoadConfig() (*Config, error) {
 		}
 		cfg.Registry = *registryConfig
 
-		loadedConfig = cfg
+		logConfig, err := loadLogConfig()
+	if err != nil {
+		loadConfigErr = fmt.Errorf("加载日志配置失败: %w", err)
+		return
+	}
+	cfg.Log = *logConfig
+
+	loadedConfig = cfg
 	})
 
 	if loadConfigErr != nil {
@@ -774,4 +795,35 @@ func getEnvBool(key string, defaultValue bool) bool {
 		}
 	}
 	return defaultValue
+}
+
+func loadLogConfig() (*LogConfig, error) {
+	filePath := strings.TrimSpace(getEnv("LOG_FILE", ""))
+	if filePath != "" {
+		if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+			return nil, fmt.Errorf("创建日志目录失败: %w", err)
+		}
+	}
+	maxSize := getEnvInt("LOG_MAX_SIZE", 100)
+	if maxSize <= 0 {
+		maxSize = 100
+	}
+	maxBackups := getEnvInt("LOG_MAX_BACKUPS", 7)
+	if maxBackups < 0 {
+		maxBackups = 7
+	}
+	maxAge := getEnvInt("LOG_MAX_AGE", 30)
+	if maxAge < 0 {
+		maxAge = 30
+	}
+	return &LogConfig{
+		Enabled:    getEnvBool("LOG_ENABLED", false),
+		Level:      getEnv("LOG_LEVEL", "info"),
+		Format:     getEnv("LOG_FORMAT", "text"),
+		FilePath:   filePath,
+		MaxSize:    maxSize,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   getEnvBool("LOG_COMPRESS", true),
+	}, nil
 }
