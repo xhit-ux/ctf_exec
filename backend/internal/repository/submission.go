@@ -69,9 +69,11 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 		s := &models.Submission{}
 		var userIDVal sql.NullString
 		var teamID sql.NullString
+		var problemIDVal sql.NullString
 		var contestID sql.NullString
 		var ipAddress sql.NullString
-		err := rows.Scan(&s.ID, &userIDVal, &teamID, &s.ProblemID, &contestID, &s.Flag, &s.IsCorrect, &ipAddress, &s.CreatedAt, &s.ProblemTitle)
+		var problemTitle sql.NullString
+		err := rows.Scan(&s.ID, &userIDVal, &teamID, &problemIDVal, &contestID, &s.Flag, &s.IsCorrect, &ipAddress, &s.CreatedAt, &problemTitle)
 		if err != nil {
 			return nil, fmt.Errorf("扫描提交记录失败: %w", err)
 		}
@@ -89,6 +91,12 @@ func (r *SubmissionRepository) GetSubmissionsByUserID(userID string) ([]*models.
 		}
 		if ipAddress.Valid {
 			s.IPAddress = ipAddress.String
+		}
+		if problemIDVal.Valid {
+			s.ProblemID = problemIDVal.String
+		}
+		if problemTitle.Valid {
+			s.ProblemTitle = problemTitle.String
 		}
 		submissions = append(submissions, s)
 	}

@@ -51,7 +51,7 @@ func main() {
 	utils.LogSuccess("Kubernetes 客户端已连接")
 
 	regInfo := k8s.NewRegistryConfig()
-	if err := k8s.EnsureRegistry(ctx, k8sClient, regInfo, cfg.Container.InfraNodeName); err != nil {
+	if err := k8s.EnsureRegistry(ctx, k8sClient, regInfo, cfg.Container.InfraNodeName, cfg.Registry.StorageSize); err != nil {
 		utils.LogFatal("私有镜像仓库部署失败: %v", err)
 	}
 	cfg.SetRegistryInfo(regInfo.Host, regInfo.Username, regInfo.Password)
@@ -87,9 +87,23 @@ func main() {
 	defer redisClient.Close()
 	utils.LogSuccess("Redis 连接成功")
 
+	// MinIO
+	var minioClient *minio.Client
+	if cfg.MinIO.Enabled {
+		var initErr error
+		minioClient, initErr = minio.NewClient(cfg.MinIO)
+		if initErr != nil {
+			utils.LogFatal("MinIO 客户端初始化失败: %v", initErr)
+		}
+		if initErr := minioClient.EnsureBuckets(context.Background()); initErr != nil {
+			utils.LogFatal("MinIO 桶初始化失败: %v", initErr)
+		}
+		utils.LogSuccess("MinIO 连接成功，桶已就绪")
+	}
+
 	// 仓库 & 服务层
 	userRepo := repository.NewUserRepository(sqlDB)
-	probRepo := repository.NewProblemRepository(sqlDB, k8sClient, cfg, redisClient)
+	probRepo := repository.NewProblemRepository(sqlDB, k8sClient, cfg, redisClient, minioClient)
 	subRepo := repository.NewSubmissionRepository(sqlDB)
 	teamRepo := repository.NewTeamRepository(sqlDB)
 	contestRepo := repository.NewContestRepository(sqlDB)
@@ -110,20 +124,6 @@ func main() {
 	contestService := service.NewContestService(contestRepo, contestAdminRepo, teamRepo, leaderboardService)
 	submissionService := service.NewSubmissionService(subRepo, probRepo, userRepo, contestService, redisClient.Client, cfg.RateLimit.SubmissionLimit, cfg.RateLimit.WindowSeconds)
 	teamService := service.NewTeamService(teamRepo)
-
-	// MinIO
-	var minioClient *minio.Client
-	if cfg.MinIO.Enabled {
-		var initErr error
-		minioClient, initErr = minio.NewClient(cfg.MinIO)
-		if initErr != nil {
-			utils.LogFatal("MinIO 客户端初始化失败: %v", initErr)
-		}
-		if initErr := minioClient.EnsureBuckets(context.Background()); initErr != nil {
-			utils.LogFatal("MinIO 桶初始化失败: %v", initErr)
-		}
-		utils.LogSuccess("MinIO 连接成功，桶已就绪")
-	}
 
 	// Handler
 	authHandler := handler.NewAuthHandler(authService, userService, cfg.AuthCookie)

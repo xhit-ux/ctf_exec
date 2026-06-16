@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -41,7 +42,7 @@ func NewRegistryConfig() *RegistryInfo {
 
 // EnsureRegistry deploys the private Docker registry if not already running.
 // Returns error if deployment fails; on success populates info with access details.
-func EnsureRegistry(ctx context.Context, client *Client, info *RegistryInfo, nodeName string) error {
+func EnsureRegistry(ctx context.Context, client *Client, info *RegistryInfo, nodeName, storageSize string) error {
 	_, err := client.GetDeployment(ctx, registryNamespace, registryName)
 	if err == nil {
 		np, npErr := client.GetServiceNodePort(ctx, registryNamespace, registryName)
@@ -61,6 +62,9 @@ func EnsureRegistry(ctx context.Context, client *Client, info *RegistryInfo, nod
 		return fmt.Errorf("检查 registry deployment 失败: %w", err)
 	}
 
+	if strings.TrimSpace(storageSize) == "" {
+		storageSize = "30Gi"
+	}
 	if nodeName == "" {
 		nodes, lErr := client.ListNodeNames(ctx)
 		if lErr != nil {
@@ -102,7 +106,7 @@ func EnsureRegistry(ctx context.Context, client *Client, info *RegistryInfo, nod
 	pvc := BuildRegistryPVC(RegistryPVCConfig{
 		Name:         registryPVCName,
 		Namespace:    registryNamespace,
-		StorageSize:  "30Gi",
+		StorageSize:  storageSize,
 		StorageClass: registryStorageClass,
 	})
 	if _, err := client.CreatePVC(ctx, registryNamespace, pvc); err != nil {

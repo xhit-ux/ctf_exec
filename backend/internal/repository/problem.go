@@ -32,14 +32,20 @@ import (
 )
 
 type ProblemRepository struct {
-	db    *sql.DB
-	k8s   *k8s.Client
-	cfg   *config.Config
-	redis *cache.RedisClient
+	db          *sql.DB
+	k8s         *k8s.Client
+	cfg         *config.Config
+	redis       *cache.RedisClient
+	minioClient MinioClient
 }
 
-func NewProblemRepository(db *sql.DB, k8sClient *k8s.Client, cfg *config.Config, redisClient *cache.RedisClient) *ProblemRepository {
-	return &ProblemRepository{db: db, k8s: k8sClient, cfg: cfg, redis: redisClient}
+// MinioClient 最小接口，避免循环导入；nil 表示 MinIO 未启用。
+type MinioClient interface {
+	Remove(ctx context.Context, category, objectName string) error
+}
+
+func NewProblemRepository(db *sql.DB, k8sClient *k8s.Client, cfg *config.Config, redisClient *cache.RedisClient, minioClient MinioClient) *ProblemRepository {
+	return &ProblemRepository{db: db, k8s: k8sClient, cfg: cfg, redis: redisClient, minioClient: minioClient}
 }
 
 // CleanupStaleDraftProblems 清理长期未发布的草稿题目。
@@ -370,6 +376,10 @@ func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	cleanID := strings.TrimSpace(problemID)
 
 	r.cleanupProblemK8sResources(cleanID)
+	r.cleanupRegistryImages(cleanID)
+	r.cleanupAttachments(cleanID)
+	r.cleanupUploadedFiles(cleanID)
+	r.cleanupBuildTempDirs(cleanID)
 
 	result, err := r.db.Exec(`DELETE FROM problems WHERE id = ?`, cleanID)
 	if err != nil {
@@ -382,12 +392,178 @@ func (r *ProblemRepository) DeleteProblem(problemID string) error {
 	if rows == 0 {
 		return apperr.New(apperr.ErrNotFound, "题目不存在")
 	}
-
-	uploadDir := filepath.Join("..", "static", "images", "problems", cleanID)
-	if rmErr := os.RemoveAll(uploadDir); rmErr != nil {
-		return fmt.Errorf("删除题目成功但清理镜像暂存失败: %w", rmErr)
-	}
 	return nil
+}
+
+func (r *ProblemRepository) cleanupRegistryImages(problemID string) {
+	rows, err := r.db.Query(`
+		SELECT image_repo, image_tag FROM image_build_tasks
+		WHERE problem_id = ? AND status = 'success' AND image_repo IS NOT NULL
+	`, strings.TrimSpace(problemID))
+	if err != nil {
+		log.Printf("[delete-problem] 查询镜像构建记录失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	registryHost := strings.TrimSpace(r.cfg.Registry.Host)
+	if registryHost == "" {
+		return
+	}
+
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+	}
+	httpClient := &http.Client{Transport: transport, Timeout: 15 * time.Second}
+
+	for rows.Next() {
+		var repo, tag sql.NullString
+		if scanErr := rows.Scan(&repo, &tag); scanErr != nil {
+			continue
+		}
+		imageRepo := "ctf-exec/" + strings.TrimSpace(problemID)
+		if repo.Valid && strings.TrimSpace(repo.String) != "" {
+			imageRepo = strings.TrimSpace(repo.String)
+		}
+		imageRepo = r.stripRegistryHost(imageRepo)
+		imageTag := "latest"
+		if tag.Valid && strings.TrimSpace(tag.String) != "" {
+			imageTag = strings.TrimSpace(tag.String)
+		}
+		r.deleteRegistryManifest(httpClient, imageRepo, imageTag)
+
+		imageRef := fmt.Sprintf("%s/%s:%s", strings.Trim(r.cfg.Registry.Host, "/"), imageRepo, imageTag)
+		if output, err := runCommand("docker", "rmi", imageRef); err != nil {
+			log.Printf("[delete-problem] 本地镜像清理失败(非致命): %s — %s", imageRef, strings.TrimSpace(sanitizeCommandOutput(output, err)))
+		}
+	}
+}
+
+func (r *ProblemRepository) stripRegistryHost(repo string) string {
+	parts := strings.SplitN(repo, "/", 2)
+	if len(parts) == 2 && (strings.Contains(parts[0], ".") || strings.Contains(parts[0], ":") || parts[0] == "localhost") {
+		return parts[1]
+	}
+	return repo
+}
+
+func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo, tag string) {
+	registryHost := strings.Trim(strings.TrimSpace(r.cfg.Registry.Host), "/")
+	url := fmt.Sprintf("http://%s/v2/%s/manifests/%s", registryHost, repo, tag)
+
+	req, err := http.NewRequest("HEAD", url, nil)
+	if err != nil {
+		log.Printf("[delete-problem] 创建 registry 请求失败: repo=%s tag=%s err=%v", repo, tag, err)
+		return
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	if r.cfg.Registry.Username != "" {
+		req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Printf("[delete-problem] 获取镜像 digest 失败: repo=%s tag=%s err=%v", repo, tag, err)
+		return
+	}
+	resp.Body.Close()
+
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		log.Printf("[delete-problem] 未找到镜像 digest: repo=%s tag=%s status=%d", repo, tag, resp.StatusCode)
+		return
+	}
+
+	delURL := fmt.Sprintf("http://%s/v2/%s/manifests/%s", registryHost, repo, digest)
+	delReq, _ := http.NewRequest("DELETE", delURL, nil)
+	if r.cfg.Registry.Username != "" {
+		delReq.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
+	}
+
+	delResp, delErr := httpClient.Do(delReq)
+	if delErr != nil {
+		log.Printf("[delete-problem] 删除镜像失败: repo=%s tag=%s digest=%s err=%v", repo, tag, digest, delErr)
+		return
+	}
+	delResp.Body.Close()
+
+	if delResp.StatusCode == http.StatusAccepted || delResp.StatusCode == http.StatusOK {
+		log.Printf("[delete-problem] 已删除 registry 镜像: %s:%s digest=%s", repo, tag, digest)
+	} else {
+		log.Printf("[delete-problem] 删除镜像返回异常: repo=%s tag=%s digest=%s status=%d", repo, tag, digest, delResp.StatusCode)
+	}
+}
+
+func (r *ProblemRepository) cleanupAttachments(problemID string) {
+	rows, err := r.db.Query(`
+		SELECT bucket_name, object_key FROM attachments WHERE problem_id = ?
+	`, strings.TrimSpace(problemID))
+	if err != nil {
+		log.Printf("[delete-problem] 查询附件失败: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var bucket, key sql.NullString
+		if scanErr := rows.Scan(&bucket, &key); scanErr != nil {
+			continue
+		}
+		cleanBucket := ""
+		cleanKey := ""
+		if bucket.Valid {
+			cleanBucket = strings.TrimSpace(bucket.String)
+		}
+		if key.Valid {
+			cleanKey = strings.TrimSpace(key.String)
+		}
+		if cleanKey == "" {
+			continue
+		}
+
+		if cleanBucket != "" && cleanBucket != "static" && r.minioClient != nil {
+			category, objName := splitMinioObjectKey(cleanKey)
+			if rmErr := r.minioClient.Remove(context.Background(), category, objName); rmErr != nil {
+				log.Printf("[delete-problem] MinIO 附件删除失败: key=%s err=%v", cleanKey, rmErr)
+			}
+		} else {
+			if rmErr := os.Remove(cleanKey); rmErr != nil && !os.IsNotExist(rmErr) {
+				log.Printf("[delete-problem] 静态附件删除失败: %s err=%v", cleanKey, rmErr)
+			}
+		}
+	}
+}
+
+func splitMinioObjectKey(key string) (string, string) {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) == 2 {
+		return parts[0], parts[1]
+	}
+	return "misc", key
+}
+
+func (r *ProblemRepository) cleanupUploadedFiles(problemID string) {
+	uploadDir := filepath.Join("..", "static", "images", "problems", strings.TrimSpace(problemID))
+	if rmErr := os.RemoveAll(uploadDir); rmErr != nil {
+		log.Printf("[delete-problem] 清理上传目录失败: %s err=%v", uploadDir, rmErr)
+	}
+}
+
+func (r *ProblemRepository) cleanupBuildTempDirs(problemID string) {
+	rows, err := r.db.Query(`SELECT id FROM image_build_tasks WHERE problem_id = ?`, strings.TrimSpace(problemID))
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var taskID string
+		if scanErr := rows.Scan(&taskID); scanErr != nil {
+			continue
+		}
+		buildDir := filepath.Join(os.TempDir(), "ctf_exec", "build_ctx", strings.TrimSpace(taskID))
+		_ = os.RemoveAll(buildDir)
+	}
 }
 
 func (r *ProblemRepository) cleanupProblemK8sResources(problemID string) {

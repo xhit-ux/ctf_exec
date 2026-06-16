@@ -448,7 +448,7 @@ CREATE TABLE submissions (
     id              CHAR(36)     NOT NULL,
     user_id         CHAR(36)     NULL,
     team_id         CHAR(36)     NULL,
-    problem_id      CHAR(36)     NOT NULL,
+    problem_id      CHAR(36)     NULL,
     instance_id     CHAR(36)     NULL,
     contest_id      CHAR(36)     NULL,
 
@@ -465,7 +465,7 @@ CREATE TABLE submissions (
 
     FOREIGN KEY fk_submissions_user    (user_id)    REFERENCES users(id)    ON DELETE SET NULL,
     FOREIGN KEY fk_submissions_team    (team_id)    REFERENCES teams(id)    ON DELETE SET NULL,
-    FOREIGN KEY fk_submissions_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
+    FOREIGN KEY fk_submissions_problem (problem_id) REFERENCES problems(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE INDEX idx_sub_user          ON submissions(user_id);
@@ -513,7 +513,7 @@ CREATE TABLE refresh_tokens (
 CREATE TABLE challenge_instances (
     id                  CHAR(36)      NOT NULL,
     user_id             CHAR(36)      NOT NULL,
-    problem_id          CHAR(36)      NOT NULL,
+    problem_id          CHAR(36)      NULL,
     pod_name            VARCHAR(255)  NULL,
     namespace           VARCHAR(128)  NULL,
     access_url          VARCHAR(512)  NULL,
@@ -530,7 +530,7 @@ CREATE TABLE challenge_instances (
     CONSTRAINT chk_instance_status CHECK (status IN ('pending', 'running', 'stopping', 'destroyed', 'failed')),
 
     FOREIGN KEY fk_ci_user    (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
-    FOREIGN KEY fk_ci_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
+    FOREIGN KEY fk_ci_problem (problem_id) REFERENCES problems(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE INDEX idx_ci_user_status         ON challenge_instances(user_id, status);

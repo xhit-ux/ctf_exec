@@ -422,8 +422,9 @@ func (r *ContestRepository) ListContestChallengesForUser(contestID, userID strin
 		item := &models.ContestChallengeView{}
 		var initial, minScore, decay sql.NullInt64
 		var mySolve int
+		var problemIDVal sql.NullString
 		if err := rows.Scan(
-			&item.ProblemID,
+			&problemIDVal,
 			&item.Title,
 			&item.Category,
 			&item.Difficulty,
@@ -437,6 +438,9 @@ func (r *ContestRepository) ListContestChallengesForUser(contestID, userID strin
 			&mySolve,
 		); err != nil {
 			return nil, fmt.Errorf("扫描赛事题目失败: %w", err)
+		}
+		if problemIDVal.Valid {
+			item.ProblemID = problemIDVal.String
 		}
 		item.ID = item.ProblemID
 		if initial.Valid {
@@ -886,6 +890,7 @@ func (r *ContestRepository) ListContestMySubmissions(contestID, userID string, o
 		item := &models.ContestSubmissionItem{}
 		var userIDVal sql.NullString
 		var teamID sql.NullString
+		var problemIDVal sql.NullString
 		var contestIDVal sql.NullString
 		var ipAddress sql.NullString
 		var username sql.NullString
@@ -897,7 +902,7 @@ func (r *ContestRepository) ListContestMySubmissions(contestID, userID string, o
 			&item.ID,
 			&userIDVal,
 			&teamID,
-			&item.ProblemID,
+			&problemIDVal,
 			&contestIDVal,
 			&item.IsCorrect,
 			&ipAddress,
@@ -910,6 +915,9 @@ func (r *ContestRepository) ListContestMySubmissions(contestID, userID string, o
 			return nil, 0, fmt.Errorf("扫描赛事提交失败: %w", err)
 		}
 
+		if problemIDVal.Valid {
+			item.ProblemID = problemIDVal.String
+		}
 		if userIDVal.Valid {
 			v := userIDVal.String
 			item.UserID = &v
@@ -1004,6 +1012,7 @@ func (r *ContestRepository) ListContestSubmissions(contestID string, offset, lim
 		item := &models.ContestSubmissionItem{}
 		var userIDVal sql.NullString
 		var teamID sql.NullString
+		var problemIDVal sql.NullString
 		var contestIDVal sql.NullString
 		var ipAddress sql.NullString
 		var username sql.NullString
@@ -1015,7 +1024,7 @@ func (r *ContestRepository) ListContestSubmissions(contestID string, offset, lim
 			&item.ID,
 			&userIDVal,
 			&teamID,
-			&item.ProblemID,
+			&problemIDVal,
 			&contestIDVal,
 			&item.IsCorrect,
 			&ipAddress,
@@ -1028,6 +1037,9 @@ func (r *ContestRepository) ListContestSubmissions(contestID string, offset, lim
 			return nil, 0, fmt.Errorf("扫描赛事提交审计失败: %w", err)
 		}
 
+		if problemIDVal.Valid {
+			item.ProblemID = problemIDVal.String
+		}
 		if userIDVal.Valid {
 			v := userIDVal.String
 			item.UserID = &v

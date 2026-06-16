@@ -3,21 +3,10 @@ import { useProblemPublish } from '../ProblemPublishContext';
 import { IconUpload } from '../icons';
 import { saveProblemBasic, saveProblemContainer, uploadProblemImage } from '../../../utils/problemPublishApi';
 
-type ConfigPanel = 'image' | 'network' | 'resources' | 'deploy' | 'sidecar';
-
-const CONFIG_PANELS: Array<{ id: ConfigPanel; label: string }> = [
-  { id: 'image', label: '镜像构建' },
-  { id: 'network', label: '网络入口' },
-  { id: 'resources', label: '资源配额' },
-  { id: 'deploy', label: '部署策略' },
-  { id: 'sidecar', label: 'Sidecar' },
-];
-
 export default function Step4ContainerEnv() {
   const { state, updateState, nextStep, prevStep, setSubmitting } = useProblemPublish();
   const [uploading, setUploading] = useState(false);
   const [savingDeployMode, setSavingDeployMode] = useState(false);
-  const [activePanel, setActivePanel] = useState<ConfigPanel>('image');
 
   const toProblemType = (): 'static' | 'container_web' | 'container_tcp' => {
     if (!state.useContainer) return 'static';
@@ -87,19 +76,16 @@ export default function Step4ContainerEnv() {
     const repoToUse = parsed.repo || String(options?.fallbackRepo || '').trim();
     if (!repoToUse) {
       window.alert('请先填写镜像仓库地址（可在上传后自动回填）');
-      setActivePanel('image');
       return false;
     }
     if (!state.internalPort || state.internalPort <= 0) {
       window.alert('请填写合法的内部端口');
-      setActivePanel('network');
       return false;
     }
     const sidecarImage = String(state.sidecarImage || '').trim();
     const sidecarPort = Number(state.sidecarPort || 0);
     if (state.enableSidecar && (!sidecarImage || sidecarPort <= 0)) {
       window.alert('启用 sidecar 后，必须同时填写 sidecar 镜像和端口');
-      setActivePanel('sidecar');
       return false;
     }
 
@@ -308,29 +294,9 @@ export default function Step4ContainerEnv() {
       )}
 
       {state.useContainer && (
-      <>
-      <div className="rounded-lg border border-gray-200 bg-white p-3">
-        <p className="text-xs text-gray-500 mb-2">配置导航（点击切换模块）</p>
-        <div className="flex flex-wrap gap-2">
-          {CONFIG_PANELS.map((panel) => (
-            <button
-              key={panel.id}
-              type="button"
-              onClick={() => setActivePanel(panel.id)}
-              className={`px-3 py-1.5 text-xs rounded-md border transition ${
-                activePanel === panel.id
-                  ? 'bg-amber-50 text-amber-800 border-amber-300'
-                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              {panel.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      <div className="space-y-6 mt-4">
 
-      {activePanel === 'image' && (
-      <div className="p-3.5 border border-gray-200 rounded-lg hover:border-amber-300 transition bg-gray-50">
+      <div className="p-4 border border-gray-200 rounded-lg shadow-sm bg-gray-50">
         <h3 className="font-bold text-gray-900 mb-2">1. 镜像上传</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           <div>
@@ -423,10 +389,8 @@ export default function Step4ContainerEnv() {
           </div>
         )}
       </div>
-      )}
 
-      {activePanel === 'network' && (
-      <div className="p-4 border border-gray-200 rounded-lg">
+      <div className="p-4 border border-gray-200 rounded-lg shadow-sm">
          <h3 className="font-bold text-gray-900 mb-3">2. 网络配置</h3>
          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -455,10 +419,8 @@ export default function Step4ContainerEnv() {
            </div>
          )}
       </div>
-      )}
 
-      {activePanel === 'resources' && (
-      <div className="p-4 border border-gray-200 rounded-lg">
+      <div className="p-4 border border-gray-200 rounded-lg shadow-sm">
          <h3 className="font-bold text-gray-900 mb-3">3. 资源配额</h3>
          <div className="space-y-4">
            <div>
@@ -482,10 +444,8 @@ export default function Step4ContainerEnv() {
            </div>
          </div>
       </div>
-      )}
 
-      {activePanel === 'deploy' && (
-      <div className="p-4 border border-gray-200 rounded-lg">
+      <div className="p-4 border border-gray-200 rounded-lg shadow-sm">
          <h3 className="font-bold text-gray-900 mb-3">4. 部署与安全</h3>
          {isDynamicFlag && (
            <p className="mb-3 text-xs text-amber-700">当前 Flag 类型为 dynamic，部署模式已强制为 per_user。</p>
@@ -501,10 +461,8 @@ export default function Step4ContainerEnv() {
            </label>
          </div>
       </div>
-      )}
 
-      {activePanel === 'sidecar' && (
-      <div className="p-4 border border-gray-200 rounded-lg">
+      <div className="p-4 border border-gray-200 rounded-lg shadow-sm">
          <div className="flex items-center justify-between mb-3">
            <div>
              <h3 className="font-bold text-gray-900">5. Sidecar（可选）</h3>
@@ -545,8 +503,8 @@ export default function Step4ContainerEnv() {
            </div>
          )}
       </div>
-      )}
-      </>
+
+      </div>
       )}
 
       <div className="flex justify-between mt-8 pt-6 border-t border-gray-200">

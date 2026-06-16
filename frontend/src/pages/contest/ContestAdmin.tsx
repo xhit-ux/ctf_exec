@@ -589,7 +589,7 @@ export default function ContestAdmin() {
                 <tr key={row.id} className="border-b border-gray-100 last:border-b-0">
                   <td className="px-3 py-3 text-gray-600">{new Date(row.created_at).toLocaleString('zh-CN', { hour12: false })}</td>
                   <td className="px-3 py-3 font-semibold text-gray-800">{row.display_name || row.username || row.user_id || '-'}</td>
-                  <td className="px-3 py-3 text-gray-700">{row.problem_title || `#${row.problem_id}`}</td>
+                  <td className="px-3 py-3 text-gray-700">{row.problem_title || (row.problem_id ? `#${row.problem_id}` : '已删除题目')}</td>
                   <td className="px-3 py-3 text-center">{row.is_correct ? <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">正确</span> : <span className="rounded-full bg-red-100 px-2 py-1 text-xs text-red-700">错误</span>}</td>
                   <td className="px-3 py-3 text-right text-gray-500">{row.ip_address || '-'}</td>
                 </tr>

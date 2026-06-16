@@ -329,6 +329,7 @@ func BuildRegistryDeployment(cfg RegistryDeploymentConfig) *appsv1.Deployment {
 								{Name: "REGISTRY_AUTH", Value: "htpasswd"},
 								{Name: "REGISTRY_AUTH_HTPASSWD_REALM", Value: "Registry Realm"},
 								{Name: "REGISTRY_AUTH_HTPASSWD_PATH", Value: "/auth/htpasswd"},
+								{Name: "REGISTRY_STORAGE_DELETE_ENABLED", Value: "true"},
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{Name: "data", MountPath: "/var/lib/registry"},

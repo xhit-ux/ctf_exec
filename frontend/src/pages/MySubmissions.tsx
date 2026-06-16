@@ -78,7 +78,7 @@ export default function MySubmissions() {
               {subs.map((s, idx) => {
                 return (
                   <tr key={idx} className={`hover:bg-gray-50 transition-colors ${s.correct ? 'bg-green-50/20' : 'bg-red-50/10'}`}>
-                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{s.problemTitle || `#${s.problemId}`}</td>
+                    <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{s.problemTitle || (s.problemId ? `#${s.problemId}` : '已删除题目')}</td>
                     <td className="px-6 py-4 max-w-xs truncate text-gray-600 font-mono text-sm">{s.flag}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {s.correct ? (
