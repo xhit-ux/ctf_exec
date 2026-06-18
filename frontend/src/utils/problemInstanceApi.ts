@@ -50,3 +50,35 @@ export async function destroyProblemInstance(problemID: string): Promise<Instanc
   await ensureOk(response, '销毁实例失败')
   return response.json()
 }
+
+// --- 任务轮询（异步容器创建） ---
+
+export type TaskEventEntry = {
+  stage: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+  created_at: string
+}
+
+export type TaskStatusResponse = {
+  task_id: string
+  status: string
+  access_url?: string | null
+  error_message?: string | null
+  k8s_reason?: string | null
+  started_at?: string | null
+  finished_at?: string | null
+  events?: TaskEventEntry[]
+}
+
+export type TaskAcceptedResponse = {
+  task_id: string
+  status: string
+  message: string
+}
+
+export async function fetchTaskStatus(taskID: string): Promise<TaskStatusResponse> {
+  const response = await apiFetch(apiUrl(`/api/tasks/${encodeURIComponent(taskID)}/status`))
+  await ensureOk(response, '获取任务状态失败')
+  return response.json()
+}

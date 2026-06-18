@@ -10,10 +10,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"context"
+	"time"
+
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/middleware"
 	minio "github.com/ctf_exec/backend/internal/minio"
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/rabbitmq"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/gin-gonic/gin"
@@ -23,12 +27,14 @@ type ProblemHandler struct {
 	repo             *repository.ProblemRepository
 	contestRepo      *repository.ContestRepository
 	contestAdminRepo repository.ContestAdminRepository
+	taskRepo         *repository.TaskRepository
+	mq               *rabbitmq.Client
 	minioClient      *minio.Client
 	cfg              *config.Config
 }
 
-func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository, minioClient *minio.Client, cfg *config.Config) *ProblemHandler {
-	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo, minioClient: minioClient, cfg: cfg}
+func NewProblemHandler(repo *repository.ProblemRepository, contestRepo *repository.ContestRepository, contestAdminRepo repository.ContestAdminRepository, taskRepo *repository.TaskRepository, mq *rabbitmq.Client, minioClient *minio.Client, cfg *config.Config) *ProblemHandler {
+	return &ProblemHandler{repo: repo, contestRepo: contestRepo, contestAdminRepo: contestAdminRepo, taskRepo: taskRepo, mq: mq, minioClient: minioClient, cfg: cfg}
 }
 
 func (h *ProblemHandler) CreateProblemDraftGin(c *gin.Context) {
@@ -521,6 +527,9 @@ func (h *ProblemHandler) GetProblemInstanceGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": instance.Status, "instance": instance})
 }
 
+// StartProblemInstanceGin 启动容器实例（异步任务模式）。
+// POST /api/problems/:id/instance/start
+// 返回 task_id，前端轮询 GET /api/tasks/:id/status 获取实际进度。
 func (h *ProblemHandler) StartProblemInstanceGin(c *gin.Context) {
 	claims, ok := middleware.MustGetClaims(c)
 	if !ok {
@@ -532,16 +541,45 @@ func (h *ProblemHandler) StartProblemInstanceGin(c *gin.Context) {
 		return
 	}
 
-	instance, err := h.repo.StartChallengeInstance(c.Request.Context(), problemID, claims.UserID)
-	if err != nil {
-		writeError(c, err, http.StatusBadRequest)
+	// 1. 并发控制：检查是否有进行中的任务
+	existing, _ := h.taskRepo.GetTaskByUserAndProblem(claims.UserID, problemID)
+	if existing != nil && !models.IsTaskTerminal(existing.Status) {
+		c.JSON(http.StatusOK, models.TaskAcceptedResponse{
+			TaskID:  existing.ID,
+			Status:  existing.Status,
+			Message: "已有进行中的创建任务",
+		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "实例启动成功",
-		"status":   instance.Status,
-		"instance": instance,
+	// 2. 创建任务记录
+	task, err := h.taskRepo.CreateTask(claims.UserID, problemID)
+	if err != nil {
+		writeError(c, err, http.StatusInternalServerError)
+		return
+	}
+
+	// 3. 发布到 RabbitMQ
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.mq.PublishTask(ctx, h.cfg.RabbitMQ.QueueChallenge, map[string]string{
+		"task_id":    task.ID,
+		"user_id":    claims.UserID,
+		"problem_id": problemID,
+	}); err != nil {
+		// MQ 发布失败：标记任务失败，返回错误
+		h.taskRepo.TransitionTask(task.ID, models.TaskStatusFailed,
+			"FAILED", "error", "MQ 发布失败: "+err.Error(),
+			map[string]interface{}{"error_message": "消息队列不可用，请稍后重试"})
+		writeError(c, fmt.Errorf("任务队列繁忙，请稍后重试"), http.StatusServiceUnavailable)
+		return
+	}
+
+	c.JSON(http.StatusAccepted, models.TaskAcceptedResponse{
+		TaskID:  task.ID,
+		Status:  models.TaskStatusPending,
+		Message: "任务已提交，正在等待调度",
 	})
 }
 

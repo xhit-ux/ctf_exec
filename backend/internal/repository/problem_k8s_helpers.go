@@ -35,7 +35,9 @@ func buildChallengePod(namespace, podName string, spec *problemContainerRuntimeS
 		SecurityContext: &corev1.SecurityContext{
 			AllowPrivilegeEscalation: ptr.To(false),
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			ReadOnlyRootFilesystem:   ptr.To(true),
+			// CTF 挑战容器需要写文件系统（启动脚本、临时文件等）。
+			// Kata Containers 提供 VM 级隔离，不需要只读 rootfs。
+			ReadOnlyRootFilesystem: ptr.To(false),
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "tmp", MountPath: "/tmp"},
@@ -80,7 +82,9 @@ func buildChallengePod(namespace, podName string, spec *problemContainerRuntimeS
 			RestartPolicy: corev1.RestartPolicyNever,
 			Containers:    []corev1.Container{container},
 			SecurityContext: &corev1.PodSecurityContext{
-				RunAsNonRoot: ptr.To(true),
+				// CTF 挑战镜像由用户上传，Dockerfile 不受控，多数以 root 运行。
+				// 已启用 Kata Containers（VM 级隔离），不要求 runAsNonRoot。
+				RunAsNonRoot: ptr.To(false),
 				SeccompProfile: &corev1.SeccompProfile{
 					Type: corev1.SeccompProfileTypeRuntimeDefault,
 				},

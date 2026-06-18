@@ -2,6 +2,7 @@ package ws
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/ctf_exec/backend/internal/authsession"
 	"github.com/ctf_exec/backend/internal/config"
 	"github.com/ctf_exec/backend/internal/models"
+	"github.com/ctf_exec/backend/internal/notify"
 	"github.com/gorilla/websocket"
 )
 
@@ -21,10 +23,7 @@ const writeWait = 10 * time.Second
 // maxMessageSize 限制客户端可发送的最大文本消息长度，防止恶意大包。
 const maxMessageSize = 512
 
-// client 表示一条单向心跳连接。本系统不允许客户端发起业务消息，readPump 仅丢弃数据。
-//
-// 鉴权再校验：当 cfg.SessionRecheckInterval > 0 时，会启动独立 goroutine 周期性
-// 校验 access 会话是否仍有效（被踢下线 / 主动登出 / 单会话指针置换），失效则关闭连接。
+// client 表示一条双向通道：上行触发 pong handler，下行推送心跳 + 业务事件。
 type client struct {
 	conn         *websocket.Conn
 	userID       string
@@ -33,6 +32,7 @@ type client struct {
 	connID       string
 	sessionStore *authsession.Store
 	cfg          config.WSConfig
+	taskEvents   <-chan notify.TaskStatusEvent
 
 	writeMu   sync.Mutex
 	closeOnce sync.Once
@@ -48,6 +48,7 @@ func newClient(conn *websocket.Conn, userID, jti, role, connID string, store *au
 		connID:       connID,
 		sessionStore: store,
 		cfg:          cfg,
+		taskEvents:   notify.GetNotifier().Subscribe(userID),
 		done:         make(chan struct{}),
 	}
 }
@@ -68,6 +69,7 @@ func (c *client) start() {
 	})
 
 	go c.writePump()
+	go c.taskPump()
 	if c.cfg.SessionRecheckInterval > 0 {
 		go c.sessionRecheckPump()
 	}
@@ -182,6 +184,7 @@ func (c *client) cleanup() {
 	c.closeOnce.Do(func() {
 		close(c.done)
 		_ = c.conn.Close()
+		notify.GetNotifier().Unsubscribe(c.userID, c.taskEvents)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
@@ -189,4 +192,27 @@ func (c *client) cleanup() {
 			log.Printf("[ws] unregister conn failed user=%s conn=%s err=%v", c.userID, c.connID, err)
 		}
 	})
+}
+
+// taskPump 将任务状态事件转发到 WebSocket。
+func (c *client) taskPump() {
+	for {
+		select {
+		case <-c.done:
+			return
+		case event, ok := <-c.taskEvents:
+			if !ok {
+				return
+			}
+			data, err := json.Marshal(event)
+			if err != nil {
+				continue
+			}
+			log.Printf("[ws] push task_status user=%s task=%s status=%s", c.userID, event.TaskID[:8], event.Status)
+			if err := c.writeMessage(websocket.TextMessage, data); err != nil {
+				log.Printf("[ws] task push err user=%s conn=%s err=%v", c.userID, c.connID, err)
+				return
+			}
+		}
+	}
 }

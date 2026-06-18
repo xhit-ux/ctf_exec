@@ -41,7 +41,6 @@ func Init(enabled bool, level, format, filePath string, maxSize, maxBackups, max
 
 	if !enabled {
 		defaultLogger = slog.New(slog.NewTextHandler(os.Stderr, opts))
-		slog.SetDefault(defaultLogger)
 		return
 	}
 
@@ -70,7 +69,6 @@ func Init(enabled bool, level, format, filePath string, maxSize, maxBackups, max
 	}
 
 	defaultLogger = slog.New(handler)
-	slog.SetDefault(defaultLogger)
 }
 
 // multiHandler 将日志同时写入多个 handler（console + file）。
@@ -207,4 +205,10 @@ func Fatal(msg string, args ...any) {
 
 func Now() string {
 	return time.Now().Format(time.RFC3339)
+}
+
+// Console 直接写 stdout，不经过 slog 编码，保留 ANSI 颜色。
+// 用于启动横幅、里程碑提示等需要终端色彩的消息。
+func Console(format string, args ...any) {
+	fmt.Fprintf(os.Stdout, format+"\n", args...)
 }

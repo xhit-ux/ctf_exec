@@ -18,7 +18,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-type problemContainerRuntimeSpec struct {
+// ContainerRuntimeSpec 题目容器运行时规格（导出供 worker 使用）。
+type ContainerRuntimeSpec struct {
 	ProblemType     string
 	DeployMode      string
 	UseKata         bool
@@ -31,6 +32,9 @@ type problemContainerRuntimeSpec struct {
 	IngressHostTpl  string
 	GlobalIngressTP string
 }
+
+// problemContainerRuntimeSpec 向后兼容别名。
+type problemContainerRuntimeSpec = ContainerRuntimeSpec
 
 func resolveGlobalContainerTTL(ttl int) int {
 	if ttl > 0 {
@@ -1046,4 +1050,22 @@ func (r *ProblemRepository) cleanupNamespaceIfEmpty(ctx context.Context, namespa
 	}
 	_ = r.k8s.DeleteNamespaceIfEmpty(ctx, namespace)
 	return nil
+}
+
+// --- Worker 可调用的导出方法 ---
+
+// GetContainerSpec 获取题目容器运行时规格（导出供 worker 调用）。
+func (r *ProblemRepository) GetContainerSpec(problemID string) (*ContainerRuntimeSpec, error) {
+	return r.getProblemContainerRuntimeSpec(problemID)
+}
+
+// ResolveFlagEnv 解析 flag 并返回环境变量注入（导出供 worker 调用）。
+func (r *ProblemRepository) ResolveFlagEnv(problemID, userID string) []corev1.EnvVar {
+	_, envVars, _ := r.resolveAndInjectFlag(problemID, userID)
+	return envVars
+}
+
+// CreateInstanceRecord 写入 challenge_instances 运行记录（导出供 worker 调用）。
+func (r *ProblemRepository) CreateInstanceRecord(userID, problemID, accessURL string, nodePort *int) error {
+	return r.markChallengeInstanceRunning(userID, problemID, accessURL, nodePort)
 }

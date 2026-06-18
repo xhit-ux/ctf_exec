@@ -135,6 +135,43 @@ func (c *Client) CreatePod(ctx context.Context, namespace string, pod *corev1.Po
 	return c.clientset.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 }
 
+func (c *Client) GetPod(ctx context.Context, namespace, name string) (*corev1.Pod, error) {
+	return c.clientset.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
+}
+
+// GetPodEvents 获取 Pod 相关的 k8s Events（用于失败诊断）。
+func (c *Client) GetPodEvents(ctx context.Context, namespace, podName string) ([]string, error) {
+	events, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{
+		FieldSelector: "involvedObject.name=" + podName,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var msgs []string
+	for _, e := range events.Items {
+		msgs = append(msgs, fmt.Sprintf("[%s] %s: %s", e.Type, e.Reason, e.Message))
+	}
+	return msgs, nil
+}
+
+// PodPhase 返回 Pod 阶段和容器状态原因（Waiting / Terminated / 空）。
+func PodPhase(pod *corev1.Pod) (phase string, containerReason string) {
+	phase = string(pod.Status.Phase)
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil {
+			return phase, cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil {
+			reason := cs.State.Terminated.Reason
+			if cs.State.Terminated.ExitCode != 0 {
+				reason = fmt.Sprintf("%s(exit=%d)", reason, cs.State.Terminated.ExitCode)
+			}
+			return phase, reason
+		}
+	}
+	return phase, ""
+}
+
 func (c *Client) DeletePod(ctx context.Context, namespace, name string) error {
 	grace := int64(0)
 	err := c.clientset.CoreV1().Pods(namespace).Delete(ctx, name, metav1.DeleteOptions{GracePeriodSeconds: &grace})

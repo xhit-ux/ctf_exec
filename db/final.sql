@@ -815,5 +815,74 @@ CREATE TABLE user_follows (
 ) ENGINE=InnoDB;
 
 -- ==========================================================
+-- 18. Task Instances — 容器实例创建任务追踪
+-- ==========================================================
+-- 生命周期：pending → queued → provisioning → scheduling → pulling → starting → ready
+-- 失败/超时：任意阶段 → failed / timeout
+-- Worker 通过 UPDATE ... WHERE status='pending' LIMIT 1 认领任务，并发安全。
+
+CREATE TABLE task_instances (
+    id              CHAR(36)     NOT NULL,
+    user_id         CHAR(36)     NOT NULL,
+    problem_id      CHAR(36)     NOT NULL,
+    instance_id     CHAR(36)     NULL,               -- 创建成功后关联 challenge_instances.id
+    pod_name        VARCHAR(255) NULL,
+    namespace       VARCHAR(128) NULL,
+    access_url      VARCHAR(512) NULL,
+    node_port       INT          NULL,
+    status          VARCHAR(16)  NOT NULL DEFAULT 'pending',
+    error_message   TEXT         NULL,
+    k8s_reason      VARCHAR(255) NULL,               -- kubelet 原始错误原因
+    retry_count     INT          NOT NULL DEFAULT 0,
+    max_retry       INT          NOT NULL DEFAULT 3,
+    claimed_by      VARCHAR(64)  NULL,               -- Worker 标识
+    claimed_at      DATETIME     NULL,
+    started_at      DATETIME     NULL,
+    finished_at     DATETIME     NULL,
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    CONSTRAINT chk_ti_status CHECK (status IN (
+        'pending','queued','provisioning','scheduling','pulling','starting','ready','failed','timeout'
+    )),
+
+    FOREIGN KEY fk_ti_user    (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+    FOREIGN KEY fk_ti_problem (problem_id) REFERENCES problems(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_ti_user           ON task_instances(user_id, status);
+CREATE INDEX idx_ti_problem        ON task_instances(problem_id, status);
+CREATE INDEX idx_ti_status         ON task_instances(status, created_at);
+CREATE INDEX idx_ti_claimed        ON task_instances(claimed_by, status);
+CREATE INDEX idx_ti_created        ON task_instances(created_at);
+
+-- ==========================================================
+-- 19. Task Event Logs — 任务生命周期事件审计
+-- ==========================================================
+-- 每条记录对应任务的一个阶段变迁或错误事件。
+-- stage 标识阶段：VALIDATING / CREATING_NS / CREATING_POD / WATCHING / DONE
+-- level：info（正常阶段）、warn（重试）、error（失败原因）
+
+CREATE TABLE task_event_logs (
+    id          CHAR(36)     NOT NULL,
+    task_id     CHAR(36)     NOT NULL,
+    stage       VARCHAR(32)  NOT NULL,
+    level       VARCHAR(8)   NOT NULL DEFAULT 'info',
+    message     TEXT         NOT NULL,
+    created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+
+    CONSTRAINT chk_tel_level CHECK (level IN ('info','warn','error')),
+
+    FOREIGN KEY fk_tel_task (task_id) REFERENCES task_instances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE INDEX idx_tel_task       ON task_event_logs(task_id, created_at);
+CREATE INDEX idx_tel_task_stage ON task_event_logs(task_id, stage);
+
+-- ==========================================================
 -- End of script
 -- ==========================================================

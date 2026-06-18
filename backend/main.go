@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -19,6 +21,7 @@ import (
 	"github.com/ctf_exec/backend/internal/logger"
 	"github.com/ctf_exec/backend/internal/middleware"
 	minio "github.com/ctf_exec/backend/internal/minio"
+	"github.com/ctf_exec/backend/internal/rabbitmq"
 	"github.com/ctf_exec/backend/internal/repository"
 	"github.com/ctf_exec/backend/internal/service"
 	"github.com/ctf_exec/backend/internal/utils"
@@ -114,6 +117,14 @@ func main() {
 		utils.LogSuccess("MinIO 连接成功，桶已就绪")
 	}
 
+	// RabbitMQ 客户端
+	mqClient, err := rabbitmq.New(ctx, cfg.RabbitMQ)
+	if err != nil {
+		utils.LogFatal("RabbitMQ 客户端初始化失败: %v", err)
+	}
+	defer mqClient.Shutdown()
+	utils.LogSuccess("RabbitMQ 客户端已连接")
+
 	// 仓库 & 服务层
 	userRepo := repository.NewUserRepository(sqlDB)
 	probRepo := repository.NewProblemRepository(sqlDB, k8sClient, cfg, redisClient, minioClient)
@@ -121,8 +132,10 @@ func main() {
 	teamRepo := repository.NewTeamRepository(sqlDB)
 	contestRepo := repository.NewContestRepository(sqlDB)
 	contestAdminRepo := repository.NewContestAdminRepository(sqlDB)
+	taskRepo := repository.NewTaskRepository(sqlDB)
 	siteConfigRepo := repository.NewSiteConfigRepository(sqlDB)
-	probRepo.StartDraftCleanupScheduler(24*time.Hour, 7*24*time.Hour); probRepo.StartTTLCleanupScheduler(5 * time.Minute)
+	probRepo.StartDraftCleanupScheduler(24*time.Hour, 7*24*time.Hour)
+	probRepo.StartTTLCleanupScheduler(5 * time.Minute)
 	if err := service.EnsureDefaultRootUser(userRepo, cfg.Init.RootDefaultPassword); err != nil {
 		utils.LogFatal("初始化 root 用户失败: %v", err)
 	}
@@ -141,18 +154,41 @@ func main() {
 	// Handler
 	authHandler := handler.NewAuthHandler(authService, userService, cfg.AuthCookie)
 	userHandler := handler.NewUserHandler(userRepo, authService, redisClient.Client, sessionStore)
-	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo, minioClient, cfg)
+	probHandler := handler.NewProblemHandler(probRepo, contestRepo, contestAdminRepo, taskRepo, mqClient, minioClient, cfg)
 	subHandler := handler.NewSubmissionHandler(subRepo, probRepo, submissionService)
+	taskHandler := handler.NewTaskHandler(taskRepo)
 	uploadHandler := handler.NewUploadHandler(userRepo)
 	teamHandler := handler.NewTeamHandler(teamRepo, teamService)
 	contestHandler := handler.NewContestHandler(contestRepo, userRepo, contestAdminRepo, contestService)
 	siteConfigHandler := handler.NewSiteConfigHandler(siteConfigRepo)
 	wsHandler := wsmod.NewHandler(cfg.WS, sessionStore, cfg.Server.AllowedOrigins)
 
+	// Provisioner Worker — 异步创建容器实例
+	provisioner := repository.NewProvisionerWorker(*cfg, mqClient, k8sClient, taskRepo, probRepo)
+	go func() {
+		if err := provisioner.Start(ctx); err != nil {
+			log.Printf("[Main] Provisioner 异常退出: %v", err)
+		}
+	}()
+	utils.LogSuccess("Provisioner Worker 已启动 (concurrency=%d)", cfg.RabbitMQ.WorkerConcurrency)
+
+	// 超时任务清理（每 30 秒）
+	go func() {
+		tk := time.NewTicker(30 * time.Second)
+		defer tk.Stop()
+		for range tk.C {
+			taskRepo.MarkStaleTasksTimeout(cfg.RabbitMQ.TaskTimeoutSec)
+		}
+	}()
+
 	// ============================================================
-	// Gin HTTP 框架 & 路由 (debug 信息从此处开始输出)
+	// Gin HTTP 框架 & 路由
+	// 所有 [GIN-debug] 暂存到 buffer，最后一次性输出
 	// ============================================================
 	utils.LogInfo("── Gin HTTP 框架初始化 ──")
+
+	var ginBuf bytes.Buffer
+	gin.DefaultWriter = io.MultiWriter(&ginBuf, gin.DefaultWriter)
 
 	r := gin.New()
 	r.Use(logger.GinMiddleware())
@@ -241,6 +277,12 @@ func main() {
 			problemAuth.POST(":id/instance/extend", probHandler.ExtendProblemInstanceGin)
 			problemAuth.POST("/hints/:hintID/unlock", probHandler.UnlockHintGin)
 		}
+
+		// 任务状态轮询（需登录）
+		tasks := api.Group("/tasks")
+		tasks.Use(middleware.GinAuthMiddleware())
+		tasks.GET(":id/status", taskHandler.GetTaskStatusGin)
+
 		contests := api.Group("/contests")
 		{
 			contests.Use(middleware.GinOptionalAuthMiddlewareWithRepo(userRepo, sessionStore))
@@ -346,6 +388,10 @@ func main() {
 	// ============================================================
 	// 服务端口监听
 	// ============================================================
+	// 一次性输出所有暂存的 Gin route 注册信息
+	gin.DefaultWriter = os.Stdout
+	//logger.Console("%s", strings.TrimSpace(ginBuf.String()))
+
 	utils.LogInfo("── 监听端口 :%s ──", cfg.Server.Port)
 	utils.LogSuccess("所有核心服务已就绪，开始接受请求")
 

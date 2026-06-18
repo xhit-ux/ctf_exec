@@ -15,13 +15,17 @@ import {
   destroyProblemInstance,
   fetchProblemInstance,
   startProblemInstance,
+  type TaskStatusResponse,
 } from '../utils/problemInstanceApi'
 import { unlockProblemHint } from '../utils/problemHintsApi'
+import { wsHeartbeat, type WSMessageHandler } from '../utils/wsHeartbeat'
 
 type InstanceState = {
-  status: 'idle' | 'starting' | 'running' | 'stopping' | 'failed'
+  status: 'idle' | 'starting' | 'running' | 'stopping' | 'failed' | 'task_pending'
   endpoint: string
   note: string
+  taskID?: string
+  taskStatus?: string
 }
 
 function formatAttachmentSize(size?: number): string {
@@ -376,28 +380,92 @@ export default function ProblemDetail() {
     if (!isContainerProblem || instanceState.status === 'starting' || instanceState.status === 'stopping')
       return
     setSharedDismissed(false)
-    setInstanceState({ status: 'starting', endpoint: '', note: '' })
+    setInstanceState({ status: 'task_pending', endpoint: '', note: '正在提交创建任务...' })
 
     try {
       const resp = await startProblemInstance(problem.id)
-      const endpoint = resp.instance?.access_url || ''
-      const status = String(resp.status || '').toLowerCase()
-      const remaining = remainingSecondsFromInstance(resp.instance)
-      if (remaining && remaining > 0) setCountdown(remaining)
+      // 新 API 返回 { task_id, status, message }
+      const data = resp as unknown as { task_id?: string; status?: string; message?: string }
+      console.log('[ProblemDetail] startInstance response:', data)
+      const taskID = data.task_id || ''
+      if (!taskID) {
+        setInstanceState({ status: 'failed', endpoint: '', note: '未收到任务 ID，请重试。' })
+        return
+      }
 
-      if (status === 'running') {
+      const statusLabel: Record<string, string> = {
+        pending: '任务排队中...',
+        queued: 'Worker 已认领，准备创建资源...',
+        provisioning: '正在创建 K8s 资源...',
+        scheduling: '等待节点调度...',
+        pulling: '正在拉取容器镜像...',
+        starting: '容器启动中，等待就绪...',
+        ready: '实例就绪',
+        failed: '实例创建失败',
+        timeout: '实例创建超时',
+      }
+
+      const TASK_TIMEOUT_MS = 300_000
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null
+      let wsHandler: WSMessageHandler | null = null
+
+      const cleanup = () => {
+        if (timeoutTimer !== null) clearTimeout(timeoutTimer)
+        if (wsHandler) wsHeartbeat.removeMessageListener(wsHandler)
+      }
+
+      timeoutTimer = setTimeout(() => {
+        cleanup()
         setInstanceState({
-          status: 'running',
-          endpoint,
-          note: endpoint ? '实例已启动。' : '实例已启动，访问地址待同步。',
+          status: 'failed',
+          endpoint: '',
+          note: `实例创建超时 (300s)，taskID: ${taskID}，请联系管理员排查。`,
+          taskID,
+          taskStatus: 'timeout',
         })
-        return
+      }, TASK_TIMEOUT_MS)
+
+      wsHandler = (eventData: any) => {
+        console.log('[ProblemDetail] WS event received:', eventData.status, 'task:', eventData.task_id?.slice(0, 8))
+        if (eventData.task_id !== taskID) return
+        const label = statusLabel[eventData.status] || eventData.status
+
+        if (eventData.status === 'ready') {
+          cleanup()
+          setInstanceState({
+            status: 'running',
+            endpoint: eventData.access_url || '',
+            note: label,
+            taskID,
+            taskStatus: eventData.status,
+          })
+          return
+        }
+
+        if (eventData.status === 'failed' || eventData.status === 'timeout') {
+          cleanup()
+          setInstanceState({
+            status: 'failed',
+            endpoint: '',
+            note: eventData.error_message || eventData.message || label,
+            taskID,
+            taskStatus: eventData.status,
+          })
+          return
+        }
+
+        setInstanceState({
+          status: 'task_pending',
+          endpoint: '',
+          note: eventData.message || label,
+          taskID,
+          taskStatus: eventData.status,
+        })
       }
-      if (status === 'pending') {
-        setInstanceState({ status: 'starting', endpoint: '', note: '实例正在创建，请稍后刷新状态。' })
-        return
-      }
-      setInstanceState({ status: 'failed', endpoint: '', note: '实例启动失败，请重试。' })
+
+      wsHeartbeat.addMessageListener(wsHandler)
+      console.log('[ProblemDetail] WS listener registered for task:', taskID.slice(0, 8))
+      setInstanceState({ status: 'task_pending', endpoint: '', note: '任务已提交，等待调度...', taskID })
     } catch (err) {
       const message = err instanceof Error ? err.message : '实例启动失败'
       setInstanceState({ status: 'failed', endpoint: '', note: message })

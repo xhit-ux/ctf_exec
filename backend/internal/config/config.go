@@ -33,6 +33,7 @@ type Config struct {
 	Ingress     IngressConfig
 	LoginGuard  LoginGuardConfig
 	Registry    RegistryConfig
+	RabbitMQ    RabbitMQConfig
 	Log         LogConfig
 }
 
@@ -224,6 +225,19 @@ func (c *Config) SetRegistryInfo(host, username, password string) {
 	c.Registry.Password = password
 }
 
+// RabbitMQConfig 消息队列配置 — 容器实例创建任务异步化。
+type RabbitMQConfig struct {
+	Host              string // RABBITMQ_HOST
+	Port              int    // RABBITMQ_PORT
+	User              string // RABBITMQ_USER
+	Password          string // RABBITMQ_PASSWORD
+	VHost             string // RABBITMQ_VHOST
+	QueueChallenge    string // RABBITMQ_QUEUE_CHALLENGE
+	WorkerConcurrency int    // RABBITMQ_WORKER_CONCURRENCY
+	TaskTimeoutSec    int    // RABBITMQ_TASK_TIMEOUT_SECONDS
+	ReconnectDelay    int    // RABBITMQ_RECONNECT_DELAY
+}
+
 // FlagConfig 动态 flag 生成配置。
 type FlagConfig struct {
 	Template string
@@ -402,7 +416,14 @@ func LoadConfig() (*Config, error) {
 		}
 		cfg.Registry = *registryConfig
 
-		logConfig, err := loadLogConfig()
+			rabbitmqConfig, err := loadRabbitMQConfig()
+			if err != nil {
+				loadConfigErr = fmt.Errorf("加载RabbitMQ配置失败: %w", err)
+				return
+			}
+			cfg.RabbitMQ = *rabbitmqConfig
+
+			logConfig, err := loadLogConfig()
 	if err != nil {
 		loadConfigErr = fmt.Errorf("加载日志配置失败: %w", err)
 		return
@@ -825,5 +846,35 @@ func loadLogConfig() (*LogConfig, error) {
 		MaxBackups: maxBackups,
 		MaxAge:     maxAge,
 		Compress:   getEnvBool("LOG_COMPRESS", true),
+	}, nil
+}
+
+func loadRabbitMQConfig() (*RabbitMQConfig, error) {
+	port := getEnvInt("RABBITMQ_PORT", 5672)
+	if port <= 0 || port > 65535 {
+		port = 5672
+	}
+	concurrency := getEnvInt("RABBITMQ_WORKER_CONCURRENCY", 3)
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	timeout := getEnvInt("RABBITMQ_TASK_TIMEOUT_SECONDS", 120)
+	if timeout <= 0 {
+		timeout = 60
+	}
+	reconnect := getEnvInt("RABBITMQ_RECONNECT_DELAY", 5)
+	if reconnect <= 0 {
+		reconnect = 3
+	}
+	return &RabbitMQConfig{
+		Host:              getEnv("RABBITMQ_HOST", "127.0.0.1"),
+		Port:              port,
+		User:              getEnv("RABBITMQ_USER", ""),
+		Password:          getEnv("RABBITMQ_PASSWORD", ""),
+		VHost:             getEnv("RABBITMQ_VHOST", "/"),
+		QueueChallenge:    getEnv("RABBITMQ_QUEUE_CHALLENGE", "challenge_instance_create"),
+		WorkerConcurrency: concurrency,
+		TaskTimeoutSec:    timeout,
+		ReconnectDelay:    reconnect,
 	}, nil
 }

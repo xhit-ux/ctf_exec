@@ -2,6 +2,7 @@ package logger
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -27,7 +28,7 @@ func (w *responseWriter) WriteString(s string) (int, error) {
 
 func GinMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		rid := c.GetHeader("X-Request-ID")
+		rid := sanitizeRequestID(c.GetHeader("X-Request-ID"))
 		if rid == "" {
 			rid = fmt.Sprintf("req_%s", uuid.New().String()[:8])
 		}
@@ -76,4 +77,21 @@ func GinMiddleware() gin.HandlerFunc {
 			Default().InfoContext(ctx, msg, attrs...)
 		}
 	}
+}
+
+// sanitizeRequestID 校验客户端传入的 X-Request-ID，拒绝不安全的值。
+// 仅允许 [a-zA-Z0-9._-]，最大 64 字符。
+func sanitizeRequestID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > 64 {
+		return ""
+	}
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-' {
+			continue
+		}
+		return ""
+	}
+	return raw
 }
