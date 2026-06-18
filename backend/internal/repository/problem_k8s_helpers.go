@@ -32,13 +32,9 @@ func buildChallengePod(namespace, podName string, spec *problemContainerRuntimeS
 		Ports: []corev1.ContainerPort{
 			{ContainerPort: int32(spec.ChallengePort), Protocol: corev1.ProtocolTCP},
 		},
-		SecurityContext: &corev1.SecurityContext{
-			AllowPrivilegeEscalation: ptr.To(false),
-			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			// CTF 挑战容器需要写文件系统（启动脚本、临时文件等）。
-			// Kata Containers 提供 VM 级隔离，不需要只读 rootfs。
-			ReadOnlyRootFilesystem: ptr.To(false),
-		},
+		// Kata Containers 提供 VM 级隔离，不在容器层施加 SecurityContext。
+		// CTF 镜像需要完整 Linux capabilities（NET_BIND_SERVICE / CHOWN 等），
+		// Drop ALL 会导致 nginx accept 后不回复等问题。
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "tmp", MountPath: "/tmp"},
 		},

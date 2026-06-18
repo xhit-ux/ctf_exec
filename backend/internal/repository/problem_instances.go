@@ -805,8 +805,13 @@ func (r *ProblemRepository) resolveAndInjectFlag(problemID, userID string) (stri
 		return "", nil, nil
 	}
 	var flagValue string
-	if flag.FlagType == "dynamic" {
+	switch flag.FlagType {
+	case "dynamic":
 		flagValue = utils.GenerateDynamicFlag(r.cfg.Flag.Template)
+	case "static":
+		if flag.FlagPattern != nil {
+			flagValue = *flag.FlagPattern
+		}
 	}
 	var envVars []corev1.EnvVar
 	if flag.FlagInject == "env" && flagValue != "" {
