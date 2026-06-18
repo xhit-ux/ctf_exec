@@ -72,6 +72,7 @@ export type ProblemView = {
   prerequisites?: ProblemPrerequisiteRef[]
   instance?: ProblemInstanceView | null
   connection_info?: ConnectionInfo | null
+  flag_example?: string | null
   is_solved: boolean
   is_locked?: boolean
   status?: ProblemStatus
@@ -285,6 +286,10 @@ export function normalizeProblem(payload: unknown): ProblemView {
   view.prerequisites = normalizePrerequisites(item.prerequisites) ?? []
   view.instance = normalizeInstance(item.instance) ?? null
   view.connection_info = normalizeConnectionInfo(item.connection_info) ?? null
+
+  // flag.flag_example（后端返回 flag 子对象）
+  const flag = (item.flag as Record<string, unknown> | null) ?? null
+  view.flag_example = (flag && typeof flag.flag_example === 'string') ? flag.flag_example : null
 
   return view
 }

@@ -602,6 +602,15 @@ export default function ProblemDetail() {
               </div>
             </div>
 
+            {problem.flag_example && (
+              <div className="pt-3 border-t border-gray-100">
+                <span className="text-xs text-gray-400">Flag 格式</span>
+                <code className="ml-2 px-2 py-0.5 bg-gray-100 rounded text-sm font-mono text-gray-600">
+                  {problem.flag_example}
+                </code>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-gray-100">
               <label className="block text-sm font-medium text-gray-700">提交 Flag</label>
               <div className="mt-2 flex gap-2 items-center">

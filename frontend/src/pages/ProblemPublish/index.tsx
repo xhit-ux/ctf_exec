@@ -189,7 +189,7 @@ function ProblemPublishBootstrap() {
           status: detail.status === 'hidden' ? 'hidden' : 'ready',
           flagType: detail.flag?.flag_type ?? 'static',
           flagRule: detail.flag?.flag_rule ?? 'exact',
-          flagValue: detail.flag?.flag_example ?? detail.flag?.flag_pattern ?? '',
+          flagValue: detail.flag?.flag_pattern ?? detail.flag?.flag_example ?? '',
           flagExample: detail.flag?.flag_example ?? '',
           flagInject: detail.flag?.flag_inject ?? 'env',
           flagEnvKey: detail.flag?.flag_env_key ?? '',

@@ -65,5 +65,20 @@ func (h *SubmissionHandler) GetMySubmissionsGin(c *gin.Context) {
 		return
 	}
 
+	maskCorrectFlags(submissions, claims.Role)
+
 	c.JSON(http.StatusOK, submissions)
+}
+
+// maskCorrectFlags 对正确提交的 flag 做脱敏。admin(root/site_admin)保留原文。
+func maskCorrectFlags(submissions []*models.Submission, role string) {
+	normalized := models.NormalizeRole(role)
+	if normalized == models.RoleRoot || normalized == models.RoleSiteAdmin {
+		return
+	}
+	for _, s := range submissions {
+		if s.IsCorrect {
+			s.Flag = "flag{***}"
+		}
+	}
 }

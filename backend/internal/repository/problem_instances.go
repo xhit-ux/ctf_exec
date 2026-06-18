@@ -812,6 +812,8 @@ func (r *ProblemRepository) resolveAndInjectFlag(problemID, userID string) (stri
 		if flag.FlagPattern != nil {
 			flagValue = *flag.FlagPattern
 		}
+		// flag_pattern 为空 → 旧数据未存明文，需重新保存一次 flag 配置。
+		// 注意：不能用 flag_example — example 是展示用格式提示（如 flag{xxx}），并非答案。
 	}
 	var envVars []corev1.EnvVar
 	if flag.FlagInject == "env" && flagValue != "" {

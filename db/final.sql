@@ -294,7 +294,7 @@ CREATE INDEX idx_problems_created  ON problems(created_by);
 -- flag_inject   : env / sidecar            (动态 flag 怎么进容器)
 --
 -- 字段一致性约束 (chk_flag_fields, 三段式):
---   * exact / case_insensitive  → flag_hash NOT NULL, flag_pattern NULL
+--   * exact / case_insensitive  → flag_hash NOT NULL；flag_pattern 可选（env 注入时存明文）
 --   * regex / contains          → flag_pattern NOT NULL, flag_hash NULL
 --   * dynamic                   → flag_hash NULL, flag_pattern NULL（真值在 flag_mappings）
 -- ----------------------------------------------------------
@@ -316,7 +316,7 @@ CREATE TABLE problem_flags (
     CONSTRAINT chk_flag_rule    CHECK (flag_rule IN ('exact', 'case_insensitive', 'regex', 'contains')),
     CONSTRAINT chk_flag_inject  CHECK (flag_inject IN ('env', 'sidecar')),
     CONSTRAINT chk_flag_fields  CHECK (
-        (flag_type = 'static'  AND flag_rule IN ('exact', 'case_insensitive') AND flag_hash IS NOT NULL AND flag_pattern IS NULL)
+        (flag_type = 'static'  AND flag_rule IN ('exact', 'case_insensitive') AND flag_hash IS NOT NULL)
         OR (flag_type = 'static'  AND flag_rule IN ('regex', 'contains')          AND flag_pattern IS NOT NULL AND flag_hash IS NULL)
         OR (flag_type = 'dynamic' AND flag_hash IS NULL AND flag_pattern IS NULL)
     ),

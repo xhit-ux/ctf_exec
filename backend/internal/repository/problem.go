@@ -25,8 +25,8 @@ import (
 	"github.com/ctf_exec/backend/internal/apperr"
 	"github.com/ctf_exec/backend/internal/cache"
 	"github.com/ctf_exec/backend/internal/config"
-	"github.com/ctf_exec/backend/internal/logger"
 	k8s "github.com/ctf_exec/backend/internal/k8s"
+	"github.com/ctf_exec/backend/internal/logger"
 	"github.com/ctf_exec/backend/internal/models"
 	"github.com/ctf_exec/backend/internal/utils"
 	"github.com/google/uuid"
@@ -362,6 +362,11 @@ func (r *ProblemRepository) getProblemByID(id, userID string) (*models.Problem, 
 		if all, lockErr := r.AreAllPrerequisitesSolvedByUser(p.ID, userID); lockErr == nil {
 			p.IsLocked = !all
 		}
+	}
+
+	// flag_example：仅用于题面提示 flag 格式
+	if flagExample := r.getFlagExample(p.ID); flagExample != nil {
+		p.Flag = &models.ProblemFlag{FlagExample: flagExample}
 	}
 
 	return p, nil
@@ -815,6 +820,10 @@ func (r *ProblemRepository) upsertFlagTx(tx *sql.Tx, problemID string, req *mode
 				return hashErr
 			}
 			flagHash = h
+			// env 注入需要明文 flag，一并存入 flag_pattern
+			if strings.TrimSpace(req.FlagInject) == "env" && req.FlagValue != "" {
+				flagPattern = strings.TrimSpace(req.FlagValue)
+			}
 		case utils.FlagRuleRegex, utils.FlagRuleContains:
 			pattern := strings.TrimSpace(req.FlagValue)
 			if pattern == "" {
@@ -959,6 +968,18 @@ func (r *ProblemRepository) syncProblemTagsTx(tx *sql.Tx, problemID string, tags
 		if _, err := tx.Exec(`INSERT INTO problem_tags (problem_id, tag) VALUES (?, ?)`, problemID, t); err != nil {
 			return fmt.Errorf("写入题目标签失败: %w", err)
 		}
+	}
+	return nil
+}
+
+// getFlagExample 只查询 flag_example（轻量，用于题面展示），无数据返回 nil。
+func (r *ProblemRepository) getFlagExample(problemID string) *string {
+	var v sql.NullString
+	_ = r.db.QueryRow(`SELECT flag_example FROM problem_flags WHERE problem_id = ?`,
+		strings.TrimSpace(problemID)).Scan(&v)
+	if v.Valid && strings.TrimSpace(v.String) != "" {
+		s := v.String
+		return &s
 	}
 	return nil
 }

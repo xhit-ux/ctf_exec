@@ -10,8 +10,8 @@ export default function Step4ContainerEnv() {
 
   const toProblemType = (): 'static' | 'container_web' | 'container_tcp' => {
     if (!state.useContainer) return 'static';
-    if (state.category === 'Web') return 'container_web';
-    return 'container_tcp';
+    const accessType = state.accessType || 'ingress';
+    return accessType === 'ingress' ? 'container_web' : 'container_tcp';
   };
 
   const toDifficulty = (): 'easy' | 'medium' | 'hard' | 'expert' => {
