@@ -8,7 +8,6 @@ import { TAB_ACCENT_PALETTE, randomTabAccent, tabAccentStyle } from '../utils/ta
 
 type AdminTab =
   | 'overview'
-  | 'problem'
   | 'problem-manage'
   | 'contest'
   | 'user-status'
@@ -99,13 +98,6 @@ function toISODateTime(input: string): string | null {
   return date.toISOString()
 }
 
-function joinTags(input: string): string[] {
-  return input
-    .split(',')
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-}
-
 function roleBadgeClass(role: string): string {
   if (role === 'root') return 'bg-red-100 text-red-700'
   if (role === 'site_admin') return 'bg-purple-100 text-purple-700'
@@ -128,17 +120,6 @@ export default function Admin() {
 
   const [contests, setContests] = useState<ContestListItem[]>([])
   const [problems, setProblems] = useState<ProblemListItem[]>([])
-
-  const [problemForm, setProblemForm] = useState({
-    title: '',
-    category: 'web',
-    points: 100,
-    difficulty: '简单',
-    tags: '',
-    description: '',
-    flag: '',
-  })
-  const [creatingProblem, setCreatingProblem] = useState(false)
 
   const [adminProblems, setAdminProblems] = useState<AdminProblemItem[]>([])
   const [adminProblemKeyword, setAdminProblemKeyword] = useState('')
@@ -461,7 +442,7 @@ export default function Admin() {
 
   const statCards = useMemo(() => {
     return [
-      { title: '公开题目总数', value: String(problems.length), hint: 'site_admin 可管理平台题库' },
+      { title: '公开题目总数', value: String(problems.length), hint: '题目发布请走独立发布页' },
       { title: '近期赛事条目', value: String(contests.length), hint: '含未开始 / 进行中 / 已结束' },
       { title: '当前角色', value: user?.role || '-', hint: isRoot ? 'root 拥有最高权限' : 'site_admin 负责站点管理' },
     ]
@@ -518,49 +499,6 @@ export default function Admin() {
       setError(fromUnknownError(err, `网络异常，${action}题目失败`))
     } finally {
       setTogglingProblemID('')
-    }
-  }
-
-  const submitProblem = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    setCreatingProblem(true)
-    setError('')
-    setSuccessHint('')
-    try {
-      const res = await apiFetch(apiUrl('/api/admin/problems'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...problemForm,
-          tags: joinTags(problemForm.tags),
-        }),
-      })
-
-      if (!res.ok) {
-        setError(await readSafeErrorMessage(res, '创建题目失败'))
-        return
-      }
-
-      const created = await res.json()
-      setProblems((prev) => [created, ...prev])
-      setProblemForm({
-        title: '',
-        category: 'web',
-        points: 100,
-        difficulty: '简单',
-        tags: '',
-        description: '',
-        flag: '',
-      })
-      setSuccessHint(`题目创建成功：${created?.title || ''}`)
-      setActiveTab('overview')
-    } catch (err) {
-      setError(fromUnknownError(err, '网络异常，创建题目失败'))
-    } finally {
-      setCreatingProblem(false)
     }
   }
 
@@ -734,7 +672,6 @@ export default function Admin() {
 
       <div className="flex flex-wrap gap-2">
         <button onClick={() => handleTabSwitch('overview')} className={`tab-pill ${activeTab === 'overview' ? 'tab-pill--active' : ''}`} style={activeTab === 'overview' ? tabAccentStyle(tabAccent) : undefined}>概览</button>
-        <button onClick={() => handleTabSwitch('problem')} className={`tab-pill ${activeTab === 'problem' ? 'tab-pill--active' : ''}`} style={activeTab === 'problem' ? tabAccentStyle(tabAccent) : undefined}>新建题目</button>
         <button onClick={() => handleTabSwitch('problem-manage')} className={`tab-pill ${activeTab === 'problem-manage' ? 'tab-pill--active' : ''}`} style={activeTab === 'problem-manage' ? tabAccentStyle(tabAccent) : undefined}>题目管理</button>
         <button onClick={() => handleTabSwitch('contest')} className={`tab-pill ${activeTab === 'contest' ? 'tab-pill--active' : ''}`} style={activeTab === 'contest' ? tabAccentStyle(tabAccent) : undefined}>新建赛事</button>
         <button onClick={() => handleTabSwitch('user-status')} className={`tab-pill ${activeTab === 'user-status' ? 'tab-pill--active' : ''}`} style={activeTab === 'user-status' ? tabAccentStyle(tabAccent) : undefined}>用户封禁/解封</button>
@@ -764,39 +701,13 @@ export default function Admin() {
             </div>
           )}
 
-          {activeTab === 'problem' && (
-            <form onSubmit={submitProblem} className={CARD_CLASS}>
-              <h2 className="text-lg font-bold text-gray-900">创建平台题目</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input value={problemForm.title} onChange={(e) => setProblemForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="题目标题" className={INPUT_CLASS} required />
-                <input value={problemForm.flag} onChange={(e) => setProblemForm((prev) => ({ ...prev, flag: e.target.value }))} placeholder="Flag（创建后仅存储哈希）" className={INPUT_CLASS} required />
-                <select value={problemForm.category} onChange={(e) => setProblemForm((prev) => ({ ...prev, category: e.target.value }))} className={INPUT_CLASS}>
-                  <option value="web">web</option>
-                  <option value="pwn">pwn</option>
-                  <option value="crypto">crypto</option>
-                  <option value="reverse">reverse</option>
-                  <option value="misc">misc</option>
-                </select>
-                <select value={problemForm.difficulty} onChange={(e) => setProblemForm((prev) => ({ ...prev, difficulty: e.target.value }))} className={INPUT_CLASS}>
-                  <option value="简单">简单</option>
-                  <option value="中等">中等</option>
-                  <option value="困难">困难</option>
-                </select>
-                <input type="number" min={0} value={problemForm.points} onChange={(e) => setProblemForm((prev) => ({ ...prev, points: Number(e.target.value) || 0 }))} placeholder="分值" className={INPUT_CLASS} />
-                <input value={problemForm.tags} onChange={(e) => setProblemForm((prev) => ({ ...prev, tags: e.target.value }))} placeholder="标签（逗号分隔）" className={INPUT_CLASS} />
-              </div>
-              <textarea value={problemForm.description} onChange={(e) => setProblemForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="题目描述" className={`${INPUT_CLASS} min-h-32`} />
-              <button type="submit" disabled={creatingProblem} className="btn-primary w-fit">{creatingProblem ? '创建中...' : '创建题目'}</button>
-            </form>
-          )}
-
           {activeTab === 'problem-manage' && (
             <div className={CARD_CLASS}>
               <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-bold text-gray-900">题目管理</h2>
                   <Link to="/problems/new" className="px-3 py-1.5 rounded-md bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700">
-                    新建题目
+                    前往题目发布页
                   </Link>
                 </div>
                 <div className="flex gap-2">
@@ -823,7 +734,7 @@ export default function Admin() {
                 <div className="text-sm text-gray-500 py-8 text-center">加载中...</div>
               ) : adminProblems.length === 0 ? (
                 <div className="text-sm text-gray-500 py-8 text-center border border-gray-200 rounded-lg">
-                  暂无题目，点击「新建题目」创建第一个题目。
+                  暂无题目，请先前往题目发布页创建草稿。
                 </div>
               ) : (
                 <div className={TABLE_WRAP_CLASS}>

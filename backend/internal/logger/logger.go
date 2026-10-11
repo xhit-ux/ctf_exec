@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	stdlog "log"
 	"log/slog"
 	"os"
 	"strings"
@@ -15,7 +16,13 @@ import (
 
 type contextKey string
 
-const requestIDKey contextKey = "request_id"
+const (
+	requestIDKey contextKey = "request_id"
+	blueTag      string     = "\x1b[34m[ctf-platform]\x1b[0m"
+	plainTag     string     = "[ctf-platform]"
+	consoleTag   string     = blueTag + " "
+	fileTag      string     = plainTag + " "
+)
 
 var defaultLogger *slog.Logger
 
@@ -39,12 +46,15 @@ func Init(enabled bool, level, format, filePath string, maxSize, maxBackups, max
 		AddSource: l == slog.LevelDebug,
 	}
 
+	stdlog.SetPrefix(consoleTag)
+	stdlog.SetFlags(stdlog.LstdFlags | stdlog.Lmicroseconds)
+
 	if !enabled {
-		defaultLogger = slog.New(slog.NewTextHandler(os.Stderr, opts))
+		defaultLogger = slog.New(slog.NewTextHandler(&prefixWriter{w: os.Stderr, prefix: consoleTag}, opts))
 		return
 	}
 
-	consoleHandler := slog.NewTextHandler(os.Stdout, opts)
+	consoleHandler := slog.NewTextHandler(&prefixWriter{w: os.Stdout, prefix: consoleTag}, opts)
 
 	var handler slog.Handler
 	if filePath == "" {
@@ -65,6 +75,7 @@ func Init(enabled bool, level, format, filePath string, maxSize, maxBackups, max
 		} else {
 			fileHandler = slog.NewTextHandler(rotator, opts)
 		}
+		fileHandler = newTaggedHandler(fileHandler, fileTag)
 		handler = newMultiHandler(consoleHandler, fileHandler, rotator)
 	}
 
@@ -118,6 +129,43 @@ func (h *multiHandler) WithGroup(name string) slog.Handler {
 		handlers[i] = hh.WithGroup(name)
 	}
 	return &multiHandler{handlers: handlers}
+}
+
+// prefixWriter 在每次 Write 前插入前缀（用于 slog console，ANSI 颜色不经过结构化编码）。
+type prefixWriter struct {
+	w      io.Writer
+	prefix string
+}
+
+func (w *prefixWriter) Write(p []byte) (int, error) {
+	_, err := fmt.Fprint(w.w, w.prefix)
+	if err != nil {
+		return 0, err
+	}
+	return w.w.Write(p)
+}
+
+// taggedHandler 在每条日志的 msg 前插入纯文本标签（用于日志文件）。
+type taggedHandler struct {
+	slog.Handler
+	tag string
+}
+
+func newTaggedHandler(h slog.Handler, tag string) *taggedHandler {
+	return &taggedHandler{Handler: h, tag: tag}
+}
+
+func (h *taggedHandler) Handle(ctx context.Context, r slog.Record) error {
+	r.Message = h.tag + r.Message
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h *taggedHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return newTaggedHandler(h.Handler.WithAttrs(attrs), h.tag)
+}
+
+func (h *taggedHandler) WithGroup(name string) slog.Handler {
+	return newTaggedHandler(h.Handler.WithGroup(name), h.tag)
 }
 
 var closers []io.Closer
