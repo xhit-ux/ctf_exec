@@ -1,0 +1,4 @@
+*
+!Kata.Dockerfile
+!config-v3.toml.tmpl
+!.local/kata-static-4.3.1-amd64.tar.zst

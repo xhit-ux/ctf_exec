@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ctf-exec-kata-smoke
+  namespace: default
+spec:
+  runtimeClassName: kata
+  restartPolicy: Never
+  containers:
+    - name: smoke
+      image: docker.io/library/busybox:1.37.0
+      command: [sh, -c, 'uname -r; sleep 300']

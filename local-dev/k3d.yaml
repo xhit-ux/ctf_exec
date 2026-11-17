@@ -1,0 +1,35 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: ctf-exec-local
+servers: 1
+agents: 0
+image: ctf-exec-local/k3s-kata:v1.34.13-4.3.1
+network: ctf-exec-local-cluster
+kubeAPI:
+  host: 127.0.0.1
+  hostIP: 127.0.0.1
+  hostPort: '16443'
+ports:
+  - port: 127.0.0.1:80:80
+    nodeFilters: ['server:0:direct']
+  - port: 127.0.0.1:30100-30115:30100-30115
+    nodeFilters: ['server:0:direct']
+registries:
+  config: |
+    mirrors:
+      "127.0.0.1:15000":
+        endpoint: ["http://registry:5000"]
+options:
+  k3d:
+    disableLoadbalancer: true
+    timeout: 300s
+  k3s:
+    extraArgs:
+      - arg: --service-node-port-range=30100-30115
+        nodeFilters: [server:0]
+      - arg: --disable-default-registry-endpoint
+        nodeFilters: [server:0]
+  kubeconfig:
+    updateDefaultKubeconfig: false
+    switchCurrentContext: false

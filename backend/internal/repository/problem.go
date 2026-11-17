@@ -456,6 +456,8 @@ func (r *ProblemRepository) stripRegistryHost(repo string) string {
 	return repo
 }
 
+const registryManifestMediaTypes = "application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.oci.image.index.v1+json"
+
 func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo, tag string) {
 	registryHost := strings.Trim(strings.TrimSpace(r.cfg.Registry.Host), "/")
 	url := fmt.Sprintf("http://%s/v2/%s/manifests/%s", registryHost, repo, tag)
@@ -465,7 +467,7 @@ func (r *ProblemRepository) deleteRegistryManifest(httpClient *http.Client, repo
 		logger.Warn("创建 registry 请求失败", "repo", repo, "tag", tag, "err", err)
 		return
 	}
-	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+	req.Header.Set("Accept", registryManifestMediaTypes)
 	if r.cfg.Registry.Username != "" {
 		req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
 	}
@@ -2357,7 +2359,7 @@ func (r *ProblemRepository) verifyImageInRegistry(imageRepo, imageTag string) er
 			lastErr = err
 			continue
 		}
-		req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+		req.Header.Set("Accept", registryManifestMediaTypes)
 		if hasAuth {
 			req.SetBasicAuth(r.cfg.Registry.Username, r.cfg.Registry.Password)
 		}
