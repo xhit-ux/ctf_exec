@@ -333,6 +333,9 @@ func mergeEnvVars(base []corev1.EnvVar, appended []corev1.EnvVar) []corev1.EnvVa
 }
 
 func (r *ProblemRepository) resolveNodeHost() string {
+	if r.cfg.Container.PublicHost != "" {
+		return r.cfg.Container.PublicHost
+	}
 	host := strings.TrimSpace(r.cfg.Container.InfraNodeName)
 	if host != "" {
 		return host

@@ -107,6 +107,7 @@ type RedisConfig struct {
 type ServerConfig struct {
 	Port           string
 	Host           string
+	ListenHost     string
 	TrustedProxies []string
 	AllowedOrigins []string
 }
@@ -197,6 +198,7 @@ type ContainerConfig struct {
 	NamespacePrefix         string
 	KataRuntimeClass        string
 	InfraNodeName           string // INFRA_NODE_NAME, registry 固定节点
+	PublicHost              string
 }
 
 // MinIOConfig MinIO 对象存储配置。
@@ -212,10 +214,11 @@ type MinIOConfig struct {
 
 // RegistryConfig 私有 Docker 镜像仓库配置。
 type RegistryConfig struct {
+	External    bool
 	StorageSize string // REGISTRY_STORAGE_SIZE, PVC 大小
-	Host        string // 启动时自动填充: "127.0.0.1:<nodePort>"
-	Username    string // 启动时自动生成
-	Password    string // 启动时自动生成
+	Host        string
+	Username    string
+	Password    string
 }
 
 // SetRegistryInfo 启动时注入 registry 运行时信息。
@@ -262,11 +265,7 @@ var (
 // LoadConfig 从环境变量加载配置
 func LoadConfig() (*Config, error) {
 	loadConfigOnce.Do(func() {
-		// 尝试从多个位置加载 .env 文件
-		// 1. 当前目录
-		// 2. 项目根目录 (../)
-		envPaths := []string{".env", "../.env"}
-		for _, path := range envPaths {
+		for _, path := range []string{".env", "../.env"} {
 			if err := godotenv.Load(path); err == nil {
 				break
 			}
@@ -499,6 +498,7 @@ func loadServerConfig() (*ServerConfig, error) {
 	return &ServerConfig{
 		Port:           port,
 		Host:           host,
+		ListenHost:     getEnv("SERVER_LISTEN_HOST", ""),
 		TrustedProxies: trustedProxies,
 		AllowedOrigins: allowedOrigins,
 	}, nil
@@ -696,6 +696,7 @@ func loadContainerConfig() (*ContainerConfig, error) {
 		NamespacePrefix:         getEnv("NAMESPACE_PREFIX", "ctf"),
 		KataRuntimeClass:        getEnv("KATA_RUNTIME_CLASS", "kata"),
 		InfraNodeName:           getEnv("INFRA_NODE_NAME", ""),
+		PublicHost:              strings.TrimSpace(getEnv("CHALLENGE_PUBLIC_HOST", "")),
 	}, nil
 }
 
@@ -712,9 +713,22 @@ func loadMinIOConfig() (*MinIOConfig, error) {
 }
 
 func loadRegistryConfig() (*RegistryConfig, error) {
-	return &RegistryConfig{
+	cfg := &RegistryConfig{
 		StorageSize: getEnv("REGISTRY_STORAGE_SIZE", "30Gi"),
-	}, nil
+		External:    getEnvBool("REGISTRY_EXTERNAL", false),
+	}
+	if cfg.External {
+		cfg.Host = strings.TrimSpace(getEnv("REGISTRY_HOST", ""))
+		cfg.Username = getEnv("REGISTRY_USERNAME", "")
+		cfg.Password = getEnv("REGISTRY_PASSWORD", "")
+		if cfg.Host == "" || strings.Contains(cfg.Host, "/") {
+			return nil, fmt.Errorf("REGISTRY_HOST 必须填写主机名和可选端口")
+		}
+		if (cfg.Username == "") != (cfg.Password == "") {
+			return nil, fmt.Errorf("REGISTRY_USERNAME 和 REGISTRY_PASSWORD 必须同时配置")
+		}
+	}
+	return cfg, nil
 }
 
 func loadFlagConfig() (*FlagConfig, error) {

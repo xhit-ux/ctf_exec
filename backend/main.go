@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -66,18 +67,21 @@ func main() {
 	}
 	utils.LogSuccess("Kubernetes 客户端已连接")
 
-	regInfo := k8s.NewRegistryConfig()
-	if err := k8s.EnsureRegistry(ctx, k8sClient, regInfo, cfg.Container.InfraNodeName, cfg.Registry.StorageSize); err != nil {
-		utils.LogFatal("私有镜像仓库部署失败: %v", err)
-	}
-	cfg.SetRegistryInfo(regInfo.Host, regInfo.Username, regInfo.Password)
-	utils.LogSuccess("私有镜像仓库已就绪: %s", regInfo.Host)
-	utils.LogInfra("Registry 认证凭证 — 用户名: %s  密码: %s", regInfo.Username, regInfo.Password)
-
-	if err := k8s.ConfigureDockerInsecureRegistry(regInfo.NodePort); err != nil {
-		utils.LogWarn("Docker insecure registry 配置失败 (非致命): %v", err)
+	if cfg.Registry.External {
+		utils.LogInfo("使用外部镜像仓库: %s", cfg.Registry.Host)
 	} else {
-		utils.LogSuccess("Docker insecure registry 已配置")
+		regInfo := k8s.NewRegistryConfig()
+		if err := k8s.EnsureRegistry(ctx, k8sClient, regInfo, cfg.Container.InfraNodeName, cfg.Registry.StorageSize); err != nil {
+			utils.LogFatal("私有镜像仓库部署失败: %v", err)
+		}
+		cfg.SetRegistryInfo(regInfo.Host, regInfo.Username, regInfo.Password)
+		utils.LogSuccess("私有镜像仓库已就绪: %s", regInfo.Host)
+		utils.LogInfra("Registry 认证凭证 — 用户名: %s  密码: %s", regInfo.Username, regInfo.Password)
+		if err := k8s.ConfigureDockerInsecureRegistry(regInfo.NodePort); err != nil {
+			utils.LogWarn("Docker insecure registry 配置失败 (非致命): %v", err)
+		} else {
+			utils.LogSuccess("Docker insecure registry 已配置")
+		}
 	}
 
 	// 数据库
@@ -382,7 +386,7 @@ func main() {
 		}
 	}
 
-	r.Static("/static", "../static")
+	r.Static("/static", cfg.Upload.StaticPath)
 	leaderboardService.StartSnapshotScheduler(5 * time.Minute)
 
 	// ============================================================
@@ -395,7 +399,7 @@ func main() {
 	utils.LogInfo("── 监听端口 :%s ──", cfg.Server.Port)
 	utils.LogSuccess("所有核心服务已就绪，开始接受请求")
 
-	if err := r.Run(":" + cfg.Server.Port); err != nil {
+	if err := r.Run(net.JoinHostPort(cfg.Server.ListenHost, cfg.Server.Port)); err != nil {
 		utils.LogFatal("服务器启动失败: %v", err)
 	}
 }
